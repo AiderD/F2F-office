@@ -2263,6 +2263,9 @@ function renderPosts(){
         <button onclick="quickPostAction('${p.sbId||p.id}','approve')" style="flex:1;padding:5px;background:#00ff8812;color:#00ff88;border:1px solid #00ff8833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">✅ Одобрить</button>
         <button onclick="quickPostAction('${p.sbId||p.id}','reject')" style="flex:1;padding:5px;background:#ff2d7812;color:#ff2d78;border:1px solid #ff2d7833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">❌ Отклонить</button>
       </div>`:''}
+      ${p.sbStatus==='approved'&&p.sbId?`<div style="display:flex;gap:6px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px" onclick="event.stopPropagation()">
+        <button onclick="publishPostToTelegram('${p.sbId}')" style="flex:1;padding:5px;background:#0088cc18;color:#0088cc;border:1px solid #0088cc44;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">📢 Опубликовать в Telegram</button>
+      </div>`:''}
     </div>`).join('');
 }
 document.getElementById('postFilters').addEventListener('click',e=>{
@@ -2388,6 +2391,31 @@ window.quickPostAction=function(id,action){
     addFeed('content','❌ Пост отклонён: '+p.platform);
   }
   renderPosts();updateKPI();
+};
+
+// Publish approved post to Telegram via Edge Function
+window.publishPostToTelegram=function(postId){
+  if(!SUPABASE_LIVE){showToast('Supabase не подключён','error');return;}
+  showToast('Отправляю в Telegram...','info');
+  fetch(SUPABASE_URL+'/functions/v1/content-publish',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+    body:JSON.stringify({post_id:postId})
+  }).then(function(r){return r.json();}).then(function(data){
+    if(data.success&&data.published>0){
+      var p=D.posts.find(function(x){return x.sbId===postId;});
+      if(p){p.sbStatus='published';p.status='published';}
+      showToast('📢 Пост опубликован в Telegram! (ID: '+data.telegram_message_id+')','success');
+      addFeed('content','📢 Пост опубликован в Telegram');
+      renderPosts();updateKPI();
+    } else if(data.error){
+      showToast('Ошибка: '+data.error+(data.detail?' — '+data.detail:''),'error');
+    } else {
+      showToast(data.message||'Пост не опубликован','warning');
+    }
+  }).catch(function(err){
+    showToast('Ошибка публикации: '+err,'error');
+  });
 };
 renderPosts();
 
