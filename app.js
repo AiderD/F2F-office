@@ -1475,6 +1475,67 @@ window.triggerAgentCycles=async function(){
 };
 
 // ═══ TASKS ═══
+// Helper: build human-readable title from payload
+function taskSmartTitle(t){
+  var p=t._payload||{};
+  var aType=(t._actionType||'').toLowerCase();
+  if(aType.includes('email_template')){
+    var to=p.to||p.email||p.recipient||p.contact_email||'';
+    var subj=p.subject||p.email_subject||'';
+    var company=p.company||p.partner||'';
+    if(to||company)return '📧 Email'+(company?' → '+company:'')+(to?' ('+to+')':'')+(subj?' — '+subj:'');
+    if(p.template||p.body||p.text)return '📧 Email: '+(p.template||p.body||p.text||'').slice(0,60)+'...';
+    return '📧 Email шаблон (нажми для превью)';
+  }
+  if(aType.includes('lead_suggested')){
+    var name=p.name||p.contact||p.contact_name||'';
+    var comp=p.company||p.organization||'';
+    var reason=p.reason||p.description||p.why||'';
+    if(name||comp)return '🆕 Лид: '+(name?name:'')+(comp?' @ '+comp:'')+(reason?' — '+reason.slice(0,40):'');
+    return '🆕 Рекомендация лида (нажми для превью)';
+  }
+  if(aType.includes('task_from_chat')||t.fromChat)return t.title;
+  return t.title;
+}
+// Helper: build preview card HTML from payload
+function taskPreviewHTML(t){
+  var p=t._payload||{};
+  var aType=(t._actionType||'').toLowerCase();
+  if(!p||Object.keys(p).length<=2)return '';
+  var html='<div style="margin-top:8px;padding:10px 12px;background:#0d1117;border:1px solid var(--border);border-radius:8px;font-size:12px;line-height:1.6;max-height:200px;overflow-y:auto">';
+  if(aType.includes('email_template')){
+    html+='<div style="color:var(--cyan);margin-bottom:4px">📧 Превью email</div>';
+    if(p.to||p.email||p.recipient)html+='<div><b style="color:var(--dim)">Кому:</b> '+(p.to||p.email||p.recipient)+'</div>';
+    if(p.subject||p.email_subject)html+='<div><b style="color:var(--dim)">Тема:</b> '+(p.subject||p.email_subject)+'</div>';
+    var body=p.body||p.template||p.text||p.content||p.email_body||'';
+    if(body)html+='<div style="margin-top:6px;white-space:pre-wrap;color:var(--text)">'+body.slice(0,500)+(body.length>500?'...':'')+'</div>';
+    if(!body&&!p.to&&!p.subject){
+      // Show raw payload if no recognized fields
+      html+='<div style="color:var(--dim)">'+JSON.stringify(p,null,2).slice(0,400)+'</div>';
+    }
+  } else if(aType.includes('lead_suggested')){
+    html+='<div style="color:var(--green);margin-bottom:4px">🆕 Детали лида</div>';
+    if(p.name||p.contact||p.contact_name)html+='<div><b style="color:var(--dim)">Имя:</b> '+(p.name||p.contact||p.contact_name)+'</div>';
+    if(p.company||p.organization)html+='<div><b style="color:var(--dim)">Компания:</b> '+(p.company||p.organization)+'</div>';
+    if(p.email||p.contact_email)html+='<div><b style="color:var(--dim)">Email:</b> '+(p.email||p.contact_email)+'</div>';
+    if(p.role||p.position||p.title)html+='<div><b style="color:var(--dim)">Роль:</b> '+(p.role||p.position||p.title)+'</div>';
+    if(p.reason||p.description||p.why)html+='<div style="margin-top:4px"><b style="color:var(--dim)">Почему:</b> '+(p.reason||p.description||p.why)+'</div>';
+    if(!p.name&&!p.company){
+      html+='<div style="color:var(--dim)">'+JSON.stringify(p,null,2).slice(0,400)+'</div>';
+    }
+  } else {
+    // Generic: show all payload fields
+    var keys=Object.keys(p).filter(function(k){return k!=='status'&&k!=='priority'&&k!=='source';});
+    if(keys.length>0){
+      keys.forEach(function(k){
+        var v=typeof p[k]==='object'?JSON.stringify(p[k]):String(p[k]);
+        html+='<div><b style="color:var(--dim)">'+k+':</b> '+v.slice(0,150)+'</div>';
+      });
+    }
+  }
+  html+='</div>';
+  return html;
+}
 function renderTasks(){
   const order={pending:0,postponed:1,done:2,cancelled:3};
   const sorted=[...D.tasks].sort((a,b)=>(order[a.status]||0)-(order[b.status]||0));
@@ -1492,31 +1553,41 @@ function renderTasks(){
     var approveLabel='✅';var approveTitle='Выполнено';
     if(t.status==='pending'&&aType.includes('email_template')){approveLabel='📧 Отправить';approveTitle='Одобрить и отправить email';}
     else if(t.status==='pending'&&aType.includes('lead_suggested')){approveLabel='➕ В Pipeline';approveTitle='Добавить лид в Pipeline';}
+    // Smart title from payload
+    var displayTitle=taskSmartTitle(t);
+    // Expandable preview
+    var hasPayload=t._payload&&Object.keys(t._payload).length>2;
+    var previewId='task-preview-'+t.id;
     return '<div class="task-row '+t.status+'">'+
       '<div class="task-check '+t.status+'">'+statusIcon+'</div>'+
-      '<div class="task-body">'+
-        '<div class="task-title-text">'+t.title+actionBadge+(priLabel?'<span class="task-priority '+pri+'">'+priLabel+'</span>':'')+'</div>'+
+      '<div class="task-body" style="cursor:'+(hasPayload?'pointer':'default')+'" onclick="'+(hasPayload?'toggleTaskPreview('+t.id+')':'')+'" title="'+(hasPayload?'Нажми для превью':'')+'">'+
+        '<div class="task-title-text">'+displayTitle+actionBadge+(priLabel?'<span class="task-priority '+pri+'">'+priLabel+'</span>':'')+(hasPayload?'<span style="font-size:9px;color:var(--dim);margin-left:4px">▼</span>':'')+'</div>'+
         '<div class="task-assigned">'+(AGENTS[t.assignedTo]?.emoji||'')+' '+(AGENTS[t.assignedTo]?.name||t.assignedTo)+' • '+(t.dept?.toUpperCase()||'')+'</div>'+
         (t.result?'<div class="task-result">'+t.result+'</div>':'')+
+        '<div id="'+previewId+'" style="display:none">'+taskPreviewHTML(t)+'</div>'+
       '</div>'+
       '<div class="task-actions">'+
         (t.status==='pending'?
-          '<button class="task-act" onclick="taskAction('+t.id+',\'done\')" title="'+approveTitle+'" style="'+(aType.includes('email')||aType.includes('lead')?'background:#00ff8822;padding:2px 8px;font-size:10px':'')+'">'+approveLabel+'</button>'+
-          '<button class="task-act" onclick="taskAction('+t.id+',\'postponed\')" title="Отложить">⏸</button>'+
-          '<button class="task-act" onclick="taskPriority('+t.id+',\'up\')" title="Приоритет ↑">⬆</button>'+
-          '<button class="task-act" onclick="taskPriority('+t.id+',\'down\')" title="Приоритет ↓">⬇</button>'+
-          '<button class="task-act del" onclick="taskAction('+t.id+',\'cancelled\')" title="Отменить">❌</button>'
+          '<button class="task-act" onclick="event.stopPropagation();taskAction('+t.id+',\'done\')" title="'+approveTitle+'" style="'+(aType.includes('email')||aType.includes('lead')?'background:#00ff8822;padding:2px 8px;font-size:10px':'')+'">'+approveLabel+'</button>'+
+          '<button class="task-act" onclick="event.stopPropagation();taskAction('+t.id+',\'postponed\')" title="Отложить">⏸</button>'+
+          '<button class="task-act" onclick="event.stopPropagation();taskPriority('+t.id+',\'up\')" title="Приоритет ↑">⬆</button>'+
+          '<button class="task-act" onclick="event.stopPropagation();taskPriority('+t.id+',\'down\')" title="Приоритет ↓">⬇</button>'+
+          '<button class="task-act del" onclick="event.stopPropagation();taskAction('+t.id+',\'cancelled\')" title="Отменить">❌</button>'
         :t.status==='postponed'?
-          '<button class="task-act" onclick="taskAction('+t.id+',\'pending\')" title="Возобновить">▶️</button>'+
-          '<button class="task-act del" onclick="taskAction('+t.id+',\'cancelled\')" title="Отменить">❌</button>'
+          '<button class="task-act" onclick="event.stopPropagation();taskAction('+t.id+',\'pending\')" title="Возобновить">▶️</button>'+
+          '<button class="task-act del" onclick="event.stopPropagation();taskAction('+t.id+',\'cancelled\')" title="Отменить">❌</button>'
         :t.status==='cancelled'?
-          '<button class="task-act" onclick="taskAction('+t.id+',\'pending\')" title="Восстановить">♻️</button>'
+          '<button class="task-act" onclick="event.stopPropagation();taskAction('+t.id+',\'pending\')" title="Восстановить">♻️</button>'
         :'')+
       '</div>'+
       '<div class="task-date">'+(t.completedDate||t.createdDate)+'</div>'+
     '</div>';
   }).join('');
 }
+window.toggleTaskPreview=function(id){
+  var el=document.getElementById('task-preview-'+id);
+  if(el)el.style.display=el.style.display==='none'?'block':'none';
+};
 window.taskAction=function(id,newStatus){
   const t=D.tasks.find(x=>x.id===id);if(!t)return;
   // ═══ SMART APPROVAL: If marking as done AND task is actionable → execute real action ═══
