@@ -232,7 +232,8 @@ function refreshAfterSync(){
         assignedTo:dashId, dept:ag?'':AGENTS[dashId]?.dept||'cmd',
         status:p.status||'done', priority:p.priority||'normal',
         createdDate:(a.created_at||'').slice(0,10), completedDate:p.completed_at||(a.created_at||'').slice(0,10),
-        result:p.result||null, isLive:true
+        result:p.result||null, isLive:true,
+        _actionType:a.type||'', _payload:p
       });
     });
   }

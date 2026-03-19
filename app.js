@@ -679,6 +679,8 @@ function chatRespondAI(channel,userMsg){
     });
     renderChat();
     updateCredits(meta?meta.costPerAction||2:2);
+    // ═══ CHAT → TASK: Parse agent replies for tasks/assignments ═══
+    parseChatForTasks(text, responderId, channel);
     // Log to Supabase if live
     if(SUPABASE_LIVE){
       sbInsert('chat_history',{agent_id:null,sender:'ceo',message:userMsg}).catch(function(){});
@@ -777,6 +779,208 @@ renderChat();
     btn.style.borderColor='var(--green)';btn.style.color='var(--green)';btn.textContent='🔑 AI ON';
   }
 })();
+
+// ═══ CHAT → TASK PARSER ═══
+// Parses agent chat replies for task-like content and auto-creates tasks
+function parseChatForTasks(text, agentId, channel){
+  if(!text||text.length<20)return;
+  // Keywords that indicate a task assignment
+  var taskPatterns=[
+    /(?:\*\*)?(?:ПОРУЧЕНИЕ|СРОЧНОЕ ПОРУЧЕНИЕ|ЗАДАЧА|ЗАДАНИЕ|TODO|TASK)(?:\*\*)?[:\s]+(.{10,120})/gi,
+    /(?:\*\*)?Deadline(?:\*\*)?[:\s]*(\d+\s*(?:час|дн|нед|мин|hour|day))/gi,
+    /(?:Передаю|Поручаю|Назначаю|Ставлю задачу)[:\s]+(.{10,120})/gi,
+    /(?:@(?:BizDev|SMM|Analyst|Outreach|Community|Lead\s*Finder|Follow-?Up|Processor|Watchdog))[,\s]+(.{10,100})/gi
+  ];
+  var foundTasks=[];
+  // Pattern 1: Direct task keywords
+  var m;
+  var p1=/(?:\*\*)?(?:ПОРУЧЕНИЕ|СРОЧНОЕ ПОРУЧЕНИЕ|ЗАДАЧА|ЗАДАНИЕ)(?:\*\*)?[:\s]+([^\n*]{10,120})/gi;
+  while((m=p1.exec(text))!==null){foundTasks.push(m[1].replace(/\*\*/g,'').trim());}
+  // Pattern 2: "Подготовить / Сделать / Написать / Создать / Найти / Обновить" at line start
+  var p2=/(?:^|\n)[-–•]\s*((?:Подготовить|Сделать|Написать|Создать|Найти|Обновить|Запустить|Провести|Собрать|Отправить)[^\n]{10,120})/gi;
+  while((m=p2.exec(text))!==null){foundTasks.push(m[1].replace(/\*\*/g,'').trim());}
+  // Pattern 3: @Agent mentions with commands
+  var p3=/@(BizDev|SMM|Analyst|Outreach|Community|Analytics)[,\s—–-]+([^\n@]{10,120})/gi;
+  while((m=p3.exec(text))!==null){
+    var agentMap={'BizDev':'leads','SMM':'content','Analyst':'market','Outreach':'outreach','Community':'social','Analytics':'market'};
+    var targetAgent=agentMap[m[1]]||'coordinator';
+    foundTasks.push({text:m[2].replace(/\*\*/g,'').trim(),agent:targetAgent});
+  }
+  // Deduplicate and limit
+  var seen=new Set();
+  var uniqueTasks=[];
+  foundTasks.forEach(function(t){
+    var taskText=typeof t==='string'?t:t.text;
+    var key=taskText.slice(0,50).toLowerCase();
+    if(!seen.has(key)&&taskText.length>10){
+      seen.add(key);
+      uniqueTasks.push(typeof t==='string'?{text:t,agent:agentId}:t);
+    }
+  });
+  if(uniqueTasks.length===0)return;
+  // Limit to max 5 tasks per message
+  uniqueTasks=uniqueTasks.slice(0,5);
+  // Detect priority from text
+  var isUrgent=text.includes('СРОЧН')||text.includes('срочн')||text.includes('urgent')||text.includes('ASAP');
+  // Create tasks
+  uniqueTasks.forEach(function(taskObj){
+    var title=taskObj.text.slice(0,120);
+    var assignTo=taskObj.agent||agentId;
+    var ag=AGENTS[assignTo];
+    var taskData={
+      id:D.tasks.length+1+Math.floor(Math.random()*1000),
+      title:'💬 '+title,
+      assignedTo:assignTo,
+      dept:ag?ag.dept:'cmd',
+      status:'pending',
+      priority:isUrgent?'high':'normal',
+      createdDate:new Date().toISOString().slice(0,10),
+      completedDate:null,
+      result:null,
+      fromChat:true
+    };
+    // Save to Supabase
+    if(SUPABASE_LIVE){
+      var sbSlug=DASH_TO_SB_SLUG[assignTo]||'coordinator';
+      var sbAgent=window._sbAgents?window._sbAgents[sbSlug]:null;
+      if(sbAgent){
+        sbInsert('actions',{
+          agent_id:sbAgent.id,
+          type:'task_from_chat',
+          payload_json:{title:'💬 '+title,status:'pending',priority:isUrgent?'high':'normal',source:'chat_parser',channel:channel}
+        }).then(function(res){
+          if(res&&res[0])taskData.sbId=res[0].id;
+        }).catch(function(){});
+      }
+    }
+    D.tasks.push(taskData);
+  });
+  renderTasks();updateKPI();
+  // Notify in feed
+  addFeed(agentId,'📋 Из чата создано '+uniqueTasks.length+' задач'+(uniqueTasks.length>1?'и':'а'));
+  // Flash tasks tab badge
+  var tasksTab=document.querySelector('.tab[data-panel="tasks"]');
+  if(tasksTab){
+    var badge=tasksTab.querySelector('.tab-badge');
+    if(!badge){badge=document.createElement('span');badge.className='tab-badge';tasksTab.appendChild(badge);}
+    badge.textContent='+'+uniqueTasks.length;badge.style.cssText='background:#ff2d78;color:white;border-radius:50%;padding:1px 5px;font-size:9px;margin-left:4px;animation:pulse 1s ease-in-out 3';
+    setTimeout(function(){badge.remove();},5000);
+  }
+}
+
+// ═══ APPROVAL → EXECUTION ENGINE ═══
+// When CEO clicks ✅ on a task, execute the real action based on task type
+window.executeApprovedAction=async function(taskId){
+  var t=D.tasks.find(function(x){return x.id===taskId;});
+  if(!t)return;
+  var type=(t.title||'').toLowerCase();
+  var payload=t._payload||{};
+
+  // ─── email_template_created → Send Email ───
+  if(type.includes('email_template')||t._actionType==='email_template_created'){
+    var emailData=payload;
+    if(!emailData.to&&!emailData.email){
+      var email=prompt('📧 Email получателя:');
+      if(!email||!email.includes('@'))return alert('Нужен валидный email');
+      emailData.to=email;
+    }
+    if(!emailData.subject){
+      emailData.subject=prompt('📝 Тема письма:',payload.subject||'Партнёрство с F2F.vin')||'Партнёрство с F2F.vin';
+    }
+    var body=payload.body||payload.template||payload.content||payload.text||'';
+    if(!body){
+      body=prompt('Текст письма (или Enter для стандартного):');
+      if(!body)body='Здравствуйте! Предлагаем обсудить партнёрство с F2F.vin — CS2 соревновательная платформа. С уважением, Айдер Джанбаев, CEO F2F.';
+    }
+    // Confirm before sending
+    if(!confirm('📧 Отправить email?\n\nКому: '+(emailData.to||emailData.email)+'\nТема: '+emailData.subject+'\n\nТекст: '+body.slice(0,200)+'...'))return;
+    // Call send-email Edge Function
+    try{
+      var resp=await fetch(SUPABASE_URL+'/functions/v1/send-email',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+        body:JSON.stringify({
+          action_id:t.sbId||null,
+          to:emailData.to||emailData.email,
+          subject:emailData.subject,
+          body:body,
+          from_name:'Aider Janbaev | F2F.vin'
+        })
+      });
+      var data=await resp.json();
+      if(data.success){
+        t.status='done';t.completedDate=new Date().toISOString().slice(0,10);
+        t.result='✅ Email отправлен: '+(emailData.to||emailData.email);
+        renderTasks();updateKPI();
+        addFeed('outreach','📧 Email отправлен → '+(emailData.to||emailData.email));
+        alert('✅ Email отправлен!');
+      }else{
+        alert('❌ Ошибка отправки: '+(data.error||JSON.stringify(data))+'\n\nПодсказка: Убедитесь что RESEND_API_KEY настроен в Supabase secrets.');
+      }
+    }catch(e){
+      alert('❌ Ошибка: '+e+'\n\nEdge Function send-email может быть не задеплоена.');
+    }
+    return;
+  }
+
+  // ─── lead_suggested → Add to Pipeline ───
+  if(type.includes('lead_suggested')||t._actionType==='lead_suggested'){
+    var leadName=payload.name||payload.company||payload.lead||t.title.replace('lead_suggested','').trim();
+    if(!leadName)leadName=prompt('Имя/компания лида:');
+    if(!leadName)return;
+    // Save to partner_pipeline
+    if(SUPABASE_LIVE){
+      var res=await sbInsert('partner_pipeline',{
+        company:payload.company||leadName,
+        contact_name:payload.name||payload.contact||leadName,
+        contact_email:payload.email||'',
+        stage:'identified',
+        notes:'Из рекомендации AI: '+(payload.reason||payload.description||''),
+        source:'ai_suggested'
+      });
+      if(res&&res[0]){
+        // Also add to D.leads for immediate display
+        D.leads.push({
+          id:D.leads.length+100,sbId:res[0].id,
+          name:payload.name||payload.contact||leadName,
+          company:payload.company||leadName,
+          email:payload.email||'',
+          priority:'warm',
+          notes:payload.reason||payload.description||'AI рекомендация',
+          addedDate:new Date().toISOString().slice(0,10),
+          source:'AI Agent'
+        });
+        t.status='done';t.completedDate=new Date().toISOString().slice(0,10);
+        t.result='✅ Добавлен в Pipeline: '+leadName;
+        renderLeads();renderTasks();updateKPI();
+        addFeed('leads','🆕 Лид добавлен из AI → '+leadName);
+        alert('✅ Лид добавлен в Pipeline!');
+      }
+    }else{
+      alert('Supabase не подключён');
+    }
+    return;
+  }
+
+  // ─── content / post → Approve & Publish ───
+  if(type.includes('post')||type.includes('контент')||type.includes('content')||t._actionType==='content_created'){
+    if(t.sbId&&SUPABASE_LIVE){
+      await sbPatch('content_queue','id=eq.'+t.sbId,{status:'approved'});
+      t.status='done';t.completedDate=new Date().toISOString().slice(0,10);
+      t.result='✅ Пост одобрен, будет опубликован по расписанию';
+      renderTasks();
+      addFeed('content','✅ Пост одобрен к публикации');
+      alert('✅ Пост одобрен! Будет опубликован по расписанию.');
+    }
+    return;
+  }
+
+  // ─── Default: just mark as done ───
+  t.status='done';t.completedDate=new Date().toISOString().slice(0,10);
+  renderTasks();updateKPI();
+  if(t.sbId&&SUPABASE_LIVE){sbPatch('actions','id=eq.'+t.sbId,{payload_json:{title:t.title,status:'done',completed_at:t.completedDate}});}
+  addFeed(t.assignedTo||'coordinator','✅ Выполнено: '+t.title);
+};
 
 // ═══ INTEGRATIONS PANEL ═══
 function renderIntegrations(){
@@ -1278,16 +1482,26 @@ function renderTasks(){
     const pri=t.priority||'normal';
     const statusIcon=t.status==='done'?'✓':t.status==='cancelled'?'✕':t.status==='postponed'?'⏸':'⏳';
     const priLabel=pri==='high'?'HIGH':pri==='low'?'LOW':'';
+    // Determine action type badge
+    var actionBadge='';
+    var aType=(t._actionType||'').toLowerCase();
+    if(aType.includes('email_template'))actionBadge='<span style="font-size:9px;padding:1px 6px;background:#00e5ff22;color:#00e5ff;border:1px solid #00e5ff44;border-radius:4px;margin-left:6px">📧 EMAIL</span>';
+    else if(aType.includes('lead_suggested'))actionBadge='<span style="font-size:9px;padding:1px 6px;background:#00ff8822;color:#00ff88;border:1px solid #00ff8844;border-radius:4px;margin-left:6px">🆕 LEAD</span>';
+    else if(aType.includes('task_from_chat')||t.fromChat)actionBadge='<span style="font-size:9px;padding:1px 6px;background:#ffb80022;color:#ffb800;border:1px solid #ffb80044;border-radius:4px;margin-left:6px">💬 ИЗ ЧАТА</span>';
+    // Smart approve button label
+    var approveLabel='✅';var approveTitle='Выполнено';
+    if(t.status==='pending'&&aType.includes('email_template')){approveLabel='📧 Отправить';approveTitle='Одобрить и отправить email';}
+    else if(t.status==='pending'&&aType.includes('lead_suggested')){approveLabel='➕ В Pipeline';approveTitle='Добавить лид в Pipeline';}
     return '<div class="task-row '+t.status+'">'+
       '<div class="task-check '+t.status+'">'+statusIcon+'</div>'+
       '<div class="task-body">'+
-        '<div class="task-title-text">'+t.title+(priLabel?'<span class="task-priority '+pri+'">'+priLabel+'</span>':'')+'</div>'+
+        '<div class="task-title-text">'+t.title+actionBadge+(priLabel?'<span class="task-priority '+pri+'">'+priLabel+'</span>':'')+'</div>'+
         '<div class="task-assigned">'+(AGENTS[t.assignedTo]?.emoji||'')+' '+(AGENTS[t.assignedTo]?.name||t.assignedTo)+' • '+(t.dept?.toUpperCase()||'')+'</div>'+
         (t.result?'<div class="task-result">'+t.result+'</div>':'')+
       '</div>'+
       '<div class="task-actions">'+
         (t.status==='pending'?
-          '<button class="task-act" onclick="taskAction('+t.id+',\'done\')" title="Выполнено">✅</button>'+
+          '<button class="task-act" onclick="taskAction('+t.id+',\'done\')" title="'+approveTitle+'" style="'+(aType.includes('email')||aType.includes('lead')?'background:#00ff8822;padding:2px 8px;font-size:10px':'')+'">'+approveLabel+'</button>'+
           '<button class="task-act" onclick="taskAction('+t.id+',\'postponed\')" title="Отложить">⏸</button>'+
           '<button class="task-act" onclick="taskPriority('+t.id+',\'up\')" title="Приоритет ↑">⬆</button>'+
           '<button class="task-act" onclick="taskPriority('+t.id+',\'down\')" title="Приоритет ↓">⬇</button>'+
@@ -1305,6 +1519,15 @@ function renderTasks(){
 }
 window.taskAction=function(id,newStatus){
   const t=D.tasks.find(x=>x.id===id);if(!t)return;
+  // ═══ SMART APPROVAL: If marking as done AND task is actionable → execute real action ═══
+  if(newStatus==='done'){
+    var actionType=(t._actionType||t.title||'').toLowerCase();
+    var isExecutable=actionType.includes('email_template')||actionType.includes('lead_suggested')||actionType.includes('content');
+    if(isExecutable){
+      executeApprovedAction(id);
+      return; // executeApprovedAction handles status change
+    }
+  }
   t.status=newStatus;
   if(newStatus==='done')t.completedDate=new Date().toISOString().slice(0,10);
   if(newStatus==='cancelled')t.completedDate=new Date().toISOString().slice(0,10);
