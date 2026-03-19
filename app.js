@@ -1933,6 +1933,120 @@ function renderIntegrations(){
 }
 renderIntegrations();
 
+// ═══ MINI ANALYTICS ═══
+function renderAnalytics(){
+  var now=new Date();
+  var d7=new Date(now.getTime()-7*86400000);
+  var d24=new Date(now.getTime()-86400000);
+  var monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+
+  // Leads last 7 days
+  var recentLeads=(window._sbPartners||[]).filter(function(p){return p.created_at&&new Date(p.created_at)>=d7;});
+  document.getElementById('chart-leads7d').textContent=recentLeads.length;
+
+  // Posts last 7 days
+  var recentPosts=(window._sbContent||[]).filter(function(c){return c.created_at&&new Date(c.created_at)>=d7;});
+  document.getElementById('chart-posts7d').textContent=recentPosts.length;
+
+  // AI credits this month
+  var monthCredits=(window._sbCredits||[]).filter(function(c){return c.created_at&&new Date(c.created_at)>=monthStart;});
+  var totalCost=monthCredits.reduce(function(s,c){return s+(parseFloat(c.cost_usd)||0);},0);
+  document.getElementById('chart-credits').textContent='$'+totalCost.toFixed(2);
+
+  // Agent cycles last 24h (from reports)
+  var recentCycles=(window._sbReports||[]).filter(function(r){return r.created_at&&new Date(r.created_at)>=d24;});
+  document.getElementById('chart-cycles24h').textContent=recentCycles.length;
+
+  // Sparklines (simple SVG bar charts for last 7 days)
+  renderSparkline('sparkLeads',window._sbPartners||[],'created_at',7,'#00e5ff');
+  renderSparkline('sparkPosts',window._sbContent||[],'created_at',7,'#ff2d78');
+  renderSparkline('sparkCredits',window._sbCredits||[],'created_at',7,'#ffb800');
+  renderSparkline('sparkCycles',window._sbReports||[],'created_at',7,'#00ff88');
+}
+function renderSparkline(elId,data,dateField,days,color){
+  var el=document.getElementById(elId);if(!el)return;
+  var now=new Date();
+  var buckets=[];
+  for(var i=days-1;i>=0;i--){
+    var dayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()-i);
+    var dayEnd=new Date(dayStart.getTime()+86400000);
+    var count=data.filter(function(d){var t=new Date(d[dateField]);return t>=dayStart&&t<dayEnd;}).length;
+    buckets.push(count);
+  }
+  var max=Math.max.apply(null,buckets)||1;
+  var barW=Math.floor(100/days);
+  var svg='<svg width="100%" height="30" viewBox="0 0 '+(days*barW)+' 30">';
+  buckets.forEach(function(v,i){
+    var h=Math.max(2,Math.round((v/max)*28));
+    svg+='<rect x="'+(i*barW+1)+'" y="'+(30-h)+'" width="'+(barW-2)+'" height="'+h+'" rx="2" fill="'+color+'" opacity="0.6"/>';
+  });
+  svg+='</svg>';
+  el.innerHTML=svg;
+}
+
+// ═══ TOAST NOTIFICATIONS ═══
+function showToast(message,type){
+  type=type||'info';
+  var colors={success:'#00ff88',error:'#ff2d78',info:'#00e5ff',warning:'#ffb800'};
+  var icons={success:'✅',error:'❌',info:'ℹ️',warning:'⚠️'};
+  var el=document.createElement('div');
+  el.style.cssText='pointer-events:auto;padding:12px 18px;background:#0d1820ee;border:1px solid '+(colors[type]||colors.info)+'55;border-left:3px solid '+(colors[type]||colors.info)+';border-radius:8px;color:#e8edf2;font-size:13px;backdrop-filter:blur(12px);box-shadow:0 4px 20px #00000066;transform:translateX(120%);transition:transform .3s ease;max-width:360px';
+  el.innerHTML=(icons[type]||'')+'  '+message;
+  document.getElementById('toastContainer').appendChild(el);
+  requestAnimationFrame(function(){el.style.transform='translateX(0)';});
+  setTimeout(function(){
+    el.style.transform='translateX(120%)';
+    setTimeout(function(){el.remove();},350);
+  },3500);
+}
+
+// ═══ PIPELINE FUNNEL VIEW ═══
+var leadViewMode='grid'; // 'grid' or 'pipeline'
+function toggleLeadView(){
+  leadViewMode=leadViewMode==='grid'?'pipeline':'grid';
+  var btn=document.getElementById('leadViewToggle');
+  btn.textContent=leadViewMode==='pipeline'?'📋 Список':'📊 Pipeline';
+  btn.style.background=leadViewMode==='pipeline'?'#00ff8812':'#a855f712';
+  btn.style.color=leadViewMode==='pipeline'?'#00ff88':'#a855f7';
+  btn.style.borderColor=leadViewMode==='pipeline'?'#00ff8833':'#a855f733';
+  document.getElementById('leadsGrid').style.display=leadViewMode==='grid'?'':'none';
+  document.getElementById('leadsPipeline').style.display=leadViewMode==='pipeline'?'':'none';
+  if(leadViewMode==='pipeline')renderPipeline();
+}
+function renderPipeline(){
+  var stages=[
+    {key:'identified',label:'🔍 Найден',color:'#64748b'},
+    {key:'contacted',label:'📧 Контакт',color:'#00e5ff'},
+    {key:'negotiating',label:'🤝 Переговоры',color:'#ffb800'},
+    {key:'closed_won',label:'✅ Закрыт',color:'#00ff88'},
+    {key:'closed_lost',label:'❌ Потерян',color:'#ff2d78'}
+  ];
+  var stageMap={hot:'negotiating',warm:'contacted',medium:'identified'};
+  var html=stages.map(function(s){
+    var leads=D.leads.filter(function(l){
+      var ls=l.sbStage||stageMap[l.priority]||'identified';
+      return ls===s.key;
+    });
+    return '<div style="flex:1;min-width:200px;background:#0a151e;border:1px solid '+s.color+'33;border-radius:10px;padding:10px;display:flex;flex-direction:column">'+
+      '<div style="text-align:center;padding:8px;margin-bottom:8px;background:'+s.color+'15;border-radius:6px;border-bottom:2px solid '+s.color+'">'+
+        '<div style="font-size:13px;font-weight:700;color:'+s.color+'">'+s.label+'</div>'+
+        '<div style="font-size:22px;font-weight:800;color:'+s.color+'">'+leads.length+'</div>'+
+      '</div>'+
+      '<div style="flex:1;display:flex;flex-direction:column;gap:6px;overflow-y:auto;max-height:400px">'+
+        leads.map(function(l){
+          return '<div onclick="openLeadModal('+l.id+')" style="padding:8px 10px;background:#0d1820;border:1px solid #1a2d3d;border-radius:6px;cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor=\''+s.color+'\'" onmouseout="this.style.borderColor=\'#1a2d3d\'">'+
+            '<div style="font-size:12px;font-weight:600;color:#e8edf2">'+l.name+'</div>'+
+            '<div style="font-size:10px;color:var(--dim)">'+l.company+'</div>'+
+            (l.email?'<div style="font-size:9px;color:var(--cyan);margin-top:2px">'+l.email+'</div>':'')+
+          '</div>';
+        }).join('')+
+        (leads.length===0?'<div style="text-align:center;color:#384858;font-size:11px;padding:20px 0">Пусто</div>':'')+
+      '</div>'+
+    '</div>';
+  }).join('');
+  document.getElementById('pipelineBoard').innerHTML=html;
+}
+
 // ═══ CLOCK ═══
 setInterval(()=>{
   document.getElementById('clock').textContent=new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
@@ -2145,6 +2259,10 @@ function renderPosts(){
       <div class="post-text">${(p.text||'').length>180?(p.text||'').slice(0,180)+'...':(p.text||'')}</div>
       <div class="post-tags">${p.hashtags||''}</div>
       <div class="post-date">📅 ${p.date||''}${!p.isLive?' <span style="color:#ff9800;font-size:9px">(mock)</span>':''}</div>
+      ${p.sbStatus==='pending_approval'?`<div style="display:flex;gap:6px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px" onclick="event.stopPropagation()">
+        <button onclick="quickPostAction('${p.sbId||p.id}','approve')" style="flex:1;padding:5px;background:#00ff8812;color:#00ff88;border:1px solid #00ff8833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">✅ Одобрить</button>
+        <button onclick="quickPostAction('${p.sbId||p.id}','reject')" style="flex:1;padding:5px;background:#ff2d7812;color:#ff2d78;border:1px solid #ff2d7833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">❌ Отклонить</button>
+      </div>`:''}
     </div>`).join('');
 }
 document.getElementById('postFilters').addEventListener('click',e=>{
@@ -2249,6 +2367,27 @@ window.postAction=function(id,action){
       addFeed('content','🗑 Пост удалён');
     }
   }
+};
+// Quick approve/reject from card (no modal needed)
+window.quickPostAction=function(id,action){
+  var p=D.posts.find(function(x){return x.id===id||x.sbId===id||x.id==id;});if(!p)return;
+  if(action==='approve'){
+    p.status='ready';p.sbStatus='approved';
+    if(SUPABASE_LIVE&&p.sbId){
+      sbPatch('content_queue','id=eq.'+p.sbId,{status:'approved'});
+    }
+    showToast('Пост одобрен: '+p.platform,'success');
+    addFeed('content','✅ Быстрое одобрение: '+p.platform+' пост');
+  }
+  if(action==='reject'){
+    p.status='draft';p.sbStatus='rejected';
+    if(SUPABASE_LIVE&&p.sbId){
+      sbPatch('content_queue','id=eq.'+p.sbId,{status:'rejected'});
+    }
+    showToast('Пост отклонён','warning');
+    addFeed('content','❌ Пост отклонён: '+p.platform);
+  }
+  renderPosts();updateKPI();
 };
 renderPosts();
 
@@ -2393,7 +2532,7 @@ window.triggerBriefing=async function(btnEl){
       addFeed('coordinator','✅ Брифинг готов: '+(data.briefing.title||'').slice(0,60));
       await reloadAfterAgentRun();
       auditLog('trigger','agents','Брифинг сгенерирован');
-      alert('Брифинг готов! Смотри вкладку Отчёты.');
+      showToast('Брифинг готов! Смотри вкладку Отчёты','success');
     }else if(data.error){
       addFeed('coordinator','❌ '+data.error.slice(0,80));
       alert('Ошибка: '+data.error);
@@ -2445,7 +2584,7 @@ window.triggerAgentCycles=async function(btnEl, singleAgentSlug){
       });
       await reloadAfterAgentRun();
       auditLog('trigger','agents',(isSingle?singleAgentSlug:'all')+' циклы: '+ok.length+' ok, '+fail.length+' fail');
-      alert('Циклы завершены!\n\n'+summaries);
+      showToast('Циклы завершены: '+ok.length+' ✅, '+fail.length+' ❌',fail.length>0?'warning':'success');
     }else{
       addFeed('coordinator','❌ '+(data.error||'Неизвестная ошибка').slice(0,80));
       alert('Ошибка: '+(data.error||JSON.stringify(data)));

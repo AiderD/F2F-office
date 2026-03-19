@@ -108,15 +108,20 @@
 <!-- LEADS PANEL -->
 <div class="panel data-panel" id="panel-leads">
   <div class="data-header"><h2>🎯 CRM — Лиды</h2>
-    <div style="display:flex;gap:12px;align-items:center">
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
       <div class="filter-bar" id="leadFilters">
         <button class="filter-btn active" data-filter="all">Все</button>
         <button class="filter-btn" data-filter="hot">🔥 Hot</button>
         <button class="filter-btn" data-filter="warm">⭐ Warm</button>
         <button class="filter-btn" data-filter="medium">💡 Medium</button>
       </div>
+      <button class="filter-btn" id="leadViewToggle" onclick="toggleLeadView()" style="background:#a855f712;color:#a855f7;border:1px solid #a855f733;font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer">📊 Pipeline</button>
       <div class="data-count" id="leads-count">0 контактов</div>
     </div>
+  </div>
+  <!-- Pipeline Funnel View -->
+  <div id="leadsPipeline" style="display:none;padding:16px;overflow-x:auto">
+    <div id="pipelineBoard" style="display:flex;gap:12px;min-height:400px"></div>
   </div>
   <div class="data-grid" id="leadsGrid"></div>
 </div>
@@ -154,6 +159,29 @@
       <div class="data-count" id="reports-count">0 отчётов</div>
       <button class="act-btn" onclick="triggerBriefing()" title="Запустить брифинг вручную" style="font-size:12px;padding:4px 10px">🚀 Брифинг</button>
       <button class="act-btn" onclick="triggerAgentCycles()" title="Запустить циклы всех агентов" style="font-size:12px;padding:4px 10px">⚡ Циклы</button>
+    </div>
+  </div>
+  <!-- Mini Analytics Charts -->
+  <div id="analyticsBar" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:12px 16px;background:#0a151e;border-bottom:1px solid var(--border)">
+    <div style="text-align:center;padding:10px;background:#0d1820;border-radius:8px;border:1px solid #1a2d3d">
+      <div style="font-size:10px;color:var(--dim);margin-bottom:4px">Лиды за 7 дней</div>
+      <div style="font-size:20px;font-weight:800;color:var(--cyan)" id="chart-leads7d">—</div>
+      <div style="height:30px;margin-top:6px" id="sparkLeads"></div>
+    </div>
+    <div style="text-align:center;padding:10px;background:#0d1820;border-radius:8px;border:1px solid #1a2d3d">
+      <div style="font-size:10px;color:var(--dim);margin-bottom:4px">Посты за 7 дней</div>
+      <div style="font-size:20px;font-weight:800;color:var(--magenta)" id="chart-posts7d">—</div>
+      <div style="height:30px;margin-top:6px" id="sparkPosts"></div>
+    </div>
+    <div style="text-align:center;padding:10px;background:#0d1820;border-radius:8px;border:1px solid #1a2d3d">
+      <div style="font-size:10px;color:var(--dim);margin-bottom:4px">AI кредиты (мес)</div>
+      <div style="font-size:20px;font-weight:800;color:var(--amber)" id="chart-credits">—</div>
+      <div style="height:30px;margin-top:6px" id="sparkCredits"></div>
+    </div>
+    <div style="text-align:center;padding:10px;background:#0d1820;border-radius:8px;border:1px solid #1a2d3d">
+      <div style="font-size:10px;color:var(--dim);margin-bottom:4px">Циклы агентов (24ч)</div>
+      <div style="font-size:20px;font-weight:800;color:var(--green)" id="chart-cycles24h">—</div>
+      <div style="height:30px;margin-top:6px" id="sparkCycles"></div>
     </div>
   </div>
   <div class="data-grid" id="reportsGrid" style="grid-template-columns:repeat(auto-fill,minmax(440px,1fr))"></div>
@@ -286,6 +314,9 @@
 <div class="modal-overlay" id="modal">
   <div class="modal"><button class="modal-close" id="modalClose">✕</button><div id="modalContent"></div></div>
 </div>
+
+<!-- TOAST NOTIFICATIONS -->
+<div id="toastContainer" style="position:fixed;top:80px;right:20px;z-index:99999;display:flex;flex-direction:column;gap:8px;pointer-events:none"></div>
 
 <!-- APP LOGIC -->
 <script src="app.js"></script>
