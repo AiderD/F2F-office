@@ -6,7 +6,8 @@ let SUPABASE_LIVE=false;
 // Map Supabase agent slugs → dashboard agent IDs
 const SB_SLUG_TO_DASH={
   'smm':'content','analyst':'market','bizdev':'leads',
-  'outreach':'outreach','community':'social','coordinator':'coordinator'
+  'outreach':'outreach','community':'social','coordinator':'coordinator',
+  'lead_finder':'lead_finder','followup':'followup'
 };
 const DASH_TO_SB_SLUG={};
 Object.keys(SB_SLUG_TO_DASH).forEach(k=>{DASH_TO_SB_SLUG[SB_SLUG_TO_DASH[k]]=k;});
