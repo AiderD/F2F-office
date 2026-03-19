@@ -287,6 +287,8 @@ function refreshAfterSync(){
       var el=document.getElementById('strategyText');
       if(el&&sv.mission_vision)el.value=sv.mission_vision;
     }
+    // Load exchange rate from directives into financeExchangeRate
+    if(typeof loadExchangeRateFromDirectives==='function')loadExchangeRateFromDirectives();
   }
 
   // ═══ 8. FEED: Restore from Supabase events ═══

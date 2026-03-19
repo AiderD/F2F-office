@@ -500,35 +500,7 @@ window.F2F_DATA = {
     }
   ],
 
-  // ═══ REAL FINANCIAL DATA (February 2026, source: Фин. отчет F2F.xlsx) ═══
-  finance: {
-    period: "February 2026",
-    exchangeRate: 78, // RUB/USDT
-    headcount: 39,
-    salary: {
-      management: { usdt: 8000, rub: 624000, count: 1 },
-      fullTime:   { usdt: 73523, rub: 4042200, count: 37 },
-      partTime:   { usdt: 315, rub: 24570, count: 1 },
-      totalUSDT: 81838, totalRUB: 6383370
-    },
-    subscriptions: [
-      { name: "Yandex Cloud", usdt: 3462, rub: 270000, type: "infra" },
-      { name: "Игровые серверы", usdt: 1885, rub: 147000, type: "infra" },
-      { name: "Yandex Трекер", usdt: 300, rub: 23400, type: "tools" },
-      { name: "CDN МЕНА", usdt: 118, rub: 9180, type: "infra" },
-      { name: "Figma", usdt: 200, rub: 15600, type: "tools" },
-      { name: "Miro", usdt: 200, rub: 15600, type: "tools" },
-      { name: "Sentry", usdt: 20, rub: 1560, type: "tools" },
-      { name: "Фестиваль GameДни", usdt: 15233, rub: 1188175, type: "events" },
-      { name: "Ивенты DOTA2", usdt: 2657, rub: 103616, type: "events" }
-    ],
-    totalSubsUSDT: 24074, totalSubsRUB: 1774131,
-    totalBudgetUSDT: 105918, totalBudgetRUB: 8157501,
-    regularSubsUSDT: 6185, // без ивентов
-    unpaidItems: [
-      { name: "Akmanov Arsen", leftUSDT: 500, leftRUB: 39000 }
-    ]
-  },
+  // ═══ FINANCE: removed — all data from finance_ledger (Supabase) ═══
 
   // ═══ COMPANY DEPARTMENTS (real org structure) ═══
   companyDepts: [
@@ -842,20 +814,6 @@ window.F2F_DATA = {
   },
 
   // ═══ KPI SNAPSHOT (real data) ═══
-  kpi: {
-    leadsFound: 16,
-    postsCreated: 16,
-    reportsGenerated: 30,
-    partnershipsFound: 12,
-    tasksCompleted: 12,
-    tasksPending: 6,
-    weeklyGrowth: "+18%",
-    sentiment: "72% позитивный",
-    burnRateUSDT: 105918,
-    burnRateRUB: 8157501,
-    teamSize: 39,
-    salaryUSDT: 81838,
-    subsUSDT: 24074,
-    exchangeRate: 78
-  }
+  // ═══ KPI: removed — all metrics calculated at runtime from Supabase ═══
+  kpi: {}
 };

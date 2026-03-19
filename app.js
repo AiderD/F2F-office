@@ -382,18 +382,38 @@ document.getElementById('stratSaveBtn').addEventListener('click',async function(
 function fmtK(n){return n>=1000?(n/1000).toFixed(n>=10000?0:1)+'K':n.toString();}
 function fmtUSD(n){return '$'+n.toLocaleString('ru');}
 function fmtRUB(n){return '₽'+n.toLocaleString('ru');}
+// Calculate burn rate from live finance_ledger for current period
+function getLedgerBurn(){
+  var ledger=window._financeLedger||[];
+  var periodEntries=ledger.filter(function(e){return e.period===financePeriod;});
+  var total=0,salary=0,subs=0;
+  periodEntries.forEach(function(e){
+    var amt=parseFloat(e.amount_usdt)||0;
+    total+=amt;
+    if(e.type==='salary')salary+=amt;
+    if(e.type==='subscription'||e.type==='infrastructure')subs+=amt;
+  });
+  return {total:total,salary:salary,subs:subs,count:periodEntries.length};
+}
+
 function updateKPI(){
-  const k=D.kpi;const fin=D.finance||{};
+  var burn=getLedgerBurn();
   // Leads: prefer live count from D.leads (already replaced by SB data in refreshAfterSync)
-  var leadsCount=SUPABASE_LIVE&&window._sbPartners?window._sbPartners.length:(k.leadsFound||D.leads.length);
+  var leadsCount=SUPABASE_LIVE&&window._sbPartners?window._sbPartners.length:D.leads.length;
   document.getElementById('kpi-leads').textContent=leadsCount;
   // Posts: prefer live count
-  var postsCount=SUPABASE_LIVE&&window._sbContent?window._sbContent.length:(k.postsCreated||D.posts.length);
+  var postsCount=SUPABASE_LIVE&&window._sbContent?window._sbContent.length:D.posts.length;
   document.getElementById('kpi-posts').textContent=postsCount;
   document.getElementById('kpi-reports').textContent=D.reports.length;
-  document.getElementById('kpi-partners').textContent=k.partnershipsFound||0;
-  document.getElementById('kpi-team').textContent=fin.headcount||D.team?.length||'-';
-  document.getElementById('kpi-burn').textContent=fin.totalBudgetUSDT?fmtK(fin.totalBudgetUSDT):'—';
+  // Partnerships: from metrics or fallback 0
+  var partnerships=0;
+  if(window._sbMetrics){
+    var pm=window._sbMetrics.partnerships_found||window._sbMetrics.partnerships;
+    if(pm)partnerships=pm.value;
+  }
+  document.getElementById('kpi-partners').textContent=partnerships;
+  document.getElementById('kpi-team').textContent=D.team?D.team.filter(function(t){return t.status==='active';}).length:'-';
+  document.getElementById('kpi-burn').textContent=burn.total>0?fmtK(Math.round(burn.total)):'—';
   // Tab badges: real counts
   document.getElementById('tab-leads-count').textContent=D.leads.length;
   var pendingCount=D.posts.filter(function(p){return p.sbStatus==='pending_approval';}).length;
@@ -410,10 +430,26 @@ updateKPI();
 // ═══ FINANCE PANEL ═══
 // ═══ FINANCE v2 — Immutable Ledger + Payroll ═══
 let financeTab='overview';
-let financePeriod='March 2026';
-let financeExchangeRate=92; // RUB/USDT
+// Auto-calculate current finance period from date
+function calcFinancePeriod(){
+  var now=new Date();
+  var months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return months[now.getMonth()]+' '+now.getFullYear();
+}
+let financePeriod=calcFinancePeriod();
+let financeExchangeRate=92; // RUB/USDT — default, overridden from directives
 let financeWorkDays=22; // working days this month
 window._financeLedger=[]; // loaded from Supabase
+
+// Load exchange rate from directives (called after Supabase sync)
+function loadExchangeRateFromDirectives(){
+  if(!window._sbDirectives)return;
+  var exDir=window._sbDirectives.find(function(d){return d.key==='exchange_rate';});
+  if(exDir&&exDir.value_json){
+    var val=typeof exDir.value_json==='string'?JSON.parse(exDir.value_json):exDir.value_json;
+    if(val.rate)financeExchangeRate=parseFloat(val.rate);
+  }
+}
 
 // Finance sub-tabs
 document.getElementById('financeTabs').addEventListener('click',function(e){
@@ -1390,12 +1426,15 @@ function openApiKeyModal(){
 
 function buildContextForAI(channel){
   var ctx='F2F.vin — esports matchmaking platform.\n';
-  ctx+='Burn rate: $'+(D.finance?D.finance.totalBudgetUSDT.toLocaleString():'?')+'/мес. Команда: '+D.team.filter(function(t){return t.status==='active';}).length+' чел.\n';
+  var burn=getLedgerBurn();
+  ctx+='Burn rate: $'+(burn.total>0?Math.round(burn.total).toLocaleString():'?')+'/мес ('+financePeriod+'). Команда: '+D.team.filter(function(t){return t.status==='active';}).length+' чел.\n';
   ctx+='Лидов: '+D.leads.length+', Постов: '+D.posts.length+', Задач: '+D.tasks.length+'.\n';
-  if(D.finance){ctx+='ФОТ: $'+D.finance.salary.totalUSDT.toLocaleString()+'. Подписки: $'+(D.finance.regularSubsUSDT||0).toLocaleString()+'.\n';}
+  if(burn.salary>0){ctx+='ФОТ: $'+Math.round(burn.salary).toLocaleString()+'. Подписки: $'+Math.round(burn.subs).toLocaleString()+'.\n';}
   var unassigned=D.team.filter(function(t){return t.status==='active'&&t.dept==='unassigned';}).length;
   if(unassigned)ctx+=unassigned+' сотрудников не распределены.\n';
-  if(D.finance&&D.finance.unpaidItems&&D.finance.unpaidItems.length)ctx+='Долги: '+D.finance.unpaidItems.map(function(u){return u.name+' $'+u.leftUSDT;}).join(', ')+'.\n';
+  // Unpaid items from ledger
+  var unpaidItems=(window._financeLedger||[]).filter(function(e){return e.period===financePeriod&&!e.is_paid;});
+  if(unpaidItems.length)ctx+='Неоплачено: '+unpaidItems.length+' записей на $'+Math.round(unpaidItems.reduce(function(s,e){return s+(parseFloat(e.amount_usdt)||0);},0)).toLocaleString()+'.\n';
   // Add agent-specific context
   if(channel.startsWith('agent_')){
     var agId=channel.replace('agent_','');
@@ -1518,8 +1557,8 @@ function chatRespondTemplate(channel,userMsg){
       responses.push({agentId:'leads',text:'В CRM '+D.leads.length+' лидов: '+hot.length+' hot. Топ: '+D.leads.slice(0,3).map(function(l){return l.name+' ('+l.company+')';}).join(', ')+'.',source:'CRM данные'});
     }
     if(kw.includes('бюджет')||kw.includes('деньг')||kw.includes('burn')||kw.includes('расход')||kw.includes('финанс')){
-      var f=D.finance;
-      responses.push({agentId:'budget_analyst',text:'Burn rate: $'+f.totalBudgetUSDT.toLocaleString()+'/мес. ФОТ: $'+f.salary.totalUSDT.toLocaleString()+'.',source:'Фин. отчет'});
+      var fb=getLedgerBurn();
+      responses.push({agentId:'budget_analyst',text:'Burn rate: $'+(fb.total>0?Math.round(fb.total).toLocaleString():'—')+'/мес. ФОТ: $'+(fb.salary>0?Math.round(fb.salary).toLocaleString():'—')+'.',source:'Finance Ledger'});
     }
     if(!responses.length){
       responses.push({agentId:'coordinator',text:'В системе: '+D.leads.length+' лидов, '+D.tasks.length+' задач, '+(D.team.filter(function(t){return t.status==='active';}).length)+' сотрудников. ⚠️ Для умных ответов подключи API ключ (🔑 в header).',source:'Offline-режим'});
@@ -3077,7 +3116,7 @@ function drawOffice(){
   // Draw animated characters from office_chars.js
   if(typeof drawOfficeAgents==='function') drawOfficeAgents(ctx);
 
-  void('F2F.vin AI OFFICE \u2022 REAL DATA \u2022 '+D.leads.length+' LEADS \u2022 '+(D.team?D.team.length:0)+' TEAM \u2022 '+(D.finance?'BURN $'+D.finance.totalBudgetUSDT.toLocaleString():'')+' \u2022 2.5D ENGINE',CW/2,CH-12);
+  void('F2F.vin AI OFFICE \u2022 REAL DATA \u2022 '+D.leads.length+' LEADS \u2022 '+(D.team?D.team.length:0)+' TEAM \u2022 2.5D ENGINE',CW/2,CH-12);
   requestAnimationFrame(drawOffice);
 }
 drawOffice();
@@ -3272,7 +3311,7 @@ function getRealAgentStatus(agentId){
       return '📧 Outreach: '+emailTasks+' email-шаблонов подготовлено | '+D.leads.length+' контактов в базе';
     },
     social:function(){
-      var tgSubs=D.kpi.tgSubs||0;
+      var tgSubs=(window._sbMetrics&&window._sbMetrics.telegram_subscribers)?window._sbMetrics.telegram_subscribers.value:0;
       return '👥 Сообщество: '+(tgSubs?tgSubs+' подписчиков Telegram':'данные обновляются...');
     }
   };
@@ -3330,7 +3369,8 @@ setTimeout(function(){
   addFeed('coordinator','📋 Система запущена. Данные: '+D.leads.length+' лидов, '+D.posts.length+' постов, '+D.reports.length+' отчётов, '+(D.team.filter(function(t){return t.status==='active';}).length)+' сотрудников');
 },500);
 setTimeout(function(){
-  addFeed('budget_analyst','💵 Burn rate: $'+(D.finance?D.finance.totalBudgetUSDT.toLocaleString():'—')+'/мес. Источник: Фин. отчет F2F.xlsx');
+  var initBurn=getLedgerBurn();
+  addFeed('budget_analyst','💵 Burn rate: $'+(initBurn.total>0?Math.round(initBurn.total).toLocaleString():'—')+'/мес ('+financePeriod+'). Источник: Finance Ledger');
 },1500);
 setTimeout(function(){
   var pend=D.tasks.filter(function(t){return t.status==='pending';}).length;
