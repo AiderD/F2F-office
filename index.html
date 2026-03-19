@@ -11,7 +11,29 @@
 </head>
 <body>
 <canvas id="bgCanvas"></canvas>
-<div id="app">
+
+<!-- ═══ LOGIN SCREEN ═══ -->
+<div id="loginScreen" style="position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:#060d13">
+  <div style="text-align:center;max-width:380px;width:90%">
+    <div style="margin-bottom:24px">
+      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjUyIiBoZWlnaHQ9IjEzNyIgdmlld0JveD0iMCAwIDI1MiAxMzciIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik04Ny43MTQzIDEzNEg1OVY5Ni40NTUxTDg3LjcxNDMgNjhIMTkzVjk2LjQ1NTFIMTAzLjkwNEMxMDEuNzE1IDk2LjQ1NTEgOTkuNjIyOCA5Ny4zNTM3IDk4LjExNTUgOTguOTQwN0w4OS45MDkgMTA3LjU4MUM4OC40OTk5IDEwOS4wNjUgODcuNzE0MyAxMTEuMDMzIDg3LjcxNDMgMTEzLjA3OVYxMzRaIiBzdHJva2U9IiMyQ0ZGODAiIHN0cm9rZS13aWR0aD0iMiIvPgo8cGF0aCBkPSJNODcuNzM5OCA2Ny42NjA0SDU4LjVWMjkuNzM5OEw4Ny43Mzk4IDFIMTkzLjVWMjkuNzM5OEgxMDMuOTYyQzEwMS43NjEgMjkuNzM5OCA5OS42NTc2IDMwLjY0ODcgOTguMTQ5IDMyLjI1MTZMODkuOTA5NyA0MS4wMDU5Qzg4LjUxNTkgNDIuNDg2OCA4Ny43Mzk4IDQ0LjQ0MzggODcuNzM5OCA0Ni40Nzc0VjY3LjY2MDRaIiBmaWxsPSIjMkNGRjgwIiBzdHJva2U9IiMyQ0ZGODAiLz4KPC9zdmc+" alt="F2F" style="width:80px;opacity:0.9">
+    </div>
+    <h2 style="color:#e8edf2;margin:0 0 4px;font-size:20px;font-weight:600">F2F Virtual Office</h2>
+    <p style="color:#5a6a7a;font-size:12px;margin:0 0 28px">Введите токен доступа</p>
+    <input type="text" id="loginName" placeholder="Имя Фамилия" autocomplete="name" spellcheck="false"
+      style="width:100%;padding:12px 16px;background:#0d1820;border:1px solid #1a2d3d;border-radius:10px;color:#e8edf2;font-size:14px;outline:none;box-sizing:border-box;transition:border .2s;margin-bottom:10px"
+      onfocus="this.style.borderColor='#2cff80'" onblur="this.style.borderColor='#1a2d3d'">
+    <input type="text" id="loginToken" placeholder="Токен доступа" autocomplete="off" spellcheck="false"
+      style="width:100%;padding:12px 16px;background:#0d1820;border:1px solid #1a2d3d;border-radius:10px;color:#e8edf2;font-size:14px;font-family:monospace;outline:none;box-sizing:border-box;transition:border .2s"
+      onfocus="this.style.borderColor='#2cff80'" onblur="this.style.borderColor='#1a2d3d'"
+      onkeydown="if(event.key==='Enter')loginWithToken()">
+    <div id="loginError" style="color:#ff2d78;font-size:11px;margin-top:8px;display:none"></div>
+    <button onclick="loginWithToken()" style="width:100%;margin-top:14px;padding:11px;background:#2cff80;border:none;border-radius:10px;color:#060d13;font-weight:700;font-size:14px;cursor:pointer;transition:opacity .2s" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">Войти</button>
+    <p style="color:#384858;font-size:10px;margin-top:20px">Запросите токен у администратора</p>
+  </div>
+</div>
+
+<div id="app" style="display:none">
 
 <!-- HEADER -->
 <header>
@@ -36,6 +58,8 @@
     </div>
   </div>
   <div class="header-right">
+    <span id="currentUser" style="font-size:11px;color:var(--dim);margin-right:6px" title="Текущий пользователь"></span>
+    <button onclick="logoutUser()" id="logoutBtn" title="Выйти" style="background:none;border:1px solid var(--border);color:var(--dim);padding:3px 8px;border-radius:6px;cursor:pointer;font-size:11px;transition:all .2s">🚪</button>
     <button onclick="openApiKeyModal()" id="apiKeyBtn" title="Настроить API ключ Claude" style="background:none;border:1px solid var(--border);color:var(--dim);padding:3px 10px;border-radius:6px;cursor:pointer;font-size:11px;transition:all .2s">🔑 API</button>
     <button class="anthem-btn" id="anthemBtn" title="Гимн команды">🎵 ГИМН</button>
     <span class="sync-badge" id="syncBadge">● SYNCED</span>
@@ -56,6 +80,7 @@
   <button class="tab" data-panel="agents">🤖 AI Агенты <span class="badge" style="background:var(--cyan)" id="tab-agents-count">0</span></button>
   <button class="tab" data-panel="chat">💬 Чат</button>
   <button class="tab" data-panel="integrations">🔗 Интеграции</button>
+  <button class="tab" data-panel="admin" id="tabAdmin" style="display:none">🔐 Админ</button>
 </div>
 
 <!-- OFFICE PANEL -->
@@ -238,6 +263,21 @@
     <button class="task-submit" id="taskSubmit">Поставить задачу</button>
   </div>
   <div id="tasksList" style="display:flex;flex-direction:column;gap:8px"></div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div class="panel" id="panel-admin">
+  <div class="section-header">
+    <h2>🔐 Панель администратора</h2>
+    <div style="display:flex;gap:8px">
+      <button class="ctrl-btn active" onclick="openCreateTokenModal()">➕ Создать токен</button>
+    </div>
+  </div>
+  <div style="display:flex;gap:6px;margin-bottom:16px">
+    <button class="sub-tab active" onclick="adminSwitchTab('tokens',this)">🔑 Токены доступа</button>
+    <button class="sub-tab" onclick="adminSwitchTab('audit',this)">📋 Аудит-лог</button>
+  </div>
+  <div id="adminContent"></div>
 </div>
 
 </div><!-- /app -->

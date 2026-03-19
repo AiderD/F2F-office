@@ -1,3 +1,279 @@
+// ═══ TOKEN AUTH SYSTEM ═══
+let _currentSession = JSON.parse(sessionStorage.getItem('f2f_session')||'null');
+// { token_id, token, employee_name, login_name, role, matched_team_id }
+
+// Try auto-login from saved session (runs immediately — DOM already parsed since script at end of body)
+if(_currentSession){
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('app').style.display='';
+}
+
+async function loginWithToken(){
+  const nameInput = document.getElementById('loginName');
+  const tokenInput = document.getElementById('loginToken');
+  const errDiv = document.getElementById('loginError');
+  const name = nameInput.value.trim();
+  const token = tokenInput.value.trim();
+
+  if(!name){ errDiv.textContent='Введите имя и фамилию'; errDiv.style.display='block'; nameInput.focus(); return; }
+  if(!token){ errDiv.textContent='Введите токен доступа'; errDiv.style.display='block'; tokenInput.focus(); return; }
+
+  errDiv.style.display='none';
+
+  // Validate token against Supabase
+  try {
+    const SB_URL = 'https://cuvmjkavluixkbzblcie.supabase.co';
+    const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1dm1qa2F2bHVpeGtiemJsY2llIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NDg4ODgsImV4cCI6MjA4OTMyNDg4OH0.Ie1xGbB45nELK0PbwnKgDu56yxhZugVEdXYoUQT7TG4';
+    const res = await fetch(SB_URL+'/rest/v1/auth_tokens?token=eq.'+encodeURIComponent(token)+'&is_active=eq.true&select=id,token,employee_name,role', {
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+    });
+    const data = await res.json();
+    if(!data||!data.length){
+      errDiv.textContent='Токен недействителен или отозван';
+      errDiv.style.display='block';
+      tokenInput.value='';
+      tokenInput.focus();
+      return;
+    }
+    const tkn = data[0];
+
+    // Match login name with team members
+    let matchedTeamId = null;
+    const nameLower = name.toLowerCase();
+    if(window._sbTeam){
+      const match = window._sbTeam.find(t=>{
+        const full = ((t.first_name||'')+' '+(t.last_name||'')).toLowerCase().trim();
+        return full===nameLower || (t.first_name||'').toLowerCase()===nameLower;
+      });
+      if(match) matchedTeamId = match.id;
+    }
+
+    // Save session
+    _currentSession = {
+      token_id: tkn.id,
+      token: tkn.token,
+      employee_name: tkn.employee_name,
+      login_name: name,
+      role: tkn.role,
+      matched_team_id: matchedTeamId
+    };
+    sessionStorage.setItem('f2f_session', JSON.stringify(_currentSession));
+
+    // Update last_used_at
+    fetch(SB_URL+'/rest/v1/auth_tokens?id=eq.'+tkn.id, {
+      method:'PATCH',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({last_used_at:new Date().toISOString()})
+    });
+
+    // Write audit log entry
+    auditLog('login','auth','Вход: '+name+' (роль: '+tkn.role+')');
+
+    // Show dashboard
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('app').style.display='';
+    updateUserBadge();
+
+  } catch(e){
+    errDiv.textContent='Ошибка подключения к серверу';
+    errDiv.style.display='block';
+    console.error('Login error:',e);
+  }
+}
+
+function logoutUser(){
+  if(_currentSession) auditLog('logout','auth','Выход: '+_currentSession.login_name);
+  _currentSession=null;
+  sessionStorage.removeItem('f2f_session');
+  document.getElementById('loginScreen').style.display='flex';
+  document.getElementById('app').style.display='none';
+}
+
+function updateUserBadge(){
+  const el = document.getElementById('currentUser');
+  const adminTab = document.getElementById('tabAdmin');
+  if(!_currentSession){ if(el) el.textContent=''; return; }
+  const roleLabels = {admin:'👑',editor:'✏️',viewer:'👁️'};
+  if(el) el.textContent = (roleLabels[_currentSession.role]||'')+ ' ' + _currentSession.login_name;
+  // Show admin tab only for admin role
+  if(adminTab) adminTab.style.display = _currentSession.role==='admin' ? '' : 'none';
+}
+// Init user badge on auto-login
+updateUserBadge();
+
+function isAdmin(){ return _currentSession && _currentSession.role==='admin'; }
+function isEditor(){ return _currentSession && (_currentSession.role==='admin'||_currentSession.role==='editor'); }
+function getCurrentUser(){ return _currentSession ? _currentSession.login_name : 'unknown'; }
+function getCurrentTokenId(){ return _currentSession ? _currentSession.token_id : null; }
+
+// ═══ AUDIT LOG ═══
+async function auditLog(action, section, details){
+  try {
+    const body = {
+      token_id: getCurrentTokenId(),
+      employee_name: getCurrentUser(),
+      action: action,
+      section: section||null,
+      details: typeof details==='string' ? {text:details} : (details||null)
+    };
+    await sbInsert('audit_log', body);
+  } catch(e){ console.warn('Audit log error:',e); }
+}
+
+// ═══ ADMIN PANEL ═══
+let adminTab = 'tokens';
+function adminSwitchTab(tab, btn){
+  adminTab=tab;
+  document.querySelectorAll('#panel-admin .sub-tab').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  renderAdmin();
+}
+
+async function renderAdmin(){
+  if(!isAdmin()) return;
+  const c = document.getElementById('adminContent');
+  if(!c) return;
+
+  if(adminTab==='tokens') await renderAdminTokens(c);
+  else await renderAdminAudit(c);
+}
+
+async function renderAdminTokens(container){
+  const SB_URL = 'https://cuvmjkavluixkbzblcie.supabase.co';
+  const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1dm1qa2F2bHVpeGtiemJsY2llIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NDg4ODgsImV4cCI6MjA4OTMyNDg4OH0.Ie1xGbB45nELK0PbwnKgDu56yxhZugVEdXYoUQT7TG4';
+  const res = await fetch(SB_URL+'/rest/v1/auth_tokens?select=*&order=created_at.desc', {
+    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+  });
+  const tokens = await res.json();
+
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border)">';
+  html += '<th style="padding:8px;text-align:left;color:var(--dim)">Сотрудник</th>';
+  html += '<th style="padding:8px;text-align:left;color:var(--dim)">Токен</th>';
+  html += '<th style="padding:8px;text-align:left;color:var(--dim)">Роль</th>';
+  html += '<th style="padding:8px;text-align:left;color:var(--dim)">Создан</th>';
+  html += '<th style="padding:8px;text-align:left;color:var(--dim)">Посл. вход</th>';
+  html += '<th style="padding:8px;text-align:left;color:var(--dim)">Статус</th>';
+  html += '<th style="padding:8px;text-align:right;color:var(--dim)">Действие</th>';
+  html += '</tr></thead><tbody>';
+
+  (tokens||[]).forEach(t=>{
+    const active = t.is_active;
+    const roleColors = {admin:'#ffb800',editor:'#2cff80',viewer:'#00e5ff'};
+    const roleNames = {admin:'Админ',editor:'Редактор',viewer:'Наблюдатель'};
+    const created = t.created_at ? new Date(t.created_at).toLocaleDateString('ru-RU') : '—';
+    const lastUsed = t.last_used_at ? timeSince(t.last_used_at) : 'никогда';
+    html += '<tr style="border-bottom:1px solid var(--border);opacity:'+(active?1:0.4)+'">';
+    html += '<td style="padding:8px;color:var(--text)">'+t.employee_name+'</td>';
+    html += '<td style="padding:8px"><code style="background:var(--surface);padding:2px 6px;border-radius:4px;font-size:11px;color:var(--cyan)">'+t.token+'</code></td>';
+    html += '<td style="padding:8px"><span style="color:'+(roleColors[t.role]||'var(--dim)')+'">'+( roleNames[t.role]||t.role)+'</span></td>';
+    html += '<td style="padding:8px;color:var(--dim)">'+created+'</td>';
+    html += '<td style="padding:8px;color:var(--dim)">'+lastUsed+'</td>';
+    html += '<td style="padding:8px">'+(active?'<span style="color:var(--green)">Активен</span>':'<span style="color:var(--hot)">Отозван</span>')+'</td>';
+    html += '<td style="padding:8px;text-align:right">';
+    if(active) html += '<button onclick="revokeToken(\''+t.id+'\')" style="background:var(--hot)22;color:var(--hot);border:1px solid var(--hot)44;padding:3px 10px;border-radius:6px;cursor:pointer;font-size:11px">Отозвать</button>';
+    else html += '<button onclick="reactivateToken(\''+t.id+'\')" style="background:var(--green)22;color:var(--green);border:1px solid var(--green)44;padding:3px 10px;border-radius:6px;cursor:pointer;font-size:11px">Восстановить</button>';
+    html += '</td></tr>';
+  });
+
+  html += '</tbody></table>';
+  if(!tokens||!tokens.length) html = '<div style="text-align:center;padding:40px;color:var(--dim)">Нет токенов</div>';
+  container.innerHTML = html;
+}
+
+async function renderAdminAudit(container){
+  const SB_URL = 'https://cuvmjkavluixkbzblcie.supabase.co';
+  const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1dm1qa2F2bHVpeGtiemJsY2llIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NDg4ODgsImV4cCI6MjA4OTMyNDg4OH0.Ie1xGbB45nELK0PbwnKgDu56yxhZugVEdXYoUQT7TG4';
+  const res = await fetch(SB_URL+'/rest/v1/audit_log?select=*&order=created_at.desc&limit=200', {
+    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+  });
+  const logs = await res.json();
+
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border)">';
+  html += '<th style="padding:8px;text-align:left;color:var(--dim)">Время</th>';
+  html += '<th style="padding:8px;text-align:left;color:var(--dim)">Сотрудник</th>';
+  html += '<th style="padding:8px;text-align:left;color:var(--dim)">Действие</th>';
+  html += '<th style="padding:8px;text-align:left;color:var(--dim)">Раздел</th>';
+  html += '<th style="padding:8px;text-align:left;color:var(--dim)">Детали</th>';
+  html += '</tr></thead><tbody>';
+
+  const actionIcons = {login:'🔓',logout:'🚪',create:'➕',update:'✏️',delete:'🗑️',payment:'💸',generate:'⚙️',export:'📥'};
+  const sectionNames = {auth:'Авторизация',finance:'Финансы',team:'Команда',agents:'Агенты',tokens:'Токены',strategy:'Стратегия'};
+
+  (logs||[]).forEach(l=>{
+    const time = l.created_at ? new Date(l.created_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+    const icon = actionIcons[l.action]||'📌';
+    const detailText = l.details ? (l.details.text || JSON.stringify(l.details)) : '';
+    html += '<tr style="border-bottom:1px solid var(--border)">';
+    html += '<td style="padding:8px;color:var(--dim);white-space:nowrap">'+time+'</td>';
+    html += '<td style="padding:8px;color:var(--text)">'+l.employee_name+'</td>';
+    html += '<td style="padding:8px">'+icon+' '+l.action+'</td>';
+    html += '<td style="padding:8px;color:var(--cyan)">'+(sectionNames[l.section]||l.section||'')+'</td>';
+    html += '<td style="padding:8px;color:var(--dim);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+detailText.replace(/"/g,'&quot;')+'">'+detailText+'</td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  if(!logs||!logs.length) html = '<div style="text-align:center;padding:40px;color:var(--dim)">Аудит-лог пуст</div>';
+  container.innerHTML = html;
+}
+
+function openCreateTokenModal(){
+  const modal=document.getElementById('modal');
+  const mc=document.getElementById('modalContent');
+  const randomToken = 'f2f_'+Array.from(crypto.getRandomValues(new Uint8Array(12))).map(b=>b.toString(36).padStart(2,'0')).join('').slice(0,16);
+  mc.innerHTML = '<h3 style="margin:0 0 16px">➕ Создать токен доступа</h3>'+
+    '<div style="display:flex;flex-direction:column;gap:12px">'+
+    '<div><label style="font-size:11px;color:var(--dim)">Имя сотрудника</label>'+
+    '<input id="newTokenName" placeholder="Иван Иванов" style="width:100%;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box;margin-top:4px"></div>'+
+    '<div><label style="font-size:11px;color:var(--dim)">Роль</label>'+
+    '<select id="newTokenRole" style="width:100%;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box;margin-top:4px">'+
+    '<option value="viewer">👁️ Наблюдатель — только просмотр</option>'+
+    '<option value="editor">✏️ Редактор — просмотр + редактирование</option>'+
+    '<option value="admin">👑 Админ — полный доступ</option>'+
+    '</select></div>'+
+    '<div><label style="font-size:11px;color:var(--dim)">Токен (авто-генерация)</label>'+
+    '<div style="display:flex;gap:6px;margin-top:4px"><input id="newTokenValue" value="'+randomToken+'" readonly style="flex:1;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--cyan);font-size:13px;font-family:monospace;outline:none;box-sizing:border-box">'+
+    '<button onclick="navigator.clipboard.writeText(document.getElementById(\'newTokenValue\').value)" style="padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px" title="Копировать">📋</button></div></div>'+
+    '<div><label style="font-size:11px;color:var(--dim)">Заметка (опционально)</label>'+
+    '<input id="newTokenNote" placeholder="Для доступа к финансам..." style="width:100%;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box;margin-top:4px"></div>'+
+    '<button onclick="createToken()" style="padding:10px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:600;font-size:13px;cursor:pointer;margin-top:4px">Создать токен</button>'+
+    '</div>';
+  modal.classList.add('open');
+}
+
+async function createToken(){
+  const name = document.getElementById('newTokenName').value.trim();
+  const role = document.getElementById('newTokenRole').value;
+  const token = document.getElementById('newTokenValue').value;
+  const note = document.getElementById('newTokenNote').value.trim();
+  if(!name){ alert('Укажите имя сотрудника'); return; }
+
+  const result = await sbInsert('auth_tokens',{
+    token: token,
+    employee_name: name,
+    role: role,
+    notes: note||null
+  });
+  if(result){
+    auditLog('create','tokens','Создан токен для: '+name+' ('+role+')');
+    document.getElementById('modal').classList.remove('open');
+    renderAdmin();
+  }
+}
+
+async function revokeToken(id){
+  if(!confirm('Отозвать токен? Сотрудник потеряет доступ.')) return;
+  await sbPatch('auth_tokens','id=eq.'+id,{is_active:false});
+  auditLog('update','tokens','Токен отозван: '+id);
+  renderAdmin();
+}
+
+async function reactivateToken(id){
+  await sbPatch('auth_tokens','id=eq.'+id,{is_active:true});
+  auditLog('update','tokens','Токен восстановлен: '+id);
+  renderAdmin();
+}
+
 // ═══ DATA ═══
 const D = window.F2F_DATA || {leads:[],posts:[],reports:[],tasks:[],companies:[],kpi:{},financeReports:[],hrReports:[],techReports:[]};
 // Merge all department reports into one unified reports array
@@ -31,6 +307,8 @@ const DEPTS = [
 
 // ═══ TABS ═══
 function switchTab(panelId){
+  // Admin-only sections
+  if(panelId==='admin' && !isAdmin()) return;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   const tab=document.querySelector('.tab[data-panel="'+panelId+'"]');
@@ -38,6 +316,7 @@ function switchTab(panelId){
   const panel=document.getElementById('panel-'+panelId);
   if(panel)panel.classList.add('active');
   if(panelId==='office') resizeCanvas();
+  if(panelId==='admin') renderAdmin();
 }
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>switchTab(tab.dataset.panel));
@@ -344,6 +623,7 @@ window.confirmPayment=async function(entryId){
   modal.classList.remove('open');
   renderFinance();
   addFeed('coordinator','💳 Оплата подтверждена: '+(entry?entry.description:''));
+  auditLog('payment','finance','Оплата: '+(entry?entry.description:entryId));
 };
 
 // ═══ FINANCE ENTRY FORM — add new record (append-only) ═══
@@ -438,7 +718,7 @@ window.submitFinanceEntry=async function(){
   var description=document.getElementById('feDescription').value;
   if(!description){alert('Укажите описание');return;}
 
-  var entry={period:period,type:type,description:description,is_paid:false,created_by:'ceo'};
+  var entry={period:period,type:type,description:description,is_paid:false,created_by:getCurrentUser()};
 
   if(type==='salary'){
     var empId=parseInt(document.getElementById('feEmployee').value);
@@ -467,6 +747,7 @@ window.submitFinanceEntry=async function(){
     modal.classList.remove('open');
     renderFinance();
     addFeed('coordinator','💾 Финансовая запись: '+description+' — $'+entry.amount_usdt);
+    auditLog('create','finance','Добавлена запись: '+description+' $'+entry.amount_usdt);
   }else{
     alert('Ошибка сохранения. Проверь соединение.');
   }
@@ -541,7 +822,7 @@ window.submitPayroll=async function(workDays){
       working_days_in_month:workDays,
       days_worked:daysWorked,
       base_salary_usdt:parseFloat(emp.salary_usdt),
-      is_paid:false, created_by:'ceo'
+      is_paid:false, created_by:getCurrentUser()
     });
   });
   if(!entries.length){alert('Нет записей для создания');return;}
@@ -551,6 +832,7 @@ window.submitPayroll=async function(workDays){
     modal.classList.remove('open');
     renderFinance();
     addFeed('coordinator','📋 Расчёт ЗП за '+financePeriod+': '+entries.length+' записей создано');
+    auditLog('generate','finance','Расчёт ЗП за '+financePeriod+': '+entries.length+' записей, $'+entries.reduce(function(s,e){return s+e.amount_usdt;},0).toFixed(2));
   }else{
     alert('Ошибка сохранения');
   }
@@ -584,6 +866,7 @@ window.exportFinanceExcel=function(){
   var a=document.createElement('a');
   a.href=url;a.download='F2F_Finance_'+financePeriod.replace(/\s/g,'_')+'.csv';
   document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+  auditLog('export','finance','Excel экспорт за '+financePeriod+': '+ledger.length+' записей');
 };
 
 // Load ledger on init
@@ -741,6 +1024,7 @@ window.teamSaveSalary=async function(id){
   renderTeam();
   openTeamMemberModal(id);
   addFeed('coordinator','💰 ЗП обновлена: '+t.name+' — $'+salaryUSDT+'/мес');
+  auditLog('update','team','ЗП: '+t.name+' $'+salaryUSDT+' / ₽'+salaryRUB);
 };
 
 window.teamAssignDept=function(id,deptId){
@@ -944,6 +1228,7 @@ window.saveAgentPrompt=async function(agentId){
       if(result){
         agent.system_prompt=text; // update local cache
         addFeed(agentId,'📝 Промпт сохранён в Supabase — агент будет использовать на следующем цикле');
+        auditLog('update','agents','Промпт обновлён: '+agentId);
       }else{
         addFeed(agentId,'⚠️ Ошибка сохранения промпта');
       }
