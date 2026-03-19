@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>F2F.vin • AI Virtual Office v15</title>
+<link rel="stylesheet" href="styles.css">
+<script src="f2f_data.js"></script>
+<script src="office_chars.js" defer></script>
+<script src="supabase.js"></script>
+</head>
+<body>
+<canvas id="bgCanvas"></canvas>
+<div id="app">
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon"><img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjUyIiBoZWlnaHQ9IjEzNyIgdmlld0JveD0iMCAwIDI1MiAxMzciIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxwYXRoIGQ9Ik04Ny43MTQzIDEzNEg1OVY5Ni40NTUxTDg3LjcxNDMgNjhIMTkzVjk2LjQ1NTFIMTAzLjkwNEMxMDEuNzE1IDk2LjQ1NTEgOTkuNjIyOCA5Ny4zNTM3IDk4LjExNTUgOTguOTQwN0w4OS45MDkgMTA3LjU4MUM4OC40OTk5IDEwOS4wNjUgODcuNzE0MyAxMTEuMDMzIDg3LjcxNDMgMTEzLjA3OVYxMzRaIiBzdHJva2U9IiMyQ0ZGODAiIHN0cm9rZS13aWR0aD0iMiIvPgo8cGF0aCBkPSJNODcuNzM5OCA2Ny42NjA0SDU4LjVWMjkuNzM5OEw4Ny43Mzk4IDFIMTkzLjVWMjkuNzM5OEgxMDMuOTYyQzEwMS43NjEgMjkuNzM5OCA5OS42NTc2IDMwLjY0ODcgOTguMTQ5IDMyLjI1MTZMODkuOTA5NyA0MS4wMDU5Qzg4LjUxNTkgNDIuNDg2OCA4Ny43Mzk4IDQ0LjQ0MzggODcuNzM5OCA0Ni40Nzc0VjY3LjY2MDRaIiBmaWxsPSIjMkNGRjgwIiBzdHJva2U9IiMyQ0ZGODAiLz4KPC9zdmc+" alt="F2F Logo" /></div>
+    <div><h1>F2F.vin</h1><small>AI VIRTUAL OFFICE</small></div>
+  </div>
+  <div class="header-kpis">
+    <div class="kpi" data-goto="leads" title="Открыть CRM лиды"><div class="v" style="color:var(--cyan)" id="kpi-leads">-</div><div class="l">Leads</div></div>
+    <div class="kpi" data-goto="posts" title="Открыть посты"><div class="v" style="color:var(--magenta)" id="kpi-posts">-</div><div class="l">Posts</div></div>
+    <div class="kpi" data-goto="reports" title="Открыть отчёты"><div class="v" style="color:var(--green)" id="kpi-reports">-</div><div class="l">Reports</div></div>
+    <div class="kpi" data-goto="reports" title="Партнёрские отчёты"><div class="v" style="color:var(--amber)" id="kpi-partners">-</div><div class="l">Partners</div></div>
+    <div class="kpi" data-goto="team" title="Открыть команду"><div class="v" style="color:#22d3ee" id="kpi-team">-</div><div class="l">Team</div></div>
+    <div class="kpi" data-goto="finance" title="Открыть финансы"><div class="v" style="color:var(--hot)" id="kpi-burn">-</div><div class="l">Burn/мес</div></div>
+    <div class="kpi" style="min-width:120px">
+      <div class="credit-widget">
+        <div class="credit-bar"><div class="credit-fill" id="creditFill" style="width:100%"></div></div>
+        <span class="credit-text" id="creditText">-- / --</span>
+        <button class="ctrl-btn active" id="agentToggle" title="Пауза/Продолжить агентов">▶</button>
+      </div>
+      <div class="l">Credits</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <button onclick="openApiKeyModal()" id="apiKeyBtn" title="Настроить API ключ Claude" style="background:none;border:1px solid var(--border);color:var(--dim);padding:3px 10px;border-radius:6px;cursor:pointer;font-size:11px;transition:all .2s">🔑 API</button>
+    <button class="anthem-btn" id="anthemBtn" title="Гимн команды">🎵 ГИМН</button>
+    <span class="sync-badge" id="syncBadge">● SYNCED</span>
+    <span id="clock">--:--:--</span>
+  </div>
+</header>
+
+<!-- TABS -->
+<div class="tabs-bar">
+  <button class="tab active" data-panel="office">🏢 Офис</button>
+  <button class="tab" data-panel="leads">🎯 Лиды <span class="badge" id="tab-leads-count">0</span></button>
+  <button class="tab" data-panel="posts">✍️ Посты <span class="badge" id="tab-posts-count">0</span></button>
+  <button class="tab" data-panel="reports">📊 Отчёты <span class="badge" id="tab-reports-count">0</span></button>
+  <button class="tab" data-panel="tasks">📋 Задачи</button>
+  <button class="tab" data-panel="strategy">🎯 Стратегия</button>
+  <button class="tab" data-panel="finance">💰 Финансы</button>
+  <button class="tab" data-panel="team">👥 Команда <span class="badge" id="tab-team-count">0</span></button>
+  <button class="tab" data-panel="agents">🤖 AI Агенты <span class="badge" style="background:var(--cyan)" id="tab-agents-count">0</span></button>
+  <button class="tab" data-panel="chat">💬 Чат</button>
+  <button class="tab" data-panel="integrations">🔗 Интеграции</button>
+</div>
+
+<!-- OFFICE PANEL -->
+<div class="panel active office-panel" id="panel-office">
+  <div class="office-left" id="agentList"></div>
+  <div class="office-canvas" id="officeCanvasWrap" style="position:relative;overflow:hidden">
+    <div id="officeWorld" style="position:absolute;width:512px;height:544px;transform-origin:0 0">
+      <img id="officeBgImg" src="f2f_office_bg.png" style="width:512px;height:544px;image-rendering:pixelated;display:block" draggable="false">
+      <canvas id="officeCanvas" style="position:absolute;top:0;left:0;width:512px;height:544px" width="512" height="544"></canvas>
+    </div>
+    <div style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:10px;color:#ffffff33;pointer-events:none;z-index:1;background:#00000066;padding:3px 12px;border-radius:8px">Перетаскивай мышью | Колёсико = зум | Клик на агента = инфо</div>
+    <div style="position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:1">
+      <button onclick="camZoom=Math.min(3,camZoom*1.2)" style="width:28px;height:28px;background:#0a1118cc;border:1px solid #1a2d3d;border-radius:6px;color:#fff;cursor:pointer;font-size:14px">+</button>
+      <button onclick="camZoom=Math.max(0.4,camZoom*0.8)" style="width:28px;height:28px;background:#0a1118cc;border:1px solid #1a2d3d;border-radius:6px;color:#fff;cursor:pointer;font-size:14px">-</button>
+      <button onclick="camX=0;camY=0;camZoom=1" style="height:28px;background:#0a1118cc;border:1px solid #1a2d3d;border-radius:6px;color:#fff;cursor:pointer;font-size:10px;padding:0 8px">Reset</button>
+    </div>
+  </div>
+  <div class="office-feed">
+    <div class="feed-header">Live Activity</div>
+    <div class="feed-filters" id="feedFilters" style="display:flex;flex-wrap:wrap;gap:3px;padding:6px 10px;border-bottom:1px solid var(--border)"></div>
+    <div class="feed-list" id="feedList"></div>
+  </div>
+</div>
+
+<!-- LEADS PANEL -->
+<div class="panel data-panel" id="panel-leads">
+  <div class="data-header"><h2>🎯 CRM — Лиды</h2>
+    <div style="display:flex;gap:12px;align-items:center">
+      <div class="filter-bar" id="leadFilters">
+        <button class="filter-btn active" data-filter="all">Все</button>
+        <button class="filter-btn" data-filter="hot">🔥 Hot</button>
+        <button class="filter-btn" data-filter="warm">⭐ Warm</button>
+        <button class="filter-btn" data-filter="medium">💡 Medium</button>
+      </div>
+      <div class="data-count" id="leads-count">0 контактов</div>
+    </div>
+  </div>
+  <div class="data-grid" id="leadsGrid"></div>
+</div>
+
+<!-- POSTS PANEL -->
+<div class="panel data-panel" id="panel-posts">
+  <div class="data-header"><h2>✍️ SMM — Посты</h2>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div class="filter-bar" id="postFilters">
+        <button class="filter-btn active" data-filter="all">Все</button>
+        <button class="filter-btn" data-filter="Telegram">Telegram</button>
+        <button class="filter-btn" data-filter="Twitter">Twitter</button>
+        <button class="filter-btn" data-filter="pending">⏳ Pending</button>
+        <button class="filter-btn" data-filter="approved">✅ Одобрен</button>
+        <button class="filter-btn" data-filter="published">📢 Опубликован</button>
+      </div>
+      <button onclick="generatePostsBatch()" id="btnGenPosts" style="padding:6px 14px;background:#00e5ff22;color:#00e5ff;border:1px solid #00e5ff44;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">🤖 Сгенерировать посты</button>
+      <div class="data-count" id="posts-count">0 постов</div>
+    </div>
+  </div>
+  <div class="data-grid" id="postsGrid"></div>
+</div>
+
+<!-- REPORTS PANEL -->
+<div class="panel data-panel" id="panel-reports">
+  <div class="data-header"><h2>📊 Отчёты агентов</h2>
+    <div style="display:flex;gap:12px;align-items:center">
+      <div class="filter-bar" id="reportFilters">
+        <button class="filter-btn active" data-filter="all">Все</button>
+        <button class="filter-btn" data-filter="morning">🌅 Утренний</button>
+        <button class="filter-btn" data-filter="evening">🌙 Вечерний</button>
+        <button class="filter-btn" data-filter="daily">📋 Цикл агента</button>
+        <button class="filter-btn" data-filter="weekly">📊 Недельный</button>
+      </div>
+      <div class="data-count" id="reports-count">0 отчётов</div>
+      <button class="act-btn" onclick="triggerBriefing()" title="Запустить брифинг вручную" style="font-size:12px;padding:4px 10px">🚀 Брифинг</button>
+      <button class="act-btn" onclick="triggerAgentCycles()" title="Запустить циклы всех агентов" style="font-size:12px;padding:4px 10px">⚡ Циклы</button>
+    </div>
+  </div>
+  <div class="data-grid" id="reportsGrid" style="grid-template-columns:repeat(auto-fill,minmax(440px,1fr))"></div>
+</div>
+
+<!-- FINANCE PANEL -->
+<div class="panel data-panel" id="panel-finance">
+  <div class="data-header"><h2>💰 Финансы — реальные данные</h2><div class="data-count" id="finance-period">-</div></div>
+  <div id="financeContent"></div>
+</div>
+
+<!-- TEAM PANEL -->
+<div class="panel data-panel" id="panel-team">
+  <div class="data-header"><h2>👥 Команда — управление</h2><div style="display:flex;gap:8px;align-items:center"><div class="data-count" id="team-count">-</div></div></div>
+  <div class="sub-tabs" id="teamDeptTabs"></div>
+  <div id="teamContent"></div>
+</div>
+
+<!-- AI AGENTS PANEL -->
+<div class="panel data-panel" id="panel-agents">
+  <div class="data-header"><h2>🤖 AI Агенты — что они делают и зачем</h2><div class="data-count" id="agents-summary">-</div></div>
+  <div style="padding:12px 0;font-size:13px;color:var(--dim);line-height:1.6;border-bottom:1px solid var(--border);margin-bottom:16px">
+    <b style="color:var(--cyan)">12 активных AI-сценариев</b> на Make.com — 6 агентов + 6 сервисных.<br>
+    Полный цикл: поиск лидов → генерация email → CEO одобрение → отправка → follow-up.
+  </div>
+  <div id="agentsDetailGrid" class="fin-grid"></div>
+</div>
+
+<!-- CHAT PANEL -->
+<div class="panel chat-panel" id="panel-chat">
+  <div class="chat-container">
+    <div class="chat-sidebar" id="chatSidebar"></div>
+    <div class="chat-main">
+      <div class="chat-header-bar" id="chatHeader">💬 Общий чат</div>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input-bar"><input id="chatInput" placeholder="Напиши команде..." autocomplete="off"><button id="chatSend">Отправить</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- INTEGRATIONS PANEL -->
+<div class="panel data-panel" id="panel-integrations">
+  <div class="data-header"><h2>🔗 Интеграции</h2><div class="data-count" id="intg-count">-</div></div>
+  <div id="intgContent"></div>
+</div>
+
+<!-- STRATEGY & KPI PANEL -->
+<div class="panel data-panel" id="panel-strategy">
+  <div class="data-header"><h2>🎯 Стратегия & KPI</h2><button class="ctrl-btn" id="stratSaveBtn" style="background:var(--green)22;color:var(--green)">💾 Сохранить</button></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:20px">
+    <div>
+      <h3 style="margin-top:0;color:var(--cyan);font-size:14px;margin-bottom:12px">Миссия & Видение</h3>
+      <textarea id="strategyText" placeholder="Напиши миссию, видение, квартальные OKR и стратегические цели..." style="width:100%;height:280px;padding:12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:#ccc;font-family:monospace;font-size:12px;resize:vertical;line-height:1.5;border-color:#334155;transition:border-color .2s" onfocus="this.style.borderColor='var(--cyan)'" onblur="this.style.borderColor='#334155'"></textarea>
+    </div>
+    <div>
+      <h3 style="margin-top:0;color:var(--amber);font-size:14px;margin-bottom:12px">KPI Цели (на месяц)</h3>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📞 Лиды/месяц:</label><input id="kpi-leads" type="number" value="45" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📧 Email/месяц:</label><input id="kpi-emails" type="number" value="200" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📝 Контент/месяц:</label><input id="kpi-content" type="number" value="20" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">💰 Выручка/месяц:</label><input id="kpi-revenue" type="number" value="15000" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:100px"></div>
+      </div>
+      <h3 style="margin-top:20px;color:#4aff00;font-size:14px;margin-bottom:12px">Декомпозиция стратегии</h3>
+      <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;color:var(--dim);line-height:1.6;max-height:180px;overflow-y:auto">
+        <p style="margin:0 0 8px 0"><b style="color:#00ff88">→ Coordinator</b> разбивает стратегию на неделю</p>
+        <p style="margin:0 0 8px 0"><b style="color:#ffb800">→ Lead Scout</b> ищет N лидов/день</p>
+        <p style="margin:0 0 8px 0"><b style="color:#ff2d78">→ SMM</b> публикует N постов/неделю</p>
+        <p style="margin:0 0 8px 0"><b style="color:#00e5ff">→ Analytics</b> отслеживает прогресс KPI</p>
+        <p style="margin:0"><b style="color:#a78bfa">→ System</b> скрипты для автоматизации</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TASKS PANEL -->
+<div class="panel data-panel" id="panel-tasks">
+  <div class="data-header"><h2>📋 Задачи агентам</h2></div>
+  <div class="task-input-area">
+    <input class="task-input" id="taskInput" placeholder="Опиши задачу для агента...">
+    <select class="task-select" id="taskAgent">
+      <option value="">Выбери агента</option>
+      <option value="coordinator">🎯 Coordinator v8</option>
+      <option value="content">📱 SMM Agent v9</option>
+      <option value="market">📊 Analyst Agent v8</option>
+      <option value="leads">📧 BizDev Agent v13</option>
+      <option value="outreach">🎯 Outreach Agent v8</option>
+      <option value="social">👥 Community Agent v8</option>
+      <option value="lead_finder">🔍 Lead Finder v2</option>
+      <option value="followup">📨 Follow-Up v1</option>
+      <option value="processor">⚙️ Processor v2</option>
+      <option value="watchdog">🛡️ Watchdog v1</option>
+      <option value="briefing">☀️ Morning Briefing v2</option>
+    </select>
+    <button class="task-submit" id="taskSubmit">Поставить задачу</button>
+  </div>
+  <div id="tasksList" style="display:flex;flex-direction:column;gap:8px"></div>
+</div>
+
+</div><!-- /app -->
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal">
+  <div class="modal"><button class="modal-close" id="modalClose">✕</button><div id="modalContent"></div></div>
+</div>
+
+<!-- APP LOGIC -->
+<script src="app.js"></script>
+
+<!-- ANTHEM OVERLAY -->
+<div class="anthem-overlay" id="anthemOverlay">
+  <div class="anthem-text">🔥 ANZEM 🔥<br>F2F.vin</div>
+  <div class="anthem-agents-row" id="anthemAgentsRow"></div>
+</div>
+
+</body>
+</html>
