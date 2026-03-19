@@ -1870,15 +1870,19 @@ function buildLiveIntegrations(){
   connected.push({name:'pg_cron',purpose:'Auto scheduling',status:hasCron?'active':'limited',
     detail:hasCron?'11 jobs active':'Check SQL console'});
 
-  // 4. Telegram Bot — check if processor agent has recent memory
-  var procMem=window._sbMemory?window._sbMemory.find(function(m){return m.slug==='processor'||m.dashId==='processor';}):null;
-  if(procMem){
-    connected.push({name:'Telegram Bot',purpose:'CEO commands & approvals',status:'active',
-      detail:'Cycle #'+(procMem.cycle_number||'—')});
-  }else{
-    connected.push({name:'Telegram Bot',purpose:'CEO commands & approvals',status:'pending',
-      detail:'Не настроен'});
+  // 4. Telegram Bot — check directives for bot token or check if any agent posted to TG
+  var tgActive=false;var tgDetail='Не настроен';
+  if(window._sbDirectives){
+    var tgDir=window._sbDirectives.find(function(d){return d.key==='telegram_bot_token'||d.key==='tg_bot_token'||d.key==='telegram_chat_id';});
+    if(tgDir){tgActive=true;tgDetail='Webhook active';}
   }
+  // Also check if content was posted to telegram
+  if(!tgActive&&window._sbContent){
+    var tgPosts=window._sbContent.filter(function(c){return (c.platform||'').toLowerCase()==='telegram';});
+    if(tgPosts.length>0){tgActive=true;tgDetail=tgPosts.length+' постов в TG';}
+  }
+  connected.push({name:'Telegram Bot',purpose:'CEO commands & approvals',status:tgActive?'active':'limited',
+    detail:tgDetail});
 
   // 5. AI Credits — check if ai_credits data loaded
   var hasCredits=window._sbCredits&&window._sbCredits.length>0;
