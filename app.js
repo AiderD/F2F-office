@@ -1167,20 +1167,21 @@ document.getElementById('teamDeptTabs').addEventListener('click',function(e){
 renderTeam();
 
 // ═══ AI AGENTS DETAIL PANEL ═══
-// Built-in agent descriptions (fallback when D.agentMeta is empty)
+// Built-in agent descriptions — single source of truth for UI
+// Merged from D.agentMeta (removed from f2f_data.js) + Supabase agent system_prompt
 const AGENT_DESC={
-  coordinator:{purpose:'Тимлид всех агентов. Каждые 2ч проводит планёрку: собирает статусы, назначает задания, учитывает директивы CEO и KPI.',replaces:'Менеджер проектов — экономит 2-3ч/день',interval:'2ч'},
-  content:{purpose:'SMM-машина. 30 постов за цикл в 5 форматах: провокации (Durex-стиль), гайды по фичам, комьюнити, новости, дискуссии.',replaces:'SMM-менеджер — экономит 4-5ч/день',interval:'2ч'},
-  market:{purpose:'Анализ конкурентов (FACEIT, ESEA, CyberShoke, Blast.tv). Мониторинг KPI: регистрации, CAC, retention. Рекомендации.',replaces:'Бизнес-аналитик — экономит 3-4ч/день',interval:'2ч'},
-  leads:{purpose:'Генерация персонализированных email для лидов. Дедупликация (не шлёт повторно). Подпись CEO. Превью в Telegram.',replaces:'BizDev менеджер — экономит 2-3ч/день',interval:'2ч'},
-  outreach:{purpose:'Холодный outreach к командам, стримерам, партнёрам. Cold email + персонализация + A/B тесты тем.',replaces:'Outreach-специалист — экономит 2ч/день',interval:'2ч'},
-  social:{purpose:'Развитие комьюнити: Discord, Telegram, Reddit. Organic engagement, мониторинг обсуждений, вовлечение.',replaces:'Community Manager — экономит 3ч/день',interval:'2ч'},
-  processor:{purpose:'Мозг Telegram-бота. Обрабатывает кнопки (Отправить/Отклонить email и посты), текстовые директивы CEO, обновляет offset.',replaces:'Автоматизация — работает 24/7',interval:'1мин'},
-  lead_finder:{purpose:'Автопоиск лидов: Google Search (Serper) → Hunter.io (email) → RocketReach (LinkedIn). 6 реальных лидов/день.',replaces:'Lead researcher — экономит 4-5ч/день',interval:'4ч'},
-  followup:{purpose:'Автоматические follow-up письма через 3 дня после первого контакта без ответа. Другой тон и угол.',replaces:'BizDev follow-up — экономит 1-2ч/день',interval:'12ч'},
-  watchdog:{purpose:'Мониторинг всех сценариев. Если агент упал — автоперезапуск + TG алерт CEO. Self-healing.',replaces:'DevOps/мониторинг — работает 24/7',interval:'1ч'},
-  briefing:{purpose:'Утренний брифинг с реальными KPI из Supabase: лиды, письма, контент, статусы всех агентов, приоритеты.',replaces:'Утренняя планёрка — экономит 30мин/день',interval:'24ч'},
-  kpi_updater:{purpose:'Обновление метрик в Supabase для дашборда и аналитики. Синхронизация данных между системами.',replaces:'Ручной ввод метрик',interval:'—'}
+  coordinator:{purpose:'Тимлид всех агентов. Каждые 2ч проводит планёрку: собирает статусы, назначает задания, учитывает директивы CEO и KPI.',replaces:'Менеджер проектов — экономит 2-3ч/день',sources:['Данные других агентов','Список задач','KPI'],interval:'2ч'},
+  content:{purpose:'SMM-машина. 30 постов за цикл в 5 форматах: провокации (Durex-стиль), гайды по фичам, комьюнити, новости, дискуссии.',replaces:'SMM-менеджер — экономит 4-5ч/день',sources:['Brand guidelines F2F','Тренды соцсетей','Контент конкурентов'],interval:'2ч'},
+  market:{purpose:'Анализ конкурентов (FACEIT, ESEA, CyberShoke, Blast.tv). Мониторинг KPI: регистрации, CAC, retention. Рекомендации.',replaces:'Бизнес-аналитик — экономит 3-4ч/день',sources:['Newzoo','Statista','Esports Charts','SuperData'],interval:'2ч'},
+  leads:{purpose:'Генерация персонализированных email для лидов. Дедупликация (не шлёт повторно). Подпись CEO. Превью в Telegram.',replaces:'BizDev менеджер — экономит 2-3ч/день',sources:['Clay MCP (LinkedIn)','Apollo.io','Hunter.io'],interval:'2ч'},
+  outreach:{purpose:'Холодный outreach к командам, стримерам, партнёрам. Cold email + персонализация + A/B тесты тем.',replaces:'Outreach-специалист — экономит 2ч/день',sources:['Данные из CRM лидов','Шаблоны писем','LinkedIn профили'],interval:'2ч'},
+  social:{purpose:'Развитие комьюнити: Discord, Telegram, Reddit. Organic engagement, мониторинг обсуждений, вовлечение.',replaces:'Community Manager — экономит 3ч/день',sources:['Telegram каналы','Twitter API','Reddit','VK'],interval:'2ч'},
+  processor:{purpose:'Мозг Telegram-бота. Обрабатывает кнопки (Отправить/Отклонить email и посты), текстовые директивы CEO, обновляет offset.',replaces:'Автоматизация — работает 24/7',sources:['Telegram Bot API'],interval:'1мин'},
+  lead_finder:{purpose:'Автопоиск лидов: Google Search (Serper) → Hunter.io (email) → RocketReach (LinkedIn). 6 реальных лидов/день.',replaces:'Lead researcher — экономит 4-5ч/день',sources:['Serper.dev','Hunter.io','RocketReach'],interval:'4ч'},
+  followup:{purpose:'Автоматические follow-up письма через 3 дня после первого контакта без ответа. Другой тон и угол.',replaces:'BizDev follow-up — экономит 1-2ч/день',sources:['CRM pipeline','Email история'],interval:'12ч'},
+  watchdog:{purpose:'Мониторинг всех сценариев. Если агент упал — автоперезапуск + TG алерт CEO. Self-healing.',replaces:'DevOps/мониторинг — работает 24/7',sources:['Make.com API','Supabase health'],interval:'1ч'},
+  briefing:{purpose:'Утренний брифинг с реальными KPI из Supabase: лиды, письма, контент, статусы всех агентов, приоритеты.',replaces:'Утренняя планёрка — экономит 30мин/день',sources:['Supabase metrics','Agent memory','Events'],interval:'24ч'},
+  kpi_updater:{purpose:'Обновление метрик в Supabase для дашборда и аналитики. Синхронизация данных между системами.',replaces:'Ручной ввод метрик',sources:['Supabase analytics'],interval:'—'}
 };
 
 function renderAgentsPanel(){
@@ -1237,6 +1238,7 @@ function renderAgentsPanel(){
         '<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">'+
           '<button onclick="openPromptEditor(\''+id+'\')" style="flex:1;padding:7px;background:#00ff8812;color:#00ff88;border:1px solid #00ff8833;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s" onmouseover="this.style.background=\'#00ff8822\'" onmouseout="this.style.background=\'#00ff8812\'">📝 Промпт</button>'+
           '<button onclick="openDirectiveInput(\''+id+'\')" style="flex:1;padding:7px;background:#ffb80012;color:#ffb800;border:1px solid #ffb80033;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s" onmouseover="this.style.background=\'#ffb80022\'" onmouseout="this.style.background=\'#ffb80012\'">🎯 Задача</button>'+
+          (DASH_TO_SB_SLUG[id]?'<button onclick="triggerSingleAgent(\''+DASH_TO_SB_SLUG[id]+'\',this)" style="flex:1;padding:7px;background:#a855f712;color:#a855f7;border:1px solid #a855f733;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s" onmouseover="this.style.background=\'#a855f722\'" onmouseout="this.style.background=\'#a855f712\'">▶ Цикл</button>':'')+
         '</div>'+
       '</div>';
     }).join('');
@@ -1444,9 +1446,10 @@ function buildContextForAI(channel){
   // Add agent-specific context
   if(channel.startsWith('agent_')){
     var agId=channel.replace('agent_','');
-    var ag=AGENTS[agId];var meta=D.agentMeta?D.agentMeta[agId]:null;
+    var ag=AGENTS[agId];var desc=AGENT_DESC[agId]||{};
     if(ag)ctx+='\nТы — '+ag.name+' ('+ag.emoji+'). Отдел: '+ag.dept+'.\n';
-    if(meta){ctx+='Твоя задача: '+meta.purpose+'\nТвои источники: '+meta.sources.join(', ')+'.\n';}
+    if(desc.purpose){ctx+='Твоя задача: '+desc.purpose+'\n';}
+    if(desc.sources){ctx+='Твои источники: '+desc.sources.join(', ')+'.\n';}
     var agTasks=D.tasks.filter(function(t){return t.assignedTo===agId;});
     if(agTasks.length)ctx+='Твои задачи: '+agTasks.map(function(t){return t.title+' ['+t.status+']';}).join('; ')+'.\n';
   } else if(channel.startsWith('dept_')){
@@ -1455,8 +1458,8 @@ function buildContextForAI(channel){
     if(dept){
       ctx+='\nОтдел: '+dept.name+'. Агенты: '+dept.agents.map(function(aid){return AGENTS[aid]?AGENTS[aid].name:'?';}).join(', ')+'.\n';
       dept.agents.forEach(function(aid){
-        var m2=D.agentMeta?D.agentMeta[aid]:null;
-        if(m2)ctx+=AGENTS[aid].name+': '+m2.purpose+'\n';
+        var d2=AGENT_DESC[aid]||{};
+        if(d2.purpose)ctx+=AGENTS[aid].name+': '+d2.purpose+'\n';
       });
     }
   } else {
@@ -1528,10 +1531,10 @@ function chatRespondAI(channel,userMsg){
     } else {
       text='⚠️ Неожиданный формат ответа. Попробуйте ещё раз.';
     }
-    var meta=D.agentMeta?D.agentMeta[responderId]:null;
+    var descR=AGENT_DESC[responderId]||{};
     ch.push({
       role:'agent', author:ag.emoji+' '+ag.name, text:text,
-      color:ag.color, source:meta?'AI (Claude) • Источники: '+meta.sources.slice(0,3).join(', '):null,
+      color:ag.color, source:descR.sources?'AI (Claude) • Источники: '+descR.sources.slice(0,3).join(', '):null,
       time:new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})
     });
     renderChat();
@@ -1571,8 +1574,8 @@ function chatRespondTemplate(channel,userMsg){
     }
   } else if(channel.startsWith('agent_')){
     var agentId=channel.replace('agent_','');
-    var a=AGENTS[agentId];var m=D.agentMeta?D.agentMeta[agentId]:null;
-    responses.push({agentId:agentId,text:a.emoji+' '+a.name+(m?' — '+m.purpose:'')+'. ⚠️ Для полноценного общения подключи API ключ (🔑).',source:m?'Источники: '+m.sources.join(', '):null});
+    var a=AGENTS[agentId];var descOff=AGENT_DESC[agentId]||{};
+    responses.push({agentId:agentId,text:a.emoji+' '+a.name+(descOff.purpose?' — '+descOff.purpose:'')+'. ⚠️ Для полноценного общения подключи API ключ (🔑).',source:descOff.sources?'Источники: '+descOff.sources.join(', '):null});
   } else if(channel.startsWith('dept_')){
     var deptId=channel.replace('dept_','');
     var dept=DEPTS.find(function(d){return d.id===deptId;});
@@ -2275,52 +2278,113 @@ window.reportAction=function(id,action){
 renderReports();
 
 // ═══ AUTONOMOUS TRIGGER FUNCTIONS ═══
-window.triggerBriefing=async function(){
+
+// Helper: full data reload after agent runs (credits, reports, leads, memory)
+async function reloadAfterAgentRun(){
+  var reports=await sbFetch('reports','select=id,agent_id,type_ab,summary,results,theses,metrics_json,approved_by_ceo,created_at&order=created_at.desc&limit=50');
+  if(reports)window._sbReports=reports;
+  var credits=await sbFetch('ai_credits','select=agent_id,tokens_input,tokens_output,cost_usd,model,task_type,created_at&order=created_at.desc&limit=30');
+  if(credits)window._sbCredits=credits;
+  var partners=await sbFetch('partner_pipeline','select=*&order=created_at.desc&limit=20');
+  if(partners)window._sbPartners=partners;
+  var actions=await sbFetch('actions','select=id,agent_id,type,payload_json,created_at&order=created_at.desc&limit=50');
+  if(actions)window._sbActions=actions;
+  var memory=await sbFetch('agent_memory','select=agent_id,state,last_output,insights,next_action,tasks_done,cycle_number,created_at,agents!inner(slug,name)&order=created_at.desc&limit=50');
+  if(memory)window._sbMemory=memory.map(function(m){var ag=m.agents;return Object.assign({},m,{slug:ag?ag.slug:'unknown',dashId:ag?SB_SLUG_TO_DASH[ag.slug]:null});});
+  refreshAfterSync();
+  if(typeof calcCreditsFromSupabase==='function')calcCreditsFromSupabase();
+}
+
+window.triggerBriefing=async function(btnEl){
   if(!SUPABASE_LIVE){alert('Supabase не подключён');return;}
-  var btn=event.target;btn.disabled=true;btn.textContent='⏳ Генерирую...';
+  var btn=btnEl||this;
+  var origText=btn.textContent;
+  btn.disabled=true;btn.textContent='⏳ Генерирую...';
+  addFeed('coordinator','🌅 Запуск брифинга...');
   try{
     var r=await fetch(SUPABASE_URL+'/functions/v1/coordinator-briefing',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
       body:JSON.stringify({type:'morning'})
     });
+    if(!r.ok){
+      var errText=await r.text();
+      addFeed('coordinator','❌ Ошибка брифинга: HTTP '+r.status);
+      alert('Ошибка HTTP '+r.status+': '+errText.slice(0,200));
+      btn.disabled=false;btn.textContent=origText;return;
+    }
     var data=await r.json();
     if(data.success&&data.briefing){
-      addFeed('coordinator','🌅 Утренний брифинг сгенерирован: '+(data.briefing.title||'').slice(0,60));
-      // Reload reports from Supabase
-      var reports=await sbFetch('reports','select=*&order=created_at.desc&limit=30');
-      if(reports)window._sbReports=reports;
-      refreshAfterSync();
+      addFeed('coordinator','✅ Брифинг готов: '+(data.briefing.title||'').slice(0,60));
+      await reloadAfterAgentRun();
+      auditLog('trigger','agents','Брифинг сгенерирован');
       alert('Брифинг готов! Смотри вкладку Отчёты.');
+    }else if(data.error){
+      addFeed('coordinator','❌ '+data.error.slice(0,80));
+      alert('Ошибка: '+data.error);
     }else{
-      alert('Ошибка: '+(data.error||JSON.stringify(data)));
+      addFeed('coordinator','⚠️ Неожиданный ответ от брифинга');
+      alert('Неожиданный ответ: '+JSON.stringify(data).slice(0,300));
     }
-  }catch(e){alert('Ошибка: '+e);}
-  btn.disabled=false;btn.textContent='🚀 Брифинг';
+  }catch(e){
+    addFeed('coordinator','❌ Сеть: '+String(e).slice(0,60));
+    alert('Ошибка сети: '+e);
+  }
+  btn.disabled=false;btn.textContent=origText;
 };
-window.triggerAgentCycles=async function(){
+
+// Run all agents or a single agent by slug
+window.triggerAgentCycles=async function(btnEl, singleAgentSlug){
   if(!SUPABASE_LIVE){alert('Supabase не подключён');return;}
-  var btn=event.target;btn.disabled=true;btn.textContent='⏳ Запускаю...';
+  var btn=btnEl||this;
+  var origText=btn.textContent;
+  var isSingle=!!singleAgentSlug;
+  btn.disabled=true;btn.textContent=isSingle?'⏳ '+singleAgentSlug+'...':'⏳ Запускаю...';
+  addFeed('coordinator',isSingle?'⚡ Запуск цикла: '+singleAgentSlug:'⚡ Запуск всех циклов...');
   try{
+    var body=isSingle?{agent_slug:singleAgentSlug}:{};
     var r=await fetch(SUPABASE_URL+'/functions/v1/agent-autonomous-cycle',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
-      body:JSON.stringify({})
+      body:JSON.stringify(body)
     });
+    if(!r.ok){
+      var errText=await r.text();
+      addFeed('coordinator','❌ Ошибка циклов: HTTP '+r.status);
+      alert('Ошибка HTTP '+r.status+': '+errText.slice(0,200));
+      btn.disabled=false;btn.textContent=origText;return;
+    }
     var data=await r.json();
     if(data.success){
-      var summaries=(data.results||[]).map(function(x){return x.agent+': '+(x.summary||x.error||'ok').slice(0,60);}).join('\n');
-      addFeed('coordinator','⚡ Автономные циклы: '+data.agents_processed+' агентов обработано');
-      // Reload reports
-      var reports=await sbFetch('reports','select=*&order=created_at.desc&limit=30');
-      if(reports)window._sbReports=reports;
-      refreshAfterSync();
-      alert('Циклы выполнены!\n\n'+summaries);
+      var results=data.results||[];
+      var ok=results.filter(function(x){return x.success;});
+      var fail=results.filter(function(x){return !x.success;});
+      var summaries=results.map(function(x){
+        return (x.success?'✅':'❌')+' '+x.agent+': '+(x.summary||x.error||'ok').slice(0,80);
+      }).join('\n');
+      addFeed('coordinator','⚡ Циклы завершены: '+ok.length+' ✅, '+fail.length+' ❌ из '+results.length);
+      // Show per-agent results in feed
+      results.forEach(function(x){
+        var dashId=SB_SLUG_TO_DASH[x.agent]||'coordinator';
+        addFeed(dashId,(x.success?'✅':'❌')+' Цикл: '+(x.summary||x.error||'выполнен').slice(0,100));
+      });
+      await reloadAfterAgentRun();
+      auditLog('trigger','agents',(isSingle?singleAgentSlug:'all')+' циклы: '+ok.length+' ok, '+fail.length+' fail');
+      alert('Циклы завершены!\n\n'+summaries);
     }else{
+      addFeed('coordinator','❌ '+(data.error||'Неизвестная ошибка').slice(0,80));
       alert('Ошибка: '+(data.error||JSON.stringify(data)));
     }
-  }catch(e){alert('Ошибка: '+e);}
-  btn.disabled=false;btn.textContent='⚡ Циклы';
+  }catch(e){
+    addFeed('coordinator','❌ Сеть: '+String(e).slice(0,60));
+    alert('Ошибка сети: '+e);
+  }
+  btn.disabled=false;btn.textContent=origText;
+};
+
+// Run single agent cycle (called from agent detail panel)
+window.triggerSingleAgent=async function(agentSlug, btnEl){
+  return window.triggerAgentCycles(btnEl, agentSlug);
 };
 
 // ═══ TASKS ═══
@@ -2813,14 +2877,14 @@ const feedItems=[];
 let feedIdCounter=0;
 function addFeed(agentId,text){
   const a=AGENTS[agentId]||{emoji:'📋',name:'System',color:'#64748b'};
-  const m=D.agentMeta?D.agentMeta[agentId]:null;
+  const descF=AGENT_DESC[agentId]||{};
   feedItems.unshift({
     id:++feedIdCounter, agentId, text,
     time:new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),
     fullTime:new Date().toISOString(),
     color:a.color,
-    sources:m?m.sources:null,
-    purpose:m?m.purpose:null
+    sources:descF.sources||null,
+    purpose:descF.purpose||null
   });
   if(feedItems.length>50)feedItems.pop();
   renderFeed();
@@ -2865,7 +2929,7 @@ initFeedFilters();
 window.openFeedDetail=function(feedId){
   var f=feedItems.find(function(x){return x.id===feedId;});if(!f)return;
   var a=AGENTS[f.agentId]||{emoji:'📋',name:'System',color:'#64748b'};
-  var m=D.agentMeta?D.agentMeta[f.agentId]:null;
+  var descD=AGENT_DESC[f.agentId]||{};
   var html='<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
     '<span style="font-size:32px">'+a.emoji+'</span>'+
     '<div><h2 style="margin:0">'+a.name+'</h2>'+
@@ -2873,8 +2937,8 @@ window.openFeedDetail=function(feedId){
   // Main content
   html+='<div style="font-size:14px;line-height:1.8;padding:16px;background:var(--bg);border-radius:8px;border:1px solid var(--border);margin-bottom:16px">'+f.text+'</div>';
   // Agent purpose
-  if(m&&m.purpose){
-    html+='<h3>Зачем этот агент</h3><p style="font-size:13px;line-height:1.6">'+m.purpose+'</p>';
+  if(descD.purpose){
+    html+='<h3>Зачем этот агент</h3><p style="font-size:13px;line-height:1.6">'+descD.purpose+'</p>';
   }
   // Sources
   if(f.sources&&f.sources.length){
