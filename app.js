@@ -2408,125 +2408,108 @@ D.tasks.push=function(){
   return result;
 };
 
-// ═══ AGENT STATUS ENGINE ═══
-// HONEST: agents report real status from data, NOT fake activity.
-// Real work happens when: 1) You give tasks in chat/tasks tab, 2) Scheduled automations run via Make.com
-// This feed shows: real data summaries, honest standby messages, and actual user actions.
-const LIVE_ACTIONS = {
-  alert:[
-    ()=>'🔍 Сканирую Reddit r/GlobalOffensive — новых упоминаний F2F: '+(Math.floor(Math.random()*12)+1),
-    ()=>'⚡ Алерт: CyberShoke обновил цены на DM-серверы — +'+Math.floor(Math.random()*10+5)+'%',
-    ()=>'📡 Мониторинг HLTV — '+['FACEIT запустил новый формат','ESEA анонсировал обновление','Новый патч CS2 — изменения рейтинга'][Math.floor(Math.random()*3)],
-    ()=>'🔔 Steam Charts: CS2 онлайн '+Math.floor(Math.random()*300+800)+'K — '+['рост','стабильно','пик за неделю'][Math.floor(Math.random()*3)],
-    ()=>'🛡 Проверяю uptime конкурентов — FACEIT 99.9%, CyberShoke 98.'+Math.floor(Math.random()*9)+'%'
-  ],
-  market:[
-    ()=>'📊 Обновляю рыночные данные — CIS esports: $'+Math.floor(Math.random()*20+170)+'M, рост '+(Math.floor(Math.random()*8+18))+'%',
-    ()=>'📈 Анализ трендов: "'+['AI matchmaking','anti-cheat','skill-based MM','toxicity detection'][Math.floor(Math.random()*4)]+'" — поисковый объём +'+Math.floor(Math.random()*30+10)+'%',
-    ()=>'🎯 TAM/SAM обновлён — F2F адресуемый рынок: $'+Math.floor(Math.random()*40+30)+'M',
-    ()=>'📋 Сравнительный анализ: '+D.leads.length+' лидов в воронке, конверсия в контакт: '+Math.floor(Math.random()*30+20)+'%'
-  ],
-  competitor:[
-    ()=>{const c=['FACEIT','CyberShoke','ESEA','FastCup'][Math.floor(Math.random()*4)];return '🕵️ Парсинг '+c+' — обновлены цены, фичи, отзывы';},
-    ()=>'🔎 Найден новый конкурент: '+['Challengermode обновился','Mythic League расширяется','ESPORTAL запускает CIS серверы'][Math.floor(Math.random()*3)],
-    ()=>'📊 CyberShoke потерял ещё ~'+Math.floor(Math.random()*3+1)+'K юзеров — подтверждаю тренд оттока'
-  ],
-  subs:[
-    ()=>'💰 Модель подписки F2F: прогноз конверсии Free→Premium обновлён до '+((Math.random()*3+5).toFixed(1))+'%',
-    ()=>'📊 Бенчмарк: ARPU конкурентов — FACEIT $'+((Math.random()*2+3).toFixed(2))+', ESEA $'+((Math.random()*2+4).toFixed(2)),
-    ()=>'💡 A/B тест ценообразования: $5.99 vs $4.99 — рекомендация: $'+['5.99 (больше маржа)','4.99 (больше конверсия)'][Math.floor(Math.random()*2)]
-  ],
-  content:[
-    ()=>'✍️ Генерирую пост для '+['Telegram','Twitter'][Math.floor(Math.random()*2)]+' — тема: '+['провокация','конкуренты','мем','продукт','комьюнити'][Math.floor(Math.random()*5)],
-    ()=>'📝 Редактирую черновик #'+Math.floor(Math.random()*D.posts.length+1)+' — улучшаю CTA',
-    ()=>'🎨 Анализирую engagement лучших постов — CTR лидер: "'+D.posts[Math.floor(Math.random()*D.posts.length)]?.text.slice(0,40)+'..."',
-    ()=>'📸 Готовлю визуал для '+['Instagram','Telegram','Twitter'][Math.floor(Math.random()*3)]
-  ],
-  social:[
-    ()=>'👂 Мониторинг: Telegram — новых подписчиков за час: +'+Math.floor(Math.random()*8+1),
-    ()=>'💬 Обнаружено '+Math.floor(Math.random()*15+3)+' новых упоминаний F2F в соцсетях',
-    ()=>'📊 Sentiment анализ: '+Math.floor(Math.random()*15+65)+'% позитивный, '+Math.floor(Math.random()*10+10)+'% нейтральный',
-    ()=>'🔥 Тренд: "'+['matchmaking','fair play','anti-cheat CS2','rating system'][Math.floor(Math.random()*4)]+'" в топе обсуждений'
-  ],
-  smmspy:[
-    ()=>{const org=['NAVI','Virtus.pro','Team Spirit','BetBoom'][Math.floor(Math.random()*4)];return '🔎 Анализирую SMM стратегию '+org+' — постов за неделю: '+Math.floor(Math.random()*20+5);},
-    ()=>'📊 Бенчмарк: конкуренты постят '+Math.floor(Math.random()*5+3)+'x в день, наш план: '+D.posts.filter(p=>p.status==='ready').length+' ready'
-  ],
-  leads:[
-    ()=>{const l=D.leads[Math.floor(Math.random()*D.leads.length)];return l?'🎯 Проверяю актуальность: '+l.name+' ('+l.company+') — профиль обновлён':'🎯 Сканирую новые контакты...';},
-    ()=>'🔍 Ищу ЛПР в '+['Team Spirit','BetBoom','Gambit','forZe'][Math.floor(Math.random()*4)]+' через LinkedIn',
-    ()=>'📋 Лиды в CRM: '+D.leads.filter(l=>l.priority==='hot').length+' hot, '+D.leads.filter(l=>l.priority==='warm').length+' warm, '+D.leads.filter(l=>l.priority==='medium').length+' medium'
-  ],
-  outreach:[
-    ()=>{const l=D.leads[Math.floor(Math.random()*D.leads.length)];return l?'📧 Готовлю outreach для '+l.name+' — подбираю персональный подход':'📧 Обновляю шаблоны писем';},
-    ()=>'📬 Open rate последней рассылки: '+Math.floor(Math.random()*30+25)+'% | Reply rate: '+Math.floor(Math.random()*8+3)+'%',
-    ()=>'✉️ Follow-up: проверяю '+Math.floor(Math.random()*3+1)+' неотвеченных писем'
-  ],
-  partner:[
-    ()=>'🤝 Мониторинг: BLAST Open Spring — до дедлайна '+Math.max(0,11-Math.floor((Date.now()-new Date('2026-03-17').getTime())/(86400000)))+' дней',
-    ()=>'🔎 Новая возможность: '+['WePlay ищет matchmaking-провайдера','DreamHack открыл заявки','Intel Extreme Masters — community track'][Math.floor(Math.random()*3)],
-    ()=>'📋 Pipeline партнёрств: '+(D.kpi.partnershipsFound||4)+' активных, '+(Math.floor(Math.random()*2+1))+' на стадии переговоров'
-  ],
-  coordinator:[
-    ()=>{const done=D.tasks.filter(t=>t.status==='done').length;const pend=D.tasks.filter(t=>t.status==='pending').length;return '📋 Дашборд: '+done+' задач выполнено, '+pend+' в работе, '+Object.keys(AGENTS).length+' агентов активны';},
-    ()=>'⏰ Дневной брифинг: все отделы отчитались, критических блокеров нет',
-    ()=>'🔄 Синхронизация данных: f2f_data.js обновлён'
-  ],
-  priority:[
-    ()=>'⚡ Приоритезация: топ задача — "'+((D.tasks.find(t=>t.status==='pending'&&t.priority==='high')||{}).title||'анализ конкурентов')+'"',
-    ()=>'📊 Матрица Эйзенхауэра обновлена: '+D.tasks.filter(t=>t.priority==='high'&&t.status==='pending').length+' срочных задач',
-    ()=>'🎯 Фокус недели: BLAST заявка (дедлайн 28.03) + outreach NAVI'
-  ],
-  budget_analyst:[
-    ()=>{const f=D.finance;return f?'💵 Burn rate: $'+f.totalBudgetUSDT.toLocaleString()+'/мес (₽'+f.totalBudgetRUB.toLocaleString()+') — '+(f.unpaidItems.length>0?'⚠️ '+f.unpaidItems.length+' неоплаченных':'✅ всё оплачено'):'💵 Анализирую бюджет...';},
-    ()=>{const f=D.finance;return f?'📊 ФОТ: $'+f.salary.totalUSDT.toLocaleString()+' ('+f.headcount+' чел) | Средняя: $'+Math.round(f.salary.fullTime.usdt/f.salary.fullTime.count):'📊 Считаю...';},
-    ()=>'💰 Прогноз Q2: при текущем burn rate runway = '+(Math.floor(Math.random()*6+8))+' месяцев'
-  ],
-  cost_optimizer:[
-    ()=>'✂️ Проверяю подписки: Miro ($200) → FigJam (бесплатно). Экономия: $200/мес',
-    ()=>'🔍 Yandex Cloud usage: CPU util '+Math.floor(Math.random()*30+40)+'% — есть потенциал для reserved instances',
-    ()=>'📊 ROI ивентов: GameДни ($15,233) — оценка '+Math.floor(Math.random()*50+100)+' новых юзеров, CPA: $'+Math.floor(Math.random()*50+80)
-  ],
-  talent_scout:[
-    ()=>'🧲 Мониторинг: '+Math.floor(Math.random()*5+2)+' новых релевантных кандидатов на LinkedIn',
-    ()=>'📋 Открытые позиции: DevOps (bus factor=1), Senior Frontend (мобилка)',
-    ()=>'💡 Рынок зарплат: наша средняя $'+Math.round((D.finance?.salary.fullTime.usdt||70000)/(D.finance?.salary.fullTime.count||37))+' vs рынок $'+Math.floor(Math.random()*1000+2500)
-  ],
-  team_analyst:[
-    ()=>'👥 Команда: '+D.team.length+' чел | Рост ФОТ за год: x3.8 | Текучесть: '+Math.floor(Math.random()*5+2)+'%',
-    ()=>'📊 Анализ нагрузки: '+Math.floor(Math.random()*3+1)+' перегруженных сотрудников обнаружено',
-    ()=>'📋 Org chart обновлён: management '+D.team.filter(t=>t.category==='management').length+', full-time '+D.team.filter(t=>t.category==='full-time').length+', part-time '+D.team.filter(t=>t.category==='part-time').length
-  ],
-  efficiency_auditor:[
-    ()=>'🔧 CI/CD pipeline: среднее время сборки '+Math.floor(Math.random()*8+12)+' мин (цель: 10 мин)',
-    ()=>'📊 DORA метрики: deploy frequency '+((Math.random()*2+1).toFixed(1))+'/день, lead time '+Math.floor(Math.random()*20+10)+' ч',
-    ()=>'🔍 Аудит: найдено '+Math.floor(Math.random()*3+1)+' узких мест в production pipeline'
-  ],
-  process_optimizer:[
-    ()=>'⚙️ Linear миграция: '+Math.floor(Math.random()*60+30)+'% задач перенесено',
-    ()=>'📊 Автоматизация: настраиваю Sentry → Telegram алерты',
-    ()=>'🔄 Оптимизация: сокращаю количество tools с '+(9+Math.floor(Math.random()*3))+' до '+(5+Math.floor(Math.random()*2))+' (экономия ~$500/мес)'
-  ]
-};
+// ═══ AGENT STATUS ENGINE — REAL DATA ═══
+// Shows REAL data from Supabase: agent_memory reports, events, content_queue stats
+// No fake random numbers — only actual data or honest "waiting" status
 
-// Live engine — fires every 3-8 seconds when agents are active
+// Build real status messages from Supabase data
+function getRealAgentStatus(agentId){
+  // 1. Try agent_memory (last autonomous cycle output)
+  if(window._sbMemory){
+    var mem=window._sbMemory.find(function(m){return m.dashId===agentId;});
+    if(mem&&mem.last_output){
+      var out=typeof mem.last_output==='string'?mem.last_output:JSON.stringify(mem.last_output);
+      var ago=mem.created_at?timeSince(mem.created_at):'';
+      if(out.length>120)out=out.slice(0,120)+'...';
+      return {text:'📋 '+out+(ago?' ('+ago+')':''), source:'memory'};
+    }
+  }
+  // 2. Try recent events
+  if(window._sbEvents){
+    var evts=window._sbEvents.filter(function(e){
+      if(!e.metadata_json)return false;
+      var m=typeof e.metadata_json==='string'?JSON.parse(e.metadata_json):e.metadata_json;
+      return m.agent_dash_id===agentId;
+    });
+    if(evts.length>0){
+      var ev=evts[0];
+      var m=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;
+      var ago=timeSince(ev.created_at);
+      return {text:(m.text||ev.type||'Событие')+' ('+ago+')', source:'event'};
+    }
+  }
+  // 3. Real data summaries (no random numbers)
+  var summaries={
+    coordinator:function(){
+      var done=D.tasks.filter(function(t){return t.status==='done';}).length;
+      var pend=D.tasks.filter(function(t){return t.status==='pending';}).length;
+      return '📋 Задач: '+done+' выполнено, '+pend+' ожидают | Агентов: '+Object.keys(window._sbAgents||{}).length+' в системе';
+    },
+    content:function(){
+      var total=window._sbContent?window._sbContent.length:D.posts.length;
+      var pending=window._sbContent?window._sbContent.filter(function(c){return c.status==='pending_approval';}).length:0;
+      var published=window._sbContent?window._sbContent.filter(function(c){return c.status==='published';}).length:0;
+      return '📱 Контент: '+total+' постов | ⏳ '+pending+' ожидают одобрения | ✅ '+published+' опубликовано';
+    },
+    market:function(){
+      var reports=window._sbReports?window._sbReports.filter(function(r){
+        var ag=window._sbAgentById&&r.agent_id?window._sbAgentById[r.agent_id]:null;
+        return ag&&ag.slug==='analyst';
+      }).length:0;
+      return '📊 Аналитика: '+reports+' отчётов создано | '+D.leads.length+' лидов в воронке';
+    },
+    leads:function(){
+      var hot=D.leads.filter(function(l){return l.priority==='hot';}).length;
+      var warm=D.leads.filter(function(l){return l.priority==='warm';}).length;
+      return '🎯 Лиды: '+D.leads.length+' всего | 🔥 '+hot+' hot, 🟡 '+warm+' warm';
+    },
+    outreach:function(){
+      var emailTasks=D.tasks.filter(function(t){return t._actionType==='email_template_created';}).length;
+      return '📧 Outreach: '+emailTasks+' email-шаблонов подготовлено | '+D.leads.length+' контактов в базе';
+    },
+    social:function(){
+      var tgSubs=D.kpi.tgSubs||0;
+      return '👥 Сообщество: '+(tgSubs?tgSubs+' подписчиков Telegram':'данные обновляются...');
+    }
+  };
+  if(summaries[agentId])return {text:summaries[agentId](), source:'summary'};
+  // 4. Honest standby
+  return {text:'💤 Ожидает задачу — дай поручение в чате', source:'standby'};
+}
+
+// Helper: human-readable time since
+function timeSince(dateStr){
+  var d=new Date(dateStr);
+  var now=new Date();
+  var sec=Math.floor((now-d)/1000);
+  if(sec<60)return 'только что';
+  var min=Math.floor(sec/60);
+  if(min<60)return min+' мин назад';
+  var hr=Math.floor(min/60);
+  if(hr<24)return hr+'ч назад';
+  var days=Math.floor(hr/24);
+  return days+'д назад';
+}
+
+// Live engine — shows real data status every 30-60 seconds
 let liveInterval=null;
+let _liveQueue=[]; // queue of agent IDs to cycle through
 function startLiveEngine(){
   if(liveInterval)return;
-  liveInterval=setInterval(()=>{
+  // Build initial queue
+  _liveQueue=Object.keys(AGENTS).slice();
+  var _liveIdx=0;
+  liveInterval=setInterval(function(){
     if(!agentsActive)return;
-    // Pick random ACTIVE agent
-    const meta=D.agentMeta||{};
-    const agentIds=Object.keys(AGENTS).filter(id=>!meta[id]||meta[id].active!==false);
-    if(!agentIds.length)return;
-    const id=agentIds[Math.floor(Math.random()*agentIds.length)];
-    const actions=LIVE_ACTIONS[id];
-    if(!actions||!actions.length)return;
-    const action=actions[Math.floor(Math.random()*actions.length)];
-    const text=typeof action==='function'?action():action;
-    addFeed(id,text);
-    updateCredits(1);
-  }, Math.floor(Math.random()*25000)+20000); // 20-45 sec — honest pace, not spam
+    if(!SUPABASE_LIVE)return; // don't show anything without real data
+    // Cycle through agents in order (not random)
+    if(_liveIdx>=_liveQueue.length)_liveIdx=0;
+    var id=_liveQueue[_liveIdx++];
+    var status=getRealAgentStatus(id);
+    if(status.source!=='standby'){
+      addFeed(id,status.text);
+    }
+  }, 45000); // every 45 sec — slower, honest pace
 }
 function stopLiveEngine(){
   if(liveInterval){clearInterval(liveInterval);liveInterval=null;}
