@@ -289,7 +289,12 @@ function refreshAfterSync(){
     }
     // Load exchange rate from directives into financeExchangeRate
     if(typeof loadExchangeRateFromDirectives==='function')loadExchangeRateFromDirectives();
+    // Load AI credit budget from directives
+    if(typeof loadCreditBudgetFromDirectives==='function')loadCreditBudgetFromDirectives();
   }
+
+  // ═══ 7b. AI CREDITS: Calculate real usage from ai_credits table ═══
+  if(typeof calcCreditsFromSupabase==='function')calcCreditsFromSupabase();
 
   // ═══ 8. FEED: Restore from Supabase events ═══
   if(window._sbEvents&&window._sbEvents.length>0&&typeof feedItems!=='undefined'){

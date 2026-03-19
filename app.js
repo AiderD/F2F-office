@@ -413,7 +413,13 @@ function updateKPI(){
   }
   document.getElementById('kpi-partners').textContent=partnerships;
   document.getElementById('kpi-team').textContent=D.team?D.team.filter(function(t){return t.status==='active';}).length:'-';
-  document.getElementById('kpi-burn').textContent=burn.total>0?fmtK(Math.round(burn.total)):'—';
+  // Burn rate visible only to admin
+  if(isAdmin()){
+    document.getElementById('kpi-burn').textContent=burn.total>0?fmtK(Math.round(burn.total)):'—';
+    document.getElementById('kpi-burn').parentElement.style.display='';
+  } else {
+    document.getElementById('kpi-burn').parentElement.style.display='none';
+  }
   // Tab badges: real counts
   document.getElementById('tab-leads-count').textContent=D.leads.length;
   var pendingCount=D.posts.filter(function(p){return p.sbStatus==='pending_approval';}).length;
@@ -1529,7 +1535,7 @@ function chatRespondAI(channel,userMsg){
       time:new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})
     });
     renderChat();
-    updateCredits(meta?meta.costPerAction||2:2);
+    // Credits updated via ai_credits table on next sync
     // ═══ CHAT → TASK: Parse agent replies for tasks/assignments ═══
     parseChatForTasks(text, responderId, channel);
     // Log to Supabase if live
@@ -1586,7 +1592,7 @@ function chatRespondTemplate(channel,userMsg){
         time:new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})
       });
       renderChat();
-      updateCredits(1);
+      // Credits tracked via ai_credits table
     },(i+1)*400);
   });
 }
@@ -3219,17 +3225,38 @@ document.getElementById('anthemBtn').addEventListener('click',function(){
 // Click overlay to dismiss
 if(anthemOverlay)anthemOverlay.addEventListener('click',function(){if(anthemPlaying)stopAnthem();});
 
-// ═══ CREDIT TRACKER ═══
+// ═══ CREDIT TRACKER — Real data from ai_credits ═══
 let agentsActive=true;
-let creditsUsed=0;const creditsTotal=1000;
-function updateCredits(amount){
-  creditsUsed+=amount;
-  var pct=Math.max(0,Math.min(100,((creditsTotal-creditsUsed)/creditsTotal)*100));
+let creditsBudget=10; // $10 default monthly budget, overridden from directives
+let creditsSpent=0;
+
+function loadCreditBudgetFromDirectives(){
+  if(!window._sbDirectives)return;
+  var budgetDir=window._sbDirectives.find(function(d){return d.key==='ai_credit_budget';});
+  if(budgetDir&&budgetDir.value_json){
+    var val=typeof budgetDir.value_json==='string'?JSON.parse(budgetDir.value_json):budgetDir.value_json;
+    if(val.monthly_usd)creditsBudget=parseFloat(val.monthly_usd);
+  }
+}
+
+function calcCreditsFromSupabase(){
+  var credits=window._sbCredits||[];
+  // Filter to current month only
+  var now=new Date();
+  var monthStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString();
+  var thisMonth=credits.filter(function(c){return c.created_at>=monthStart;});
+  creditsSpent=thisMonth.reduce(function(sum,c){return sum+(parseFloat(c.cost_usd)||0);},0);
+  renderCredits();
+}
+
+function renderCredits(){
+  var remaining=Math.max(0,creditsBudget-creditsSpent);
+  var pct=creditsBudget>0?Math.max(0,Math.min(100,(remaining/creditsBudget)*100)):0;
   document.getElementById('creditFill').style.width=pct+'%';
   document.getElementById('creditFill').style.background=pct>50?'var(--green)':pct>20?'var(--amber)':'var(--hot)';
-  document.getElementById('creditText').textContent=creditsUsed+' / '+creditsTotal;
+  document.getElementById('creditText').textContent='$'+creditsSpent.toFixed(2)+' / $'+creditsBudget.toFixed(0);
 }
-updateCredits(0);
+renderCredits();
 
 document.getElementById('agentToggle').addEventListener('click',function(){
   agentsActive=!agentsActive;
@@ -3243,13 +3270,7 @@ document.getElementById('agentToggle').addEventListener('click',function(){
   document.getElementById('syncBadge').style.background=agentsActive?'#00ff8811':'#ffb80011';
 });
 
-// Simulate credit usage on task creation
-var origPush=D.tasks.push.bind(D.tasks);
-D.tasks.push=function(){
-  var result=origPush.apply(D.tasks,arguments);
-  updateCredits(5);
-  return result;
-};
+// Credits are now tracked via ai_credits table — no simulation needed
 
 // ═══ AGENT STATUS ENGINE — REAL DATA ═══
 // Shows REAL data from Supabase: agent_memory reports, events, content_queue stats
