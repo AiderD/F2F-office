@@ -132,9 +132,13 @@ async function syncSupabaseData(){
   const actions=await sbFetch('actions','select=id,agent_id,type,payload_json,created_at&order=created_at.desc&limit=50');
   if(actions)window._sbActions=actions;
 
-  // Finance
+  // Finance (legacy)
   const finance=await sbFetch('finance','select=*&order=created_at.desc&limit=50');
   if(finance)window._sbFinance=finance;
+
+  // Finance Ledger v2 (new immutable ledger)
+  const ledger=await sbFetch('finance_ledger','select=*&order=created_at.desc&limit=500');
+  if(ledger)window._financeLedger=ledger;
 
   // AI Credits
   const credits=await sbFetch('ai_credits','select=agent_id,tokens_input,tokens_output,cost_usd,model,task_type,created_at&order=created_at.desc&limit=30');
@@ -238,23 +242,8 @@ function refreshAfterSync(){
     });
   }
 
-  // ═══ 5. FINANCE: Merge Supabase finance data ═══
-  if(window._sbFinance&&window._sbFinance.length>0){
-    // Calculate totals from Supabase finance records
-    var totalUSD=0,salaryUSD=0,subsUSD=0,unpaid=[];
-    window._sbFinance.forEach(function(f){
-      totalUSD+=parseFloat(f.amount)||0;
-      if(f.type==='salary'||f.type==='bonus')salaryUSD+=parseFloat(f.amount)||0;
-      if(f.type==='subscription'||f.type==='infrastructure')subsUSD+=parseFloat(f.amount)||0;
-      if(!f.paid)unpaid.push({name:f.note||f.employee_id||'Оплата',leftUSDT:parseFloat(f.amount)||0});
-    });
-    // Override D.finance with live data
-    if(!D.finance)D.finance={};
-    D.finance.totalBudgetUSDT=Math.round(totalUSD);
-    D.finance.totalBudgetRUB=Math.round(totalUSD*92);
-    D.finance.unpaidItems=unpaid;
-    D.finance._sbLive=true;
-  }
+  // ═══ 5. FINANCE: Use new finance_ledger v2 if available ═══
+  // Legacy finance table support removed — using finance_ledger now
 
   // ═══ 6. KPI: Populate D.kpi from Supabase metrics ═══
   if(window._sbMetrics){
@@ -277,13 +266,15 @@ function refreshAfterSync(){
     if(window._sbContent) D.kpi.postsCreated=window._sbContent.length;
   }
 
-  // ═══ 6b. TEAM: Load from Supabase team table ═══
+  // ═══ 6b. TEAM: Load from Supabase team table (with salary fields) ═══
   if(window._sbTeam&&window._sbTeam.length>0){
     D.team=window._sbTeam.map(function(t){
       return {
         id:t.id, name:t.name, role:t.role, category:t.category,
         dept:t.dept, isHead:t.is_head, status:t.status==='active'?'active':t.status,
-        startDate:t.start_date, sbId:t.id
+        startDate:t.start_date, sbId:t.id,
+        salary_usdt:t.salary_usdt||0, salary_rub:t.salary_rub||0,
+        payment_type:t.payment_type||'usdt', payroll_start:t.payroll_start||null
       };
     }).filter(function(t){return t.status==='active';});
   }

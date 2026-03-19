@@ -119,58 +119,475 @@ function updateKPI(){
 updateKPI();
 
 // ═══ FINANCE PANEL ═══
+// ═══ FINANCE v2 — Immutable Ledger + Payroll ═══
+let financeTab='overview';
+let financePeriod='March 2026';
+let financeExchangeRate=92; // RUB/USDT
+let financeWorkDays=22; // working days this month
+window._financeLedger=[]; // loaded from Supabase
+
+// Finance sub-tabs
+document.getElementById('financeTabs').addEventListener('click',function(e){
+  if(!e.target.classList.contains('sub-tab'))return;
+  document.querySelectorAll('#financeTabs .sub-tab').forEach(function(b){b.classList.remove('active');});
+  e.target.classList.add('active');
+  financeTab=e.target.dataset.ftab;
+  renderFinance();
+});
+
+// Load finance ledger from Supabase
+async function loadFinanceLedger(){
+  var data=await sbFetch('finance_ledger','select=*&order=created_at.desc&limit=500');
+  if(data)window._financeLedger=data;
+  renderFinance();
+}
+
 function renderFinance(){
-  const f=D.finance;if(!f){document.getElementById('financeContent').innerHTML='<p style="color:var(--dim)">Нет финансовых данных</p>';return;}
-  document.getElementById('finance-period').textContent=f.period+' | Курс: '+f.exchangeRate+' RUB/USDT';
-  const sal=f.salary||{};
-  let html='<div class="fin-grid">';
+  var ledger=window._financeLedger||[];
+  var periodEntries=ledger.filter(function(e){return e.period===financePeriod;});
+  // Calculate totals
+  var totalSalary=0,totalSubs=0,totalEvents=0,totalOther=0,totalAll=0;
+  var unpaidEntries=[];
+  periodEntries.forEach(function(e){
+    var amt=parseFloat(e.amount_usdt)||0;
+    totalAll+=amt;
+    if(e.type==='salary')totalSalary+=amt;
+    else if(e.type==='subscription'||e.type==='infrastructure')totalSubs+=amt;
+    else if(e.type==='event')totalEvents+=amt;
+    else totalOther+=amt;
+    if(!e.is_paid)unpaidEntries.push(e);
+  });
+
+  document.getElementById('finance-period').textContent=financePeriod+' | Курс: '+financeExchangeRate+' | Раб.дней: '+financeWorkDays;
+
+  if(financeTab==='overview')renderFinanceOverview(periodEntries,totalSalary,totalSubs,totalEvents,totalOther,totalAll,unpaidEntries);
+  else if(financeTab==='ledger')renderFinanceLedger(periodEntries);
+  else if(financeTab==='unpaid')renderFinanceUnpaid(unpaidEntries);
+}
+
+function renderFinanceOverview(entries,totalSalary,totalSubs,totalEvents,totalOther,totalAll,unpaid){
+  var salaryCount=entries.filter(function(e){return e.type==='salary';}).length;
+  var html='<div class="fin-grid">';
   // Total burn
   html+='<div class="fin-card" style="border-top:3px solid var(--hot)">'+
     '<h3 style="color:var(--hot)">Общий Burn Rate</h3>'+
-    '<div class="fin-big" style="color:var(--hot)">'+fmtUSD(f.totalBudgetUSDT)+'</div>'+
-    '<div class="fin-sub">'+fmtRUB(f.totalBudgetRUB)+'</div>'+
+    '<div class="fin-big" style="color:var(--hot)">'+fmtUSD(Math.round(totalAll))+'</div>'+
+    '<div class="fin-sub">'+fmtRUB(Math.round(totalAll*financeExchangeRate))+'</div>'+
     '<div style="margin-top:12px">'+
-      '<div class="fin-row"><span class="label">ФОТ (зарплаты)</span><span class="val cyan">'+fmtUSD(sal.totalUSDT||0)+'</span></div>'+
-      '<div class="fin-row"><span class="label">Подписки + инфра</span><span class="val">'+fmtUSD(f.totalSubsUSDT||0)+'</span></div>'+
-      '<div class="fin-row"><span class="label">Из них ивенты</span><span class="val amber">'+fmtUSD((f.totalSubsUSDT||0)-(f.regularSubsUSDT||0))+'</span></div>'+
-      '<div class="fin-row"><span class="label">Регулярные (без ивентов)</span><span class="val green">'+fmtUSD((sal.totalUSDT||0)+(f.regularSubsUSDT||0))+'</span></div>'+
+      '<div class="fin-row"><span class="label">ФОТ (зарплаты)</span><span class="val cyan">'+fmtUSD(Math.round(totalSalary))+' ('+salaryCount+' чел)</span></div>'+
+      '<div class="fin-row"><span class="label">Подписки + инфра</span><span class="val">'+fmtUSD(Math.round(totalSubs))+'</span></div>'+
+      '<div class="fin-row"><span class="label">Ивенты</span><span class="val amber">'+fmtUSD(Math.round(totalEvents))+'</span></div>'+
+      '<div class="fin-row"><span class="label">Прочее</span><span class="val">'+fmtUSD(Math.round(totalOther))+'</span></div>'+
     '</div></div>';
-  // Salary breakdown
+  // Salary details
+  var salaryEntries=entries.filter(function(e){return e.type==='salary';});
   html+='<div class="fin-card" style="border-top:3px solid var(--cyan)">'+
-    '<h3>ФОТ — '+f.headcount+' человек</h3>'+
-    '<div class="fin-big" style="color:var(--cyan)">'+fmtUSD(sal.totalUSDT||0)+'</div>'+
-    '<div class="fin-sub">'+fmtRUB(sal.totalRUB||0)+'</div>'+
-    '<div style="margin-top:12px">'+
-      '<div class="fin-row"><span class="label">Management ('+sal.management?.count+')</span><span class="val">'+fmtUSD(sal.management?.usdt||0)+'</span></div>'+
-      '<div class="fin-row"><span class="label">Full-time ('+sal.fullTime?.count+')</span><span class="val">'+fmtUSD(sal.fullTime?.usdt||0)+'</span></div>'+
-      '<div class="fin-row"><span class="label">Part-time ('+sal.partTime?.count+')</span><span class="val">'+fmtUSD(sal.partTime?.usdt||0)+'</span></div>'+
-      '<div class="fin-row"><span class="label">Средняя ЗП (full-time)</span><span class="val">'+fmtUSD(Math.round((sal.fullTime?.usdt||0)/(sal.fullTime?.count||1)))+'</span></div>'+
-    '</div></div>';
+    '<h3>ФОТ — '+salaryCount+' сотрудников</h3>'+
+    '<div class="fin-big" style="color:var(--cyan)">'+fmtUSD(Math.round(totalSalary))+'</div>'+
+    '<div style="margin-top:12px;max-height:300px;overflow-y:auto">'+
+    salaryEntries.map(function(e){
+      var paid=e.is_paid?'<span style="color:var(--green)">✅</span>':'<span style="color:var(--hot)">⏳</span>';
+      var daysInfo=e.days_worked&&e.working_days_in_month?' ('+e.days_worked+'/'+e.working_days_in_month+' дн)':'';
+      return '<div class="fin-row"><span class="label">'+paid+' '+e.description+daysInfo+'</span><span class="val">'+fmtUSD(parseFloat(e.amount_usdt)||0)+'</span></div>';
+    }).join('')+'</div></div>';
   // Subscriptions
+  var subEntries=entries.filter(function(e){return e.type==='subscription'||e.type==='infrastructure';});
   html+='<div class="fin-card" style="border-top:3px solid var(--green)">'+
-    '<h3>Подписки и инфраструктура</h3>'+
-    '<div class="fin-big" style="color:var(--green)">'+fmtUSD(f.totalSubsUSDT||0)+'</div>'+
-    '<div class="fin-sub">'+fmtRUB(f.totalSubsRUB||0)+'</div>'+
-    '<div style="margin-top:12px">'+(f.subscriptions||[]).map(s=>
-      '<div class="fin-row"><span class="label">'+s.name+' <span style="font-size:10px;color:var(--dim)">['+s.type+']</span></span><span class="val">'+fmtUSD(s.usdt)+'</span></div>'
-    ).join('')+'</div></div>';
+    '<h3>Подписки и инфра</h3>'+
+    '<div class="fin-big" style="color:var(--green)">'+fmtUSD(Math.round(totalSubs))+'</div>'+
+    '<div style="margin-top:12px">'+
+    subEntries.map(function(e){
+      var paid=e.is_paid?'<span style="color:var(--green)">✅</span>':'<span style="color:var(--hot)">⏳</span>';
+      return '<div class="fin-row"><span class="label">'+paid+' '+e.description+' <span style="font-size:10px;color:var(--dim)">['+e.type+']</span></span><span class="val">'+fmtUSD(parseFloat(e.amount_usdt)||0)+'</span></div>';
+    }).join('')+'</div></div>';
   // Payment status
   html+='<div class="fin-card" style="border-top:3px solid var(--amber)">'+
     '<h3>Статус оплат</h3>';
-  if(f.unpaidItems&&f.unpaidItems.length){
-    html+='<div style="margin-bottom:12px">'+(f.unpaidItems).map(u=>
-      '<div class="fin-row"><span class="label" style="color:var(--hot)">⚠️ '+u.name+'</span><span class="val red">'+fmtUSD(u.leftUSDT)+' неоплачено</span></div>'
-    ).join('')+'</div>';
+  if(unpaid.length){
+    html+='<div class="fin-big" style="color:var(--hot)">'+unpaid.length+' неоплаченных</div>'+
+    '<div style="margin-top:12px">'+unpaid.slice(0,10).map(function(e){
+      return '<div class="fin-row" style="cursor:pointer" onclick="openPaymentModal(\''+e.id+'\')">'+
+        '<span class="label" style="color:var(--hot)">⚠️ '+e.description+'</span>'+
+        '<span class="val red">'+fmtUSD(parseFloat(e.amount_usdt)||0)+'</span></div>';
+    }).join('')+'</div>';
+    if(unpaid.length>10)html+='<div style="color:var(--dim);font-size:11px;margin-top:8px">...ещё '+(unpaid.length-10)+' записей</div>';
   }else{
-    html+='<div style="padding:12px;color:var(--green);font-size:13px">✅ Все оплаты закрыты</div>';
+    html+='<div style="padding:12px;color:var(--green);font-size:13px">✅ Все оплаты за '+financePeriod+' закрыты</div>';
   }
-  html+='<div class="fin-row"><span class="label">Курс</span><span class="val">'+f.exchangeRate+' RUB/USDT</span></div>'+
-    '<div class="fin-row"><span class="label">Штат</span><span class="val">'+f.headcount+' чел</span></div>'+
-    '<div class="fin-row"><span class="label">Период</span><span class="val">'+f.period+'</span></div>'+
-    '</div>';
-  html+='</div>';
+  html+='</div></div>';
   document.getElementById('financeContent').innerHTML=html;
 }
+
+function renderFinanceLedger(entries){
+  var html='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'+
+    '<thead><tr style="border-bottom:1px solid var(--border);color:var(--dim)">'+
+    '<th style="padding:8px;text-align:left">Дата</th>'+
+    '<th style="padding:8px;text-align:left">Тип</th>'+
+    '<th style="padding:8px;text-align:left">Описание</th>'+
+    '<th style="padding:8px;text-align:right">USDT</th>'+
+    '<th style="padding:8px;text-align:right">RUB</th>'+
+    '<th style="padding:8px;text-align:center">Дни</th>'+
+    '<th style="padding:8px;text-align:center">Оплата</th>'+
+    '<th style="padding:8px;text-align:center">Чек</th>'+
+    '</tr></thead><tbody>';
+  entries.forEach(function(e){
+    var typeColor={'salary':'var(--cyan)','subscription':'var(--green)','infrastructure':'var(--green)','event':'var(--amber)','other':'var(--dim)'}[e.type]||'var(--dim)';
+    var typeLabel={'salary':'ЗП','subscription':'Подписка','infrastructure':'Инфра','event':'Ивент','other':'Прочее'}[e.type]||e.type;
+    var daysInfo=e.days_worked&&e.working_days_in_month?e.days_worked+'/'+e.working_days_in_month:'—';
+    var paidBadge=e.is_paid?'<span style="color:var(--green);cursor:pointer" title="Оплачено '+(e.paid_at?(new Date(e.paid_at)).toLocaleDateString('ru'):'')+'">✅</span>':
+      '<button style="background:var(--hot)22;color:var(--hot);border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px" onclick="openPaymentModal(\''+e.id+'\')">Оплатить</button>';
+    var proofBadge=e.payment_proof_url?'<a href="'+e.payment_proof_url+'" target="_blank" style="color:var(--cyan)">📎</a>':'—';
+    html+='<tr style="border-bottom:1px solid var(--border)11">'+
+      '<td style="padding:6px 8px;color:var(--dim)">'+(e.created_at?(new Date(e.created_at)).toLocaleDateString('ru'):'—')+'</td>'+
+      '<td style="padding:6px 8px"><span style="color:'+typeColor+';font-weight:600">'+typeLabel+'</span></td>'+
+      '<td style="padding:6px 8px">'+e.description+'</td>'+
+      '<td style="padding:6px 8px;text-align:right;font-family:monospace">$'+(parseFloat(e.amount_usdt)||0).toLocaleString('ru')+'</td>'+
+      '<td style="padding:6px 8px;text-align:right;font-family:monospace;color:var(--dim)">₽'+(parseFloat(e.amount_rub)||0).toLocaleString('ru')+'</td>'+
+      '<td style="padding:6px 8px;text-align:center;color:var(--dim)">'+daysInfo+'</td>'+
+      '<td style="padding:6px 8px;text-align:center">'+paidBadge+'</td>'+
+      '<td style="padding:6px 8px;text-align:center">'+proofBadge+'</td>'+
+      '</tr>';
+  });
+  html+='</tbody></table></div>';
+  if(!entries.length)html='<p style="color:var(--dim);padding:20px;text-align:center">Нет записей за '+financePeriod+'. Нажмите "➕ Добавить запись" или "📋 Рассчитать ЗП"</p>';
+  document.getElementById('financeContent').innerHTML=html;
+}
+
+function renderFinanceUnpaid(unpaid){
+  if(!unpaid.length){
+    document.getElementById('financeContent').innerHTML='<p style="color:var(--green);padding:20px;text-align:center">✅ Все оплаты за '+financePeriod+' закрыты!</p>';
+    return;
+  }
+  var totalUnpaid=0;
+  unpaid.forEach(function(e){totalUnpaid+=parseFloat(e.amount_usdt)||0;});
+  var html='<div style="padding:12px 0;margin-bottom:16px;border-bottom:1px solid var(--border)">'+
+    '<span style="font-size:18px;font-weight:700;color:var(--hot)">⚠️ Неоплачено: '+fmtUSD(Math.round(totalUnpaid))+'</span>'+
+    '<span style="color:var(--dim);margin-left:12px">('+unpaid.length+' записей)</span></div>';
+  unpaid.forEach(function(e){
+    html+='<div style="background:var(--hot)08;border:1px solid var(--hot)22;border-radius:8px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">'+
+      '<div><div style="font-weight:600">'+e.description+'</div>'+
+      '<div style="font-size:11px;color:var(--dim);margin-top:4px">'+e.type+' • '+(e.created_at?(new Date(e.created_at)).toLocaleDateString('ru'):'—')+'</div></div>'+
+      '<div style="display:flex;align-items:center;gap:12px">'+
+        '<span style="font-size:16px;font-weight:700;color:var(--hot)">'+fmtUSD(parseFloat(e.amount_usdt)||0)+'</span>'+
+        '<button class="act-btn success" onclick="openPaymentModal(\''+e.id+'\')" style="font-size:11px;padding:4px 12px">💳 Отметить оплату</button>'+
+      '</div></div>';
+  });
+  document.getElementById('financeContent').innerHTML=html;
+}
+
+// ═══ PAYMENT MODAL — mark as paid + upload screenshot ═══
+window.openPaymentModal=function(entryId){
+  var entry=window._financeLedger.find(function(e){return e.id===entryId;});
+  if(!entry)return;
+  openModal(
+    '<h2>💳 Оплата</h2>'+
+    '<div style="margin:12px 0;padding:12px;background:var(--bg);border-radius:8px">'+
+      '<div style="font-weight:600;font-size:16px">'+entry.description+'</div>'+
+      '<div style="font-size:22px;font-weight:700;color:var(--cyan);margin-top:8px">'+fmtUSD(parseFloat(entry.amount_usdt)||0)+'</div>'+
+      '<div style="color:var(--dim);font-size:12px">'+fmtRUB(parseFloat(entry.amount_rub)||0)+' • '+entry.type+'</div>'+
+    '</div>'+
+    '<div style="margin:16px 0">'+
+      '<label style="font-size:12px;color:var(--dim);display:block;margin-bottom:6px">Комментарий к оплате:</label>'+
+      '<input type="text" id="paymentNote" placeholder="Номер транзакции, дата и т.д." style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
+    '</div>'+
+    '<div style="margin:16px 0">'+
+      '<label style="font-size:12px;color:var(--dim);display:block;margin-bottom:6px">📎 Скриншот оплаты (PNG, JPG, PDF):</label>'+
+      '<input type="file" id="paymentProofFile" accept="image/png,image/jpeg,image/jpg,image/webp,application/pdf" style="font-size:12px;color:var(--dim)">'+
+      '<div id="paymentUploadStatus" style="font-size:11px;margin-top:4px"></div>'+
+    '</div>'+
+    '<div class="action-bar">'+
+      '<button class="act-btn success" onclick="confirmPayment(\''+entryId+'\')" style="font-size:14px;padding:8px 24px">✅ Отметить как оплачено</button>'+
+    '</div>'
+  );
+};
+
+window.confirmPayment=async function(entryId){
+  var note=document.getElementById('paymentNote')?.value||'';
+  var fileInput=document.getElementById('paymentProofFile');
+  var proofUrl=null;
+
+  // Upload screenshot if selected
+  if(fileInput&&fileInput.files&&fileInput.files[0]){
+    var file=fileInput.files[0];
+    document.getElementById('paymentUploadStatus').textContent='⏳ Загружаю...';
+    document.getElementById('paymentUploadStatus').style.color='var(--amber)';
+    var fileName='proof_'+entryId.slice(0,8)+'_'+Date.now()+'.'+file.name.split('.').pop();
+    try{
+      var uploadResp=await fetch(SUPABASE_URL+'/storage/v1/object/payment-proofs/'+fileName,{
+        method:'POST',
+        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':file.type},
+        body:file
+      });
+      if(uploadResp.ok){
+        proofUrl=SUPABASE_URL+'/storage/v1/object/public/payment-proofs/'+fileName;
+        document.getElementById('paymentUploadStatus').textContent='✅ Загружено!';
+        document.getElementById('paymentUploadStatus').style.color='var(--green)';
+      }else{
+        document.getElementById('paymentUploadStatus').textContent='⚠️ Ошибка загрузки, но оплату отметим';
+        document.getElementById('paymentUploadStatus').style.color='var(--hot)';
+      }
+    }catch(err){
+      console.warn('Upload error:',err);
+      document.getElementById('paymentUploadStatus').textContent='⚠️ Ошибка сети';
+    }
+  }
+
+  // Update entry in Supabase
+  var updateData={is_paid:true, paid_at:new Date().toISOString(), payment_note:note};
+  if(proofUrl)updateData.payment_proof_url=proofUrl;
+  await sbPatch('finance_ledger','id=eq.'+entryId, updateData);
+
+  // Update local
+  var entry=window._financeLedger.find(function(e){return e.id===entryId;});
+  if(entry){entry.is_paid=true;entry.paid_at=updateData.paid_at;entry.payment_note=note;if(proofUrl)entry.payment_proof_url=proofUrl;}
+
+  modal.classList.remove('open');
+  renderFinance();
+  addFeed('coordinator','💳 Оплата подтверждена: '+(entry?entry.description:''));
+};
+
+// ═══ FINANCE ENTRY FORM — add new record (append-only) ═══
+window.openFinanceEntryForm=function(){
+  var teamOptions=D.team.filter(function(t){return t.status==='active';}).map(function(t){
+    return '<option value="'+t.id+'">'+t.name+(t.salary_usdt?' ($'+t.salary_usdt+')':' (ЗП не указана)')+'</option>';
+  }).join('');
+  openModal(
+    '<h2>➕ Новая финансовая запись</h2>'+
+    '<div style="margin:12px 0">'+
+      '<label style="font-size:12px;color:var(--dim);display:block;margin-bottom:4px">Период:</label>'+
+      '<input type="text" id="fePeriod" value="'+financePeriod+'" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
+    '</div>'+
+    '<div style="margin:12px 0">'+
+      '<label style="font-size:12px;color:var(--dim);display:block;margin-bottom:4px">Тип:</label>'+
+      '<select id="feType" class="task-select" style="width:100%" onchange="finEntryTypeChanged()">'+
+        '<option value="salary">💰 Зарплата</option>'+
+        '<option value="subscription">🔧 Подписка</option>'+
+        '<option value="infrastructure">🖥 Инфраструктура</option>'+
+        '<option value="event">🎪 Ивент</option>'+
+        '<option value="other">📦 Прочее</option>'+
+      '</select>'+
+    '</div>'+
+    '<div id="feSalaryFields" style="margin:12px 0">'+
+      '<label style="font-size:12px;color:var(--dim);display:block;margin-bottom:4px">Сотрудник:</label>'+
+      '<select id="feEmployee" class="task-select" style="width:100%" onchange="finEmployeeChanged()">'+
+        '<option value="">— Выбрать —</option>'+teamOptions+
+      '</select>'+
+      '<div style="display:flex;gap:8px;margin-top:8px">'+
+        '<div style="flex:1"><label style="font-size:11px;color:var(--dim)">Раб. дней в мес:</label>'+
+          '<input type="number" id="feWorkDays" value="'+financeWorkDays+'" min="1" max="31" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)"></div>'+
+        '<div style="flex:1"><label style="font-size:11px;color:var(--dim)">Отработано дней:</label>'+
+          '<input type="number" id="feDaysWorked" value="'+financeWorkDays+'" min="0" max="31" onchange="finCalcSalary()" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)"></div>'+
+      '</div>'+
+      '<div id="feSalaryCalc" style="margin-top:8px;padding:8px;background:var(--cyan)11;border-radius:6px;font-size:12px;color:var(--cyan)"></div>'+
+    '</div>'+
+    '<div id="feManualFields" style="display:none;margin:12px 0">'+
+      '<div style="display:flex;gap:8px">'+
+        '<div style="flex:1"><label style="font-size:11px;color:var(--dim)">Сумма USDT:</label>'+
+          '<input type="number" id="feAmountUSDT" step="0.01" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)"></div>'+
+        '<div style="flex:1"><label style="font-size:11px;color:var(--dim)">Сумма RUB:</label>'+
+          '<input type="number" id="feAmountRUB" step="0.01" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)"></div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="margin:12px 0">'+
+      '<label style="font-size:12px;color:var(--dim);display:block;margin-bottom:4px">Описание:</label>'+
+      '<input type="text" id="feDescription" placeholder="Описание записи" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
+    '</div>'+
+    '<div class="action-bar">'+
+      '<button class="act-btn success" onclick="submitFinanceEntry()" style="font-size:14px;padding:8px 24px">💾 Добавить запись</button>'+
+    '</div>'
+  );
+};
+
+window.finEntryTypeChanged=function(){
+  var type=document.getElementById('feType').value;
+  document.getElementById('feSalaryFields').style.display=type==='salary'?'block':'none';
+  document.getElementById('feManualFields').style.display=type!=='salary'?'block':'none';
+};
+
+window.finEmployeeChanged=function(){
+  var empId=parseInt(document.getElementById('feEmployee').value);
+  var emp=D.team.find(function(t){return t.id===empId;});
+  if(emp){
+    document.getElementById('feDescription').value='Зарплата: '+emp.name;
+    finCalcSalary();
+  }
+};
+
+window.finCalcSalary=function(){
+  var empId=parseInt(document.getElementById('feEmployee').value);
+  var emp=D.team.find(function(t){return t.id===empId;});
+  if(!emp||!emp.salary_usdt){
+    document.getElementById('feSalaryCalc').innerHTML='<span style="color:var(--dim)">Укажите ЗП сотрудника в разделе Команда</span>';
+    return;
+  }
+  var workDays=parseInt(document.getElementById('feWorkDays').value)||22;
+  var daysWorked=parseInt(document.getElementById('feDaysWorked').value)||workDays;
+  var dailyRate=parseFloat(emp.salary_usdt)/workDays;
+  var calculated=dailyRate*daysWorked;
+  var calculatedRub=parseFloat(emp.salary_rub||0)/workDays*daysWorked;
+  document.getElementById('feSalaryCalc').innerHTML=
+    '📊 Базовая ЗП: $'+parseFloat(emp.salary_usdt).toLocaleString('ru')+'/мес<br>'+
+    '📅 Дневная ставка: $'+dailyRate.toFixed(2)+' ('+workDays+' раб.дн.)<br>'+
+    '💰 <b>К выплате: $'+calculated.toFixed(2)+'</b> ('+daysWorked+' дн.)'+
+    (calculatedRub?' | ₽'+Math.round(calculatedRub).toLocaleString('ru'):'');
+};
+
+window.submitFinanceEntry=async function(){
+  var type=document.getElementById('feType').value;
+  var period=document.getElementById('fePeriod').value;
+  var description=document.getElementById('feDescription').value;
+  if(!description){alert('Укажите описание');return;}
+
+  var entry={period:period,type:type,description:description,is_paid:false,created_by:'ceo'};
+
+  if(type==='salary'){
+    var empId=parseInt(document.getElementById('feEmployee').value);
+    var emp=D.team.find(function(t){return t.id===empId;});
+    if(!empId||!emp){alert('Выберите сотрудника');return;}
+    var workDays=parseInt(document.getElementById('feWorkDays').value)||22;
+    var daysWorked=parseInt(document.getElementById('feDaysWorked').value)||workDays;
+    if(!emp.salary_usdt){alert('У сотрудника не указана ЗП. Укажите её в разделе Команда.');return;}
+    var dailyRate=parseFloat(emp.salary_usdt)/workDays;
+    var amount=dailyRate*daysWorked;
+    var dailyRub=parseFloat(emp.salary_rub||0)/workDays;
+    entry.employee_id=empId;
+    entry.amount_usdt=parseFloat(amount.toFixed(2));
+    entry.amount_rub=parseFloat((dailyRub*daysWorked).toFixed(2));
+    entry.working_days_in_month=workDays;
+    entry.days_worked=daysWorked;
+    entry.base_salary_usdt=parseFloat(emp.salary_usdt);
+  }else{
+    entry.amount_usdt=parseFloat(document.getElementById('feAmountUSDT').value)||0;
+    entry.amount_rub=parseFloat(document.getElementById('feAmountRUB').value)||0;
+  }
+
+  var result=await sbInsert('finance_ledger',entry);
+  if(result){
+    window._financeLedger.unshift(result[0]||entry);
+    modal.classList.remove('open');
+    renderFinance();
+    addFeed('coordinator','💾 Финансовая запись: '+description+' — $'+entry.amount_usdt);
+  }else{
+    alert('Ошибка сохранения. Проверь соединение.');
+  }
+};
+
+// ═══ PAYROLL GENERATOR — auto-create salary entries for all employees ═══
+window.generatePayroll=function(){
+  var activeTeam=D.team.filter(function(t){return t.status==='active'&&t.salary_usdt>0;});
+  if(!activeTeam.length){
+    alert('Нет сотрудников с указанной ЗП. Сначала укажите зарплаты в разделе Команда.');
+    return;
+  }
+  // Check if payroll already exists for this period
+  var existingSalaries=window._financeLedger.filter(function(e){return e.period===financePeriod&&e.type==='salary';});
+  if(existingSalaries.length>0){
+    if(!confirm('За '+financePeriod+' уже есть '+existingSalaries.length+' записей по ЗП. Записи неизменяемы — добавить ещё раз?'))return;
+  }
+  var workDays=parseInt(prompt('Рабочих дней в '+financePeriod+':',financeWorkDays));
+  if(!workDays||workDays<1)return;
+  financeWorkDays=workDays;
+
+  openModal(
+    '<h2>📋 Расчёт ЗП — '+financePeriod+'</h2>'+
+    '<p style="color:var(--dim);font-size:13px">Рабочих дней: '+workDays+'. Укажите отработанные дни для каждого сотрудника:</p>'+
+    '<div id="payrollList" style="max-height:400px;overflow-y:auto;margin:12px 0">'+
+    activeTeam.map(function(t){
+      var dailyRate=(parseFloat(t.salary_usdt)/workDays).toFixed(2);
+      var totalExpected=parseFloat(t.salary_usdt);
+      return '<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--border)11">'+
+        '<div style="flex:2;font-size:13px">'+t.name+'<br><span style="color:var(--dim);font-size:11px">$'+totalExpected+'/мес · $'+dailyRate+'/день</span></div>'+
+        '<div style="flex:1"><input type="number" class="payroll-days" data-id="'+t.id+'" value="'+workDays+'" min="0" max="31" style="width:60px;padding:4px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);text-align:center"></div>'+
+        '<div style="flex:1;text-align:right;font-family:monospace;color:var(--cyan)" id="payrollCalc_'+t.id+'">$'+totalExpected.toFixed(2)+'</div>'+
+      '</div>';
+    }).join('')+'</div>'+
+    '<div class="action-bar">'+
+      '<button class="act-btn success" onclick="submitPayroll('+workDays+')" style="font-size:14px;padding:8px 24px">💾 Создать '+activeTeam.length+' записей</button>'+
+    '</div>'
+  );
+
+  // Add live recalc on day change
+  document.querySelectorAll('.payroll-days').forEach(function(input){
+    input.addEventListener('input',function(){
+      var empId=parseInt(this.dataset.id);
+      var emp=D.team.find(function(t){return t.id===empId;});
+      if(!emp)return;
+      var days=parseInt(this.value)||0;
+      var calc=(parseFloat(emp.salary_usdt)/workDays*days).toFixed(2);
+      var el=document.getElementById('payrollCalc_'+empId);
+      if(el)el.textContent='$'+calc;
+    });
+  });
+};
+
+window.submitPayroll=async function(workDays){
+  var inputs=document.querySelectorAll('.payroll-days');
+  var entries=[];
+  inputs.forEach(function(input){
+    var empId=parseInt(input.dataset.id);
+    var emp=D.team.find(function(t){return t.id===empId;});
+    if(!emp)return;
+    var daysWorked=parseInt(input.value)||0;
+    if(daysWorked<=0)return;
+    var dailyRate=parseFloat(emp.salary_usdt)/workDays;
+    var amount=dailyRate*daysWorked;
+    var dailyRub=parseFloat(emp.salary_rub||0)/workDays;
+    entries.push({
+      period:financePeriod,type:'salary',
+      description:'Зарплата: '+emp.name,
+      employee_id:empId,
+      amount_usdt:parseFloat(amount.toFixed(2)),
+      amount_rub:parseFloat((dailyRub*daysWorked).toFixed(2)),
+      working_days_in_month:workDays,
+      days_worked:daysWorked,
+      base_salary_usdt:parseFloat(emp.salary_usdt),
+      is_paid:false, created_by:'ceo'
+    });
+  });
+  if(!entries.length){alert('Нет записей для создания');return;}
+  var result=await sbInsert('finance_ledger',entries);
+  if(result){
+    window._financeLedger=result.concat(window._financeLedger);
+    modal.classList.remove('open');
+    renderFinance();
+    addFeed('coordinator','📋 Расчёт ЗП за '+financePeriod+': '+entries.length+' записей создано');
+  }else{
+    alert('Ошибка сохранения');
+  }
+};
+
+// ═══ EXCEL EXPORT ═══
+window.exportFinanceExcel=function(){
+  var ledger=window._financeLedger.filter(function(e){return e.period===financePeriod;});
+  if(!ledger.length){alert('Нет данных за '+financePeriod);return;}
+  // Build CSV (opens in Excel)
+  var csv='\uFEFF'; // BOM for Excel UTF-8
+  csv+='Дата,Тип,Описание,USDT,RUB,Раб.дней в мес,Отработано дней,Базовая ЗП,Оплачено,Дата оплаты,Комментарий\n';
+  ledger.forEach(function(e){
+    csv+=[
+      e.created_at?(new Date(e.created_at)).toLocaleDateString('ru'):'',
+      e.type,
+      '"'+(e.description||'').replace(/"/g,'""')+'"',
+      e.amount_usdt||0,
+      e.amount_rub||0,
+      e.working_days_in_month||'',
+      e.days_worked||'',
+      e.base_salary_usdt||'',
+      e.is_paid?'Да':'Нет',
+      e.paid_at?(new Date(e.paid_at)).toLocaleDateString('ru'):'',
+      '"'+(e.payment_note||'').replace(/"/g,'""')+'"'
+    ].join(',')+'\n';
+  });
+  // Download
+  var blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;a.download='F2F_Finance_'+financePeriod.replace(/\s/g,'_')+'.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+};
+
+// Load ledger on init
+if(typeof loadFinanceLedger==='function')setTimeout(loadFinanceLedger,1500);
 renderFinance();
 
 // ═══ TEAM MANAGEMENT PANEL ═══
@@ -230,16 +647,19 @@ function renderTeam(){
 
 function teamCardHTML(t){
   const d=CDepts.find(x=>x.id===t.dept);
+  var salaryBadge=t.salary_usdt?'<span style="font-size:10px;color:var(--cyan);margin-left:auto">$'+parseFloat(t.salary_usdt).toLocaleString('ru')+'</span>':'';
   return '<div class="team-card" onclick="openTeamMemberModal('+t.id+')" style="border-left:3px solid '+(d?.color||'var(--dim)')+'">'+
     '<div class="t-top">'+
       '<span class="t-name">'+t.name+'</span>'+
       (t.isHead?'<span class="t-head">👑 Lead</span>':'')+
       '<span class="t-role">'+t.role+'</span>'+
+      salaryBadge+
     '</div>'+
     '<div class="t-dept">'+
       (d?d.icon+' '+d.name:'❓ Не распределён')+
       ' • '+t.category+
       (t.startDate?' • c '+t.startDate:'')+
+      (t.payroll_start?' • ЗП с '+t.payroll_start:'')+
     '</div></div>';
 }
 
@@ -254,7 +674,36 @@ window.openTeamMemberModal=function(id){
       '<span class="tag" style="background:'+(d?.color||'#64748b')+'22;color:'+(d?.color||'#64748b')+'">'+(d?.icon||'❓')+' '+(d?.name||'Не распределён')+'</span>'+
       (t.isHead?'<span class="tag" style="background:#ffb80022;color:var(--amber)">👑 Руководитель отдела</span>':'')+
       '<span class="tag" style="background:#ffffff08;color:var(--dim)">ID: '+t.id+'</span>'+
+      (t.salary_usdt?'<span class="tag" style="background:var(--cyan)22;color:var(--cyan)">💰 $'+parseFloat(t.salary_usdt).toLocaleString('ru')+'/мес</span>':'')+
     '</div>'+
+    // ═══ SALARY & PAYROLL SECTION ═══
+    '<h3>💰 Зарплата и расчёт</h3>'+
+    '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">'+
+      '<div style="flex:1;min-width:120px">'+
+        '<label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">ЗП (USDT/мес):</label>'+
+        '<input type="number" id="empSalaryUSDT" value="'+(t.salary_usdt||'')+'" step="0.01" placeholder="0" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
+      '</div>'+
+      '<div style="flex:1;min-width:120px">'+
+        '<label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">ЗП (RUB/мес):</label>'+
+        '<input type="number" id="empSalaryRUB" value="'+(t.salary_rub||'')+'" step="0.01" placeholder="0" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
+      '</div>'+
+      '<div style="flex:1;min-width:120px">'+
+        '<label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Валюта выплаты:</label>'+
+        '<select id="empPayType" class="task-select" style="width:100%">'+
+          '<option value="usdt" '+(t.payment_type==='usdt'?'selected':'')+'>USDT</option>'+
+          '<option value="rub" '+(t.payment_type==='rub'?'selected':'')+'>RUB</option>'+
+          '<option value="mixed" '+(t.payment_type==='mixed'?'selected':'')+'>Смешанная</option>'+
+        '</select>'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:12px;align-items:end">'+
+      '<div style="flex:1">'+
+        '<label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">ЗП считаем с даты:</label>'+
+        '<input type="date" id="empPayrollStart" value="'+(t.payroll_start||'')+'" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
+      '</div>'+
+      '<button class="act-btn success" onclick="teamSaveSalary('+t.id+')" style="padding:6px 16px;font-size:12px">💾 Сохранить ЗП</button>'+
+    '</div>'+
+    // ═══ DEPARTMENT & ROLE ═══
     '<h3>Управление</h3>'+
     '<div style="margin-bottom:12px">'+
       '<label style="font-size:12px;color:var(--dim)">Отдел:</label>'+
@@ -267,6 +716,31 @@ window.openTeamMemberModal=function(id){
       '<button class="act-btn warn" onclick="teamDismiss('+t.id+',\'quit\')">🚪 Уход по собственному</button>'+
     '</div>'
   );
+};
+
+// Save salary data for employee
+window.teamSaveSalary=async function(id){
+  var t=D.team.find(function(x){return x.id===id;});if(!t)return;
+  var salaryUSDT=parseFloat(document.getElementById('empSalaryUSDT').value)||0;
+  var salaryRUB=parseFloat(document.getElementById('empSalaryRUB').value)||0;
+  var payType=document.getElementById('empPayType').value;
+  var payrollStart=document.getElementById('empPayrollStart').value||null;
+  // Update local
+  t.salary_usdt=salaryUSDT;
+  t.salary_rub=salaryRUB;
+  t.payment_type=payType;
+  t.payroll_start=payrollStart;
+  // Save to Supabase
+  if(SUPABASE_LIVE){
+    await sbPatch('team','id=eq.'+id,{
+      salary_usdt:salaryUSDT, salary_rub:salaryRUB,
+      payment_type:payType, payroll_start:payrollStart,
+      updated_at:new Date().toISOString()
+    });
+  }
+  renderTeam();
+  openTeamMemberModal(id);
+  addFeed('coordinator','💰 ЗП обновлена: '+t.name+' — $'+salaryUSDT+'/мес');
 };
 
 window.teamAssignDept=function(id,deptId){

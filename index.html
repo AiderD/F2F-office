@@ -136,7 +136,20 @@
 
 <!-- FINANCE PANEL -->
 <div class="panel data-panel" id="panel-finance">
-  <div class="data-header"><h2>💰 Финансы — реальные данные</h2><div class="data-count" id="finance-period">-</div></div>
+  <div class="data-header">
+    <h2>💰 Финансы</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div class="data-count" id="finance-period">-</div>
+      <button class="act-btn success" onclick="openFinanceEntryForm()" style="font-size:12px;padding:4px 12px">➕ Добавить запись</button>
+      <button class="act-btn" onclick="generatePayroll()" style="font-size:12px;padding:4px 12px">📋 Рассчитать ЗП</button>
+      <button class="act-btn" onclick="exportFinanceExcel()" style="font-size:12px;padding:4px 12px">📥 Excel</button>
+    </div>
+  </div>
+  <div class="sub-tabs" id="financeTabs">
+    <button class="sub-tab active" data-ftab="overview">Обзор</button>
+    <button class="sub-tab" data-ftab="ledger">Журнал записей</button>
+    <button class="sub-tab" data-ftab="unpaid">Неоплаченные</button>
+  </div>
   <div id="financeContent"></div>
 </div>
 
