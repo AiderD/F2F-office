@@ -58,7 +58,7 @@
     </div>
   </div>
   <div class="header-right">
-    <span id="currentUser" style="font-size:11px;color:var(--dim);margin-right:6px" title="Текущий пользователь"></span>
+    <div id="currentUser" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--green);background:var(--green)11;border:1px solid var(--green)33;padding:2px 10px;border-radius:6px;white-space:nowrap" title="Текущий пользователь"></div>
     <button onclick="logoutUser()" id="logoutBtn" title="Выйти" style="background:none;border:1px solid var(--border);color:var(--dim);padding:3px 8px;border-radius:6px;cursor:pointer;font-size:11px;transition:all .2s">🚪</button>
     <button onclick="openApiKeyModal()" id="apiKeyBtn" title="Настроить API ключ Claude" style="background:none;border:1px solid var(--border);color:var(--dim);padding:3px 10px;border-radius:6px;cursor:pointer;font-size:11px;transition:all .2s">🔑 API</button>
     <button class="anthem-btn" id="anthemBtn" title="Гимн команды">🎵 ГИМН</button>
@@ -266,14 +266,14 @@
 </div>
 
 <!-- ADMIN PANEL -->
-<div class="panel" id="panel-admin">
-  <div class="section-header">
+<div class="panel data-panel" id="panel-admin">
+  <div class="data-header">
     <h2>🔐 Панель администратора</h2>
-    <div style="display:flex;gap:8px">
-      <button class="ctrl-btn active" onclick="openCreateTokenModal()">➕ Создать токен</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="act-btn success" onclick="openCreateTokenModal()" style="font-size:12px;padding:4px 12px">➕ Создать токен</button>
     </div>
   </div>
-  <div style="display:flex;gap:6px;margin-bottom:16px">
+  <div class="sub-tabs" id="adminTabs">
     <button class="sub-tab active" onclick="adminSwitchTab('tokens',this)">🔑 Токены доступа</button>
     <button class="sub-tab" onclick="adminSwitchTab('audit',this)">📋 Аудит-лог</button>
   </div>
