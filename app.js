@@ -1523,11 +1523,8 @@ function chatRespondTemplate(channel,userMsg){
 }
 
 function chatRespond(channel,userMsg){
-  if(f2fApiKey&&f2fApiKey.startsWith('sk-')){
-    chatRespondAI(channel,userMsg);
-  } else {
-    chatRespondTemplate(channel,userMsg);
-  }
+  // Always use AI via Supabase Edge Function (no API key needed in browser)
+  chatRespondAI(channel,userMsg);
 }
 
 document.getElementById('chatSend').addEventListener('click',function(){
@@ -1555,12 +1552,7 @@ document.getElementById('chatInput').addEventListener('keydown',function(e){
 initChatChannels();
 renderChat();
 // Update API key button visual
-(function(){
-  var btn=document.getElementById('apiKeyBtn');
-  if(f2fApiKey&&f2fApiKey.startsWith('sk-')){
-    btn.style.borderColor='var(--green)';btn.style.color='var(--green)';btn.textContent='🔑 AI ON';
-  }
-})();
+// API key button removed — AI always on via Edge Function
 
 // ═══ CHAT → TASK PARSER ═══
 // Parses agent chat replies for task-like content and auto-creates tasks
