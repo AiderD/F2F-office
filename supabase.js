@@ -329,6 +329,7 @@ function refreshAfterSync(){
   if(typeof renderFinance==='function'){renderFinance();}
   if(typeof updateKPI==='function'){updateKPI();}
   if(typeof renderAgentsPanel==='function'){renderAgentsPanel();}
+  if(typeof renderIntegrations==='function'){renderIntegrations();}
 
   // Add Supabase events to feed
   if(window._sbContent&&SUPABASE_LIVE){
