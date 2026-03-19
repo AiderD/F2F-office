@@ -92,18 +92,26 @@ function logoutUser(){
 function updateUserBadge(){
   const el = document.getElementById('currentUser');
   const adminTab = document.getElementById('tabAdmin');
+  const financeTab = document.querySelector('.tab[data-panel="finance"]');
   if(!_currentSession){ if(el) el.textContent=''; return; }
-  const roleLabels = {admin:'👑',editor:'✏️',viewer:'👁️'};
+  const roleLabels = {admin:'👑',pm:'📋',editor:'✏️',viewer:'👁️'};
   if(el) el.textContent = (roleLabels[_currentSession.role]||'')+ ' ' + _currentSession.login_name;
   // Show admin tab only for admin role
-  if(adminTab) adminTab.style.display = _currentSession.role==='admin' ? '' : 'none';
+  if(adminTab) adminTab.style.display = isAdmin() ? '' : 'none';
+  // Finance tab — admin only
+  if(financeTab) financeTab.style.display = canSeeFinance() ? '' : 'none';
 }
 // Init user badge on auto-login
 updateUserBadge();
 
 function isAdmin(){ return _currentSession && _currentSession.role==='admin'; }
-function isEditor(){ return _currentSession && (_currentSession.role==='admin'||_currentSession.role==='editor'); }
+function isPM(){ return _currentSession && _currentSession.role==='pm'; }
+function isEditor(){ return _currentSession && (_currentSession.role==='admin'||_currentSession.role==='editor'||_currentSession.role==='pm'); }
+function canSeeSalary(){ return isAdmin(); }
+function canEditSalary(){ return isAdmin()||isPM(); }
+function canSeeFinance(){ return isAdmin(); }
 function getCurrentUser(){ return _currentSession ? _currentSession.login_name : 'unknown'; }
+function getCurrentRole(){ return _currentSession ? _currentSession.role : 'viewer'; }
 function getCurrentTokenId(){ return _currentSession ? _currentSession.token_id : null; }
 
 // ═══ AUDIT LOG ═══
@@ -158,8 +166,8 @@ async function renderAdminTokens(container){
 
   (tokens||[]).forEach(t=>{
     const active = t.is_active;
-    const roleColors = {admin:'#ffb800',editor:'#2cff80',viewer:'#00e5ff'};
-    const roleNames = {admin:'Админ',editor:'Редактор',viewer:'Наблюдатель'};
+    const roleColors = {admin:'#ffb800',pm:'#a855f7',editor:'#2cff80',viewer:'#00e5ff'};
+    const roleNames = {admin:'Админ',pm:'PM',editor:'Редактор',viewer:'Наблюдатель'};
     const created = t.created_at ? new Date(t.created_at).toLocaleDateString('ru-RU') : '—';
     const lastUsed = t.last_used_at ? timeSince(t.last_used_at) : 'никогда';
     html += '<tr style="border-bottom:1px solid var(--border);opacity:'+(active?1:0.4)+'">';
@@ -229,7 +237,8 @@ function openCreateTokenModal(){
     '<select id="newTokenRole" style="width:100%;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box;margin-top:4px">'+
     '<option value="viewer">👁️ Наблюдатель — только просмотр</option>'+
     '<option value="editor">✏️ Редактор — просмотр + редактирование</option>'+
-    '<option value="admin">👑 Админ — полный доступ</option>'+
+    '<option value="pm">📋 PM — команда + ЗП (write-only) + задачи</option>'+
+    '<option value="admin">👑 Админ — полный доступ (финансы, ЗП, токены)</option>'+
     '</select></div>'+
     '<div><label style="font-size:11px;color:var(--dim)">Токен (авто-генерация)</label>'+
     '<div style="display:flex;gap:6px;margin-top:4px"><input id="newTokenValue" value="'+randomToken+'" readonly style="flex:1;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--cyan);font-size:13px;font-family:monospace;outline:none;box-sizing:border-box">'+
@@ -307,8 +316,9 @@ const DEPTS = [
 
 // ═══ TABS ═══
 function switchTab(panelId){
-  // Admin-only sections
+  // Restricted sections
   if(panelId==='admin' && !isAdmin()) return;
+  if(panelId==='finance' && !canSeeFinance()) return;
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   const tab=document.querySelector('.tab[data-panel="'+panelId+'"]');
@@ -930,7 +940,9 @@ function renderTeam(){
 
 function teamCardHTML(t){
   const d=CDepts.find(x=>x.id===t.dept);
-  var salaryBadge=t.salary_usdt?'<span style="font-size:10px;color:var(--cyan);margin-left:auto">$'+parseFloat(t.salary_usdt).toLocaleString('ru')+'</span>':'';
+  var salaryBadge='';
+  if(t.salary_usdt && canSeeSalary()) salaryBadge='<span style="font-size:10px;color:var(--cyan);margin-left:auto">$'+parseFloat(t.salary_usdt).toLocaleString('ru')+'</span>';
+  else if(t.salary_usdt && !canSeeSalary()) salaryBadge='<span style="font-size:10px;color:var(--dim);margin-left:auto">💰 Указана</span>';
   return '<div class="team-card" onclick="openTeamMemberModal('+t.id+')" style="border-left:3px solid '+(d?.color||'var(--dim)')+'">'+
     '<div class="t-top">'+
       '<span class="t-name">'+t.name+'</span>'+
@@ -942,7 +954,7 @@ function teamCardHTML(t){
       (d?d.icon+' '+d.name:'❓ Не распределён')+
       ' • '+t.category+
       (t.startDate?' • c '+t.startDate:'')+
-      (t.payroll_start?' • ЗП с '+t.payroll_start:'')+
+      (canSeeSalary()&&t.payroll_start?' • ЗП с '+t.payroll_start:'')+
     '</div></div>';
 }
 
@@ -957,18 +969,21 @@ window.openTeamMemberModal=function(id){
       '<span class="tag" style="background:'+(d?.color||'#64748b')+'22;color:'+(d?.color||'#64748b')+'">'+(d?.icon||'❓')+' '+(d?.name||'Не распределён')+'</span>'+
       (t.isHead?'<span class="tag" style="background:#ffb80022;color:var(--amber)">👑 Руководитель отдела</span>':'')+
       '<span class="tag" style="background:#ffffff08;color:var(--dim)">ID: '+t.id+'</span>'+
-      (t.salary_usdt?'<span class="tag" style="background:var(--cyan)22;color:var(--cyan)">💰 $'+parseFloat(t.salary_usdt).toLocaleString('ru')+'/мес</span>':'')+
+      (t.salary_usdt&&canSeeSalary()?'<span class="tag" style="background:var(--cyan)22;color:var(--cyan)">💰 $'+parseFloat(t.salary_usdt).toLocaleString('ru')+'/мес</span>':'')+
+      (t.salary_usdt&&!canSeeSalary()?'<span class="tag" style="background:var(--dim)22;color:var(--dim)">💰 ЗП указана</span>':'')+
     '</div>'+
-    // ═══ SALARY & PAYROLL SECTION ═══
+    // ═══ SALARY & PAYROLL SECTION (admin: full view, PM: write-only, others: hidden) ═══
+    (canEditSalary() ? (
     '<h3>💰 Зарплата и расчёт</h3>'+
+    (isPM()&&!canSeeSalary() ? '<p style="color:var(--amber);font-size:11px;margin-bottom:8px">⚠️ Вы можете задать ЗП, но существующие значения скрыты</p>' : '')+
     '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">'+
       '<div style="flex:1;min-width:120px">'+
         '<label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">ЗП (USDT/мес):</label>'+
-        '<input type="number" id="empSalaryUSDT" value="'+(t.salary_usdt||'')+'" step="0.01" placeholder="0" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
+        '<input type="number" id="empSalaryUSDT" value="'+(canSeeSalary()?(t.salary_usdt||''):'')+'" step="0.01" placeholder="'+(isPM()&&t.salary_usdt?'Значение скрыто':'0')+'" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
       '</div>'+
       '<div style="flex:1;min-width:120px">'+
         '<label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">ЗП (RUB/мес):</label>'+
-        '<input type="number" id="empSalaryRUB" value="'+(t.salary_rub||'')+'" step="0.01" placeholder="0" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
+        '<input type="number" id="empSalaryRUB" value="'+(canSeeSalary()?(t.salary_rub||''):'')+'" step="0.01" placeholder="'+(isPM()&&t.salary_rub?'Значение скрыто':'0')+'" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
       '</div>'+
       '<div style="flex:1;min-width:120px">'+
         '<label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Валюта выплаты:</label>'+
@@ -985,7 +1000,8 @@ window.openTeamMemberModal=function(id){
         '<input type="date" id="empPayrollStart" value="'+(t.payroll_start||'')+'" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
       '</div>'+
       '<button class="act-btn success" onclick="teamSaveSalary('+t.id+')" style="padding:6px 16px;font-size:12px">💾 Сохранить ЗП</button>'+
-    '</div>'+
+    '</div>'
+    ) : '') +
     // ═══ DEPARTMENT & ROLE ═══
     '<h3>Управление</h3>'+
     '<div style="margin-bottom:12px">'+
@@ -1003,28 +1019,42 @@ window.openTeamMemberModal=function(id){
 
 // Save salary data for employee
 window.teamSaveSalary=async function(id){
+  if(!canEditSalary()){alert('Нет прав для изменения ЗП');return;}
   var t=D.team.find(function(x){return x.id===id;});if(!t)return;
-  var salaryUSDT=parseFloat(document.getElementById('empSalaryUSDT').value)||0;
-  var salaryRUB=parseFloat(document.getElementById('empSalaryRUB').value)||0;
+  var rawUSDT=document.getElementById('empSalaryUSDT').value;
+  var rawRUB=document.getElementById('empSalaryRUB').value;
   var payType=document.getElementById('empPayType').value;
   var payrollStart=document.getElementById('empPayrollStart').value||null;
-  // Update local
-  t.salary_usdt=salaryUSDT;
-  t.salary_rub=salaryRUB;
+
+  // PM: only save if field was actually filled (don't overwrite with 0)
+  var patchData={payment_type:payType, updated_at:new Date().toISOString()};
+  if(payrollStart) patchData.payroll_start=payrollStart;
+
+  if(canSeeSalary()){
+    // Admin — always save
+    var salaryUSDT=parseFloat(rawUSDT)||0;
+    var salaryRUB=parseFloat(rawRUB)||0;
+    patchData.salary_usdt=salaryUSDT;
+    patchData.salary_rub=salaryRUB;
+    t.salary_usdt=salaryUSDT;
+    t.salary_rub=salaryRUB;
+  } else {
+    // PM — only save non-empty values (don't overwrite existing with 0)
+    if(rawUSDT&&rawUSDT!==''){patchData.salary_usdt=parseFloat(rawUSDT);t.salary_usdt=parseFloat(rawUSDT);}
+    if(rawRUB&&rawRUB!==''){patchData.salary_rub=parseFloat(rawRUB);t.salary_rub=parseFloat(rawRUB);}
+  }
+
   t.payment_type=payType;
-  t.payroll_start=payrollStart;
-  // Save to Supabase
+  if(payrollStart) t.payroll_start=payrollStart;
+
   if(SUPABASE_LIVE){
-    await sbPatch('team','id=eq.'+id,{
-      salary_usdt:salaryUSDT, salary_rub:salaryRUB,
-      payment_type:payType, payroll_start:payrollStart,
-      updated_at:new Date().toISOString()
-    });
+    await sbPatch('team','id=eq.'+id, patchData);
   }
   renderTeam();
   openTeamMemberModal(id);
-  addFeed('coordinator','💰 ЗП обновлена: '+t.name+' — $'+salaryUSDT+'/мес');
-  auditLog('update','team','ЗП: '+t.name+' $'+salaryUSDT+' / ₽'+salaryRUB);
+  var logAmount=canSeeSalary()?'$'+(patchData.salary_usdt||t.salary_usdt):'[скрыто]';
+  addFeed('coordinator','💰 ЗП обновлена: '+t.name+' — '+logAmount+'/мес');
+  auditLog('update','team','ЗП: '+t.name+' ('+getCurrentUser()+')');
 };
 
 window.teamAssignDept=function(id,deptId){
