@@ -887,8 +887,8 @@ function renderAgentsPanel(){
   }).join('');
 }
 
-// Agent prompts/strategies stored locally
-const AGENT_PROMPTS={
+// Agent prompts/strategies — FALLBACK defaults, overridden by Supabase agents.system_prompt
+const AGENT_PROMPTS_DEFAULT={
   coordinator:'Оркестрация всех агентов. Проводит планёрки каждые 2ч, назначает задания на основе KPI и директив CEO.',
   content:'5 форматов: Провокация (Durex-стиль), Гайд по фиче (TrueSkill, режимы, Akros), Комьюнити/мотивация, Новости/анонсы, Дискуссии. 30 постов за цикл.',
   market:'Анализ конкурентов (FACEIT, ESEA, CyberShoke, Blast.tv). KPI: регистрации, CAC, retention. Рекомендации по ценообразованию.',
@@ -902,6 +902,20 @@ const AGENT_PROMPTS={
   briefing:'Утренний брифинг с реальными KPI: лиды, письма, контент, статусы агентов. Раз в 24ч.',
   kpi_updater:'Обновление метрик в Supabase для дашборда.'
 };
+// LIVE prompts — starts as defaults, overridden from Supabase
+const AGENT_PROMPTS=Object.assign({},AGENT_PROMPTS_DEFAULT);
+
+// Load real prompts from Supabase agents table on startup
+function loadAgentPromptsFromSupabase(){
+  if(!window._sbAgents)return;
+  Object.keys(window._sbAgents).forEach(function(slug){
+    var agent=window._sbAgents[slug];
+    var dashId=SB_SLUG_TO_DASH[slug];
+    if(dashId&&agent.system_prompt){
+      AGENT_PROMPTS[dashId]=agent.system_prompt;
+    }
+  });
+}
 
 window.openPromptEditor=function(agentId){
   var a=AGENTS[agentId];
@@ -917,20 +931,29 @@ window.openPromptEditor=function(agentId){
   );
 };
 
-window.saveAgentPrompt=function(agentId){
+window.saveAgentPrompt=async function(agentId){
   var text=document.getElementById('promptArea').value.trim();
-  if(text){
-    AGENT_PROMPTS[agentId]=text;
-    // Save to Supabase as directive for this agent
-    if(SUPABASE_LIVE){
-      var sbSlug=DASH_TO_SB_SLUG[agentId]||agentId;
-      sbInsert('directives',{key:'prompt_'+sbSlug+'_'+Date.now(),value_json:{agent:sbSlug,prompt:text,type:'strategy_update'},active:true})
-        .then(function(){addFeed(agentId,'📝 Стратегия обновлена');})
-        .catch(function(e){console.warn(e);});
+  if(!text)return;
+  AGENT_PROMPTS[agentId]=text;
+  // Save to Supabase agents.system_prompt — this is what Edge Functions actually read!
+  if(SUPABASE_LIVE){
+    var sbSlug=DASH_TO_SB_SLUG[agentId]||agentId;
+    var agent=window._sbAgents[sbSlug];
+    if(agent){
+      var result=await sbPatch('agents','id=eq.'+agent.id,{system_prompt:text,updated_at:new Date().toISOString()});
+      if(result){
+        agent.system_prompt=text; // update local cache
+        addFeed(agentId,'📝 Промпт сохранён в Supabase — агент будет использовать на следующем цикле');
+      }else{
+        addFeed(agentId,'⚠️ Ошибка сохранения промпта');
+      }
+    }else{
+      console.warn('Agent slug not found in Supabase:',sbSlug);
+      addFeed(agentId,'⚠️ Агент не найден в Supabase (slug: '+sbSlug+')');
     }
-    closeModal();
-    addFeed('coordinator','📝 Промпт обновлён: '+AGENTS[agentId].emoji+' '+AGENTS[agentId].name);
   }
+  closeModal();
+  addFeed('coordinator','📝 Промпт обновлён: '+AGENTS[agentId].emoji+' '+AGENTS[agentId].name);
 };
 
 window.openDirectiveInput=function(agentId){

@@ -76,7 +76,7 @@ async function sbDelete(table,filter){
 // Fetch and merge Supabase data
 async function syncSupabaseData(){
   // Fetch agents with their IDs for UUID→slug mapping
-  const agents=await sbFetch('agents','select=id,slug,name,color,make_scenario_id,status&limit=20');
+  const agents=await sbFetch('agents','select=id,slug,name,color,make_scenario_id,status,system_prompt&limit=20');
   if(!agents||agents.length===0)return false;
 
   window._sbAgents={};
@@ -310,6 +310,9 @@ function refreshAfterSync(){
       if(typeof renderFeed==='function')renderFeed();
     }
   }
+
+  // ═══ 8b. AGENT PROMPTS: Load from agents.system_prompt ═══
+  if(typeof loadAgentPromptsFromSupabase==='function')loadAgentPromptsFromSupabase();
 
   // ═══ 9. Render everything ═══
   if(typeof renderLeads==='function'){renderLeads();}
