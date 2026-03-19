@@ -685,26 +685,9 @@ window.F2F_DATA = {
     }
   ],
 
-  // ═══ INTEGRATIONS STATUS ═══
-  integrations: {
-    connected: [
-      { name: "Clay MCP", status: "active", purpose: "Lead enrichment", realData: true },
-      { name: "Ahrefs MCP", status: "limited", purpose: "SEO analytics", realData: true },
-      { name: "Make.com", status: "active", purpose: "Automation", plan: "Free→Core", ops: "70/1000" },
-      { name: "Telegram Bot", status: "pending_setup", purpose: "Channel posting", token: "configured" }
-    ],
-    needed: [
-      { name: "Twitter/X API", purpose: "SMM posting", priority: "high" },
-      { name: "LinkedIn API", purpose: "Outreach", priority: "high" },
-      { name: "YouTube API", purpose: "Content analytics", priority: "medium" },
-      { name: "Twitch API", purpose: "Streaming analytics", priority: "medium" },
-      { name: "Reddit API", purpose: "Community monitoring", priority: "medium" },
-      { name: "WhatsApp Business", purpose: "Team comms", priority: "low" },
-      { name: "DTF API", purpose: "Content posting", priority: "low" }
-    ]
-  },
+  // ═══ INTEGRATIONS: removed — built dynamically from live Supabase state in app.js ═══
+  integrations: null,
 
-  // ═══ KPI SNAPSHOT (real data) ═══
   // ═══ KPI: removed — all metrics calculated at runtime from Supabase ═══
   kpi: {}
 };
