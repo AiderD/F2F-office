@@ -74,6 +74,11 @@ async function loginWithToken(){
     document.getElementById('app').style.display='';
     updateUserBadge();
 
+    // SECURITY: Init Supabase ONLY after successful auth
+    if(typeof initSupabase==='function'&&!SUPABASE_LIVE){
+      setTimeout(initSupabase,300);
+    }
+
   } catch(e){
     errDiv.textContent='Ошибка подключения к серверу';
     errDiv.style.display='block';
@@ -85,6 +90,12 @@ function logoutUser(){
   if(_currentSession) auditLog('logout','auth','Выход: '+_currentSession.login_name);
   _currentSession=null;
   sessionStorage.removeItem('f2f_session');
+  // SECURITY: Clear all Supabase data on logout
+  SUPABASE_LIVE=false;
+  window._sbTeam=null;window._sbPartners=null;window._sbContent=null;
+  window._sbMemory=null;window._sbEvents=null;window._sbReports=null;
+  window._sbFeedLoaded=false;window._sbContentMerged=false;window._sbPartnersMerged=false;
+  if(typeof feedItems!=='undefined')feedItems.length=0;
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('app').style.display='none';
 }
@@ -1892,14 +1903,27 @@ function buildLiveIntegrations(){
   // 6. GitHub Pages — always active (we're running on it)
   connected.push({name:'GitHub Pages',purpose:'Dashboard hosting',status:'active',detail:'aiderd.github.io'});
 
+  // 7. Brave Search API — for lead_finder web search
+  connected.push({name:'Brave Search API',purpose:'Web search for leads',status:'active',detail:'1000 req/мес бесплатно'});
+
+  // 8. Hunter.io — email verification
+  connected.push({name:'Hunter.io',purpose:'Email verification',status:'active',detail:'Верификация по домену'});
+
+  // 9. Replicate (Flux) — AI image generation
+  var hasImages=window._sbContent?window._sbContent.filter(function(c){return c.image_url;}).length:0;
+  connected.push({name:'Replicate (Flux)',purpose:'AI image generation',status:'active',detail:hasImages?hasImages+' картинок':'Готов к генерации'});
+
+  // 10. Apollo.io — lead enrichment
+  connected.push({name:'Apollo.io',purpose:'Lead enrichment & search',status:'active',detail:'People & Company search'});
+
   // Needed integrations — keep curated list but mark any that became connected
   var neededList=[
     {name:'Twitter/X API',purpose:'SMM posting',priority:'high'},
     {name:'LinkedIn API',purpose:'Outreach automation',priority:'high'},
-    {name:'YouTube API',purpose:'Content analytics',priority:'medium'},
-    {name:'Twitch API',purpose:'Streaming analytics',priority:'medium'},
-    {name:'Discord Bot',purpose:'Community engagement',priority:'medium'},
     {name:'SendGrid/Resend',purpose:'Email delivery',priority:'high'},
+    {name:'YouTube API',purpose:'Content analytics',priority:'medium'},
+    {name:'Discord Bot',purpose:'Community engagement',priority:'medium'},
+    {name:'Twitch API',purpose:'Streaming analytics',priority:'low'},
     {name:'Reddit API',purpose:'Community monitoring',priority:'low'}
   ];
 
@@ -2001,7 +2025,7 @@ function showToast(message,type){
 }
 
 // ═══ PIPELINE FUNNEL VIEW ═══
-var leadViewMode='grid'; // 'grid' or 'pipeline'
+var leadViewMode='pipeline'; // 'grid' or 'pipeline' — pipeline by default
 function toggleLeadView(){
   leadViewMode=leadViewMode==='grid'?'pipeline':'grid';
   var btn=document.getElementById('leadViewToggle');
@@ -2212,6 +2236,14 @@ window.leadAction=function(id,action){
   }
 };
 renderLeads();
+// Pipeline default: show pipeline container, hide grid, render pipeline
+if(leadViewMode==='pipeline'){
+  document.getElementById('leadsGrid').style.display='none';
+  document.getElementById('leadsPipeline').style.display='';
+  var btn=document.getElementById('leadViewToggle');
+  if(btn){btn.textContent='📋 Список';btn.style.background='#00ff8812';btn.style.color='#00ff88';btn.style.borderColor='#00ff8833';}
+  renderPipeline();
+}
 
 // ═══ POSTS ═══
 let postFilter='all';
@@ -2572,7 +2604,8 @@ window.triggerBriefing=async function(btnEl){
   if(!SUPABASE_LIVE){alert('Supabase не подключён');return;}
   var btn=btnEl||this;
   var origText=btn.textContent;
-  btn.disabled=true;btn.textContent='⏳ Генерирую...';
+  btn.disabled=true;btn.textContent='⏳ Генерирую...';btn.style.opacity='0.6';btn.style.animation='pulse 1.5s infinite';
+  showToast('🌅 Генерирую брифинг... (30-60 сек)','info');
   addFeed('coordinator','🌅 Запуск брифинга...');
   try{
     var r=await fetch(SUPABASE_URL+'/functions/v1/coordinator-briefing',{
@@ -2603,7 +2636,7 @@ window.triggerBriefing=async function(btnEl){
     addFeed('coordinator','❌ Сеть: '+String(e).slice(0,60));
     alert('Ошибка сети: '+e);
   }
-  btn.disabled=false;btn.textContent=origText;
+  btn.disabled=false;btn.textContent=origText;btn.style.opacity='';btn.style.animation='';
 };
 
 // Run all agents or a single agent by slug
@@ -2613,6 +2646,8 @@ window.triggerAgentCycles=async function(btnEl, singleAgentSlug){
   var origText=btn.textContent;
   var isSingle=!!singleAgentSlug;
   btn.disabled=true;btn.textContent=isSingle?'⏳ '+singleAgentSlug+'...':'⏳ Запускаю...';
+  btn.style.opacity='0.6';btn.style.animation='pulse 1.5s infinite';
+  showToast(isSingle?'⚡ Запущен цикл '+singleAgentSlug+'... (30-60 сек)':'⚡ Запускаю все циклы... (1-3 мин)','info');
   addFeed('coordinator',isSingle?'⚡ Запуск цикла: '+singleAgentSlug:'⚡ Запуск всех циклов...');
   try{
     var body=isSingle?{agent_slug:singleAgentSlug}:{};
@@ -2652,7 +2687,7 @@ window.triggerAgentCycles=async function(btnEl, singleAgentSlug){
     addFeed('coordinator','❌ Сеть: '+String(e).slice(0,60));
     alert('Ошибка сети: '+e);
   }
-  btn.disabled=false;btn.textContent=origText;
+  btn.disabled=false;btn.textContent=origText;btn.style.opacity='';btn.style.animation='';
 };
 
 // Run single agent cycle (called from agent detail panel)

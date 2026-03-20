@@ -271,15 +271,23 @@ function refreshAfterSync(){
 
   // ═══ 6b. TEAM: Load from Supabase team table (with salary fields) ═══
   if(window._sbTeam&&window._sbTeam.length>0){
-    D.team=window._sbTeam.map(function(t){
+    var allTeam=window._sbTeam.map(function(t){
       return {
         id:t.id, name:t.name, role:t.role, category:t.category,
-        dept:t.dept, isHead:t.is_head, status:t.status==='active'?'active':t.status,
+        dept:t.dept, isHead:t.is_head, status:t.status||'active',
         startDate:t.start_date, sbId:t.id,
         salary_usdt:t.salary_usdt||0, salary_rub:t.salary_rub||0,
-        payment_type:t.payment_type||'usdt', payroll_start:t.payroll_start||null
+        payment_type:t.payment_type||'usdt', payroll_start:t.payroll_start||null,
+        dismissDate:t.dismiss_date||null, dismissReason:t.dismiss_reason||null, dismissComment:t.dismiss_comment||null
       };
-    }).filter(function(t){return t.status==='active';});
+    });
+    D.team=allTeam.filter(function(t){return t.status==='active';});
+    D.dismissed=allTeam.filter(function(t){return t.status==='dismissed';}).map(function(t){
+      return {id:t.id, name:t.name, reason:t.dismissReason||'Уволен', dept:t.dept,
+              dismissDate:t.dismissDate||'—', comment:t.dismissComment||''};
+    });
+    // Re-render team UI with fresh Supabase data
+    if(typeof renderTeam==='function')renderTeam();
   }
 
   // ═══ 7. STRATEGY: Load from directives ═══
@@ -369,10 +377,21 @@ async function initSupabase(){
 }
 
 // Run after DOM ready + auto-refresh every 30s
+// SECURITY: Only init Supabase if user is authenticated
+function isAuthenticated(){
+  var s=JSON.parse(sessionStorage.getItem('f2f_session')||'null');
+  return !!(s&&s.token);
+}
 window.addEventListener('load',()=>{
-  setTimeout(initSupabase,500);
+  if(isAuthenticated()){
+    setTimeout(initSupabase,500);
+  } else {
+    console.log('🔒 Not authenticated — skipping Supabase init');
+    document.getElementById('syncBadge').textContent='● OFFLINE';
+    document.getElementById('syncBadge').style.color='#666';
+  }
   setInterval(async()=>{
-    if(!SUPABASE_LIVE)return;
+    if(!SUPABASE_LIVE||!isAuthenticated())return;
     try{
       await syncSupabaseData();
       refreshAfterSync();
