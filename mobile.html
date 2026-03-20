@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#060d13">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>F2F Mobile</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{--bg:#060d13;--panel:#0d1820;--card:#111d28;--border:#1a2d3d;--green:#2cff80;--cyan:#00e5ff;--magenta:#ff2d78;--amber:#ffb800;--dim:#5a6a7a;--text:#e8edf2;--safe-top:env(safe-area-inset-top,20px);--safe-bot:env(safe-area-inset-bottom,0px)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden;min-height:100dvh;padding-top:var(--safe-top)}
+.login{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:20px}
+.login-box{text-align:center;width:100%;max-width:340px}
+.login-box h2{color:var(--text);font-size:18px;margin:16px 0 4px}
+.login-box p{color:var(--dim);font-size:12px;margin-bottom:24px}
+.login-box input{width:100%;padding:12px 16px;background:var(--panel);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;outline:none;margin-bottom:10px}
+.login-box input:focus{border-color:var(--green)}
+.login-box button{width:100%;padding:12px;background:var(--green);border:none;border-radius:10px;color:var(--bg);font-weight:700;font-size:14px;cursor:pointer}
+.login-err{color:var(--magenta);font-size:11px;margin-top:6px;display:none}
+
+/* Header */
+.mob-header{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;justify-content:space-between}
+.mob-header h1{font-size:16px;font-weight:700;color:var(--green)}
+.mob-header h1 span{color:var(--dim);font-weight:400;font-size:12px;margin-left:6px}
+.mob-header .sync{font-size:9px;padding:3px 8px;border-radius:6px;background:var(--green)18;color:var(--green);border:1px solid var(--green)33}
+.mob-header .offline{color:var(--dim);background:var(--dim)18;border-color:var(--dim)33}
+
+/* KPI Strip */
+.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
+.kpi-cell{background:var(--panel);text-align:center;padding:10px 4px}
+.kpi-cell .v{font-size:18px;font-weight:800}
+.kpi-cell .l{font-size:9px;color:var(--dim);margin-top:2px}
+
+/* Tabs */
+.mob-tabs{display:flex;overflow-x:auto;background:var(--panel);border-bottom:1px solid var(--border);gap:0;scrollbar-width:none;-ms-overflow-style:none;position:sticky;top:41px;z-index:99}
+.mob-tabs::-webkit-scrollbar{display:none}
+.mob-tab{flex:0 0 auto;padding:10px 16px;font-size:12px;color:var(--dim);border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;transition:all .2s}
+.mob-tab.active{color:var(--green);border-bottom-color:var(--green)}
+.mob-tab .badge{background:var(--cyan);color:var(--bg);font-size:9px;padding:1px 5px;border-radius:8px;margin-left:4px;font-weight:700}
+
+/* Content area */
+.mob-content{padding:12px;padding-bottom:calc(20px + var(--safe-bot))}
+.mob-section{display:none}
+.mob-section.active{display:block}
+
+/* Agent Cards */
+.agent-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
+.agent-top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.agent-emoji{font-size:28px}
+.agent-name{font-size:14px;font-weight:600}
+.agent-role{font-size:11px;color:var(--dim)}
+.agent-status{display:inline-block;font-size:10px;padding:2px 8px;border-radius:6px;margin-top:4px}
+.agent-status.active{background:var(--green)18;color:var(--green);border:1px solid var(--green)33}
+.agent-status.idle{background:var(--amber)18;color:var(--amber);border:1px solid var(--amber)33}
+.agent-last{font-size:11px;color:var(--dim);margin-top:8px;line-height:1.5}
+.agent-actions{display:flex;gap:6px;margin-top:10px}
+.agent-actions button{flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);font-size:11px;cursor:pointer}
+.agent-actions button:active{background:var(--green)22}
+
+/* Lead Cards */
+.lead-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
+.lead-top{display:flex;justify-content:space-between;align-items:flex-start}
+.lead-name{font-size:14px;font-weight:600}
+.lead-company{font-size:12px;color:var(--cyan)}
+.lead-priority{font-size:10px;padding:2px 8px;border-radius:6px}
+.lead-priority.hot{background:#ff2d7822;color:#ff2d78}
+.lead-priority.warm{background:#ffb80022;color:#ffb800}
+.lead-priority.medium{background:#00e5ff22;color:#00e5ff}
+.lead-stage{font-size:10px;color:var(--dim);margin-top:6px}
+.lead-stage span{color:var(--green);font-weight:600}
+.lead-contact{font-size:11px;color:var(--dim);margin-top:6px;line-height:1.6}
+
+/* Report Cards */
+.report-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
+.report-title{font-size:13px;font-weight:600;margin-bottom:4px}
+.report-meta{font-size:10px;color:var(--dim);margin-bottom:8px}
+.report-body{font-size:12px;color:#ccc;line-height:1.6;max-height:120px;overflow:hidden;position:relative}
+.report-body.expanded{max-height:none}
+.report-expand{font-size:11px;color:var(--cyan);margin-top:6px;cursor:pointer;border:none;background:none}
+
+/* Feed */
+.feed-item{padding:10px 0;border-bottom:1px solid var(--border);font-size:12px;line-height:1.5}
+.feed-time{color:var(--dim);font-size:10px}
+.feed-agent{color:var(--cyan);font-weight:600}
+
+/* Pipeline mini */
+.pipeline-row{display:flex;gap:4px;margin-bottom:10px;overflow-x:auto;padding-bottom:6px}
+.pipeline-col{flex:0 0 auto;width:140px;background:var(--panel);border-radius:10px;padding:8px}
+.pipeline-col h4{font-size:10px;color:var(--dim);text-align:center;margin-bottom:6px;text-transform:uppercase}
+.pipeline-col .count{text-align:center;font-size:22px;font-weight:800;color:var(--green)}
+
+/* Dept summary */
+.dept-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
+.dept-name{font-size:14px;font-weight:600;margin-bottom:6px}
+.dept-members{font-size:12px;color:var(--dim);line-height:1.7}
+.dept-members b{color:var(--text)}
+
+/* Pull to refresh indicator */
+.ptr-indicator{text-align:center;padding:12px;color:var(--green);font-size:12px;display:none}
+
+/* Toast */
+.mob-toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:var(--green);color:var(--bg);padding:8px 20px;border-radius:10px;font-size:12px;font-weight:600;z-index:9999;animation:toastIn .3s ease}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(-10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login" id="loginScreen">
+  <div class="login-box">
+    <div style="font-size:40px;margin-bottom:4px">🏢</div>
+    <h2>F2F Mobile Office</h2>
+    <p>Введите токен доступа</p>
+    <input type="text" id="loginName" placeholder="Имя Фамилия" autocomplete="name">
+    <input type="text" id="loginToken" placeholder="Токен доступа" autocomplete="off"
+      onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="login-err" id="loginErr"></div>
+    <button onclick="doLogin()">Войти</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" style="display:none">
+
+<div class="mob-header">
+  <h1>F2F<span>Mobile Office</span></h1>
+  <div style="display:flex;align-items:center;gap:6px">
+    <span class="sync" id="syncBadge">● LIVE</span>
+    <span id="clockEl" style="font-size:10px;color:var(--dim);font-family:monospace">--:--</span>
+  </div>
+</div>
+
+<div class="kpi-strip" id="kpiStrip">
+  <div class="kpi-cell"><div class="v" style="color:var(--cyan)" id="kLeads">-</div><div class="l">Лиды</div></div>
+  <div class="kpi-cell"><div class="v" style="color:var(--magenta)" id="kPosts">-</div><div class="l">Посты</div></div>
+  <div class="kpi-cell"><div class="v" style="color:var(--green)" id="kReports">-</div><div class="l">Отчёты</div></div>
+  <div class="kpi-cell"><div class="v" style="color:var(--amber)" id="kAgents">-</div><div class="l">Агенты</div></div>
+</div>
+
+<div class="mob-tabs" id="tabs">
+  <div class="mob-tab active" data-tab="overview">📊 Обзор</div>
+  <div class="mob-tab" data-tab="agents">🤖 Агенты</div>
+  <div class="mob-tab" data-tab="leads">🎯 Лиды</div>
+  <div class="mob-tab" data-tab="feed">📡 Лента</div>
+  <div class="mob-tab" data-tab="reports">📋 Отчёты</div>
+  <div class="mob-tab" data-tab="team">👥 Команда</div>
+</div>
+
+<div class="ptr-indicator" id="ptrIndicator">↻ Обновление...</div>
+
+<div class="mob-content">
+
+<!-- OVERVIEW -->
+<div class="mob-section active" id="sec-overview">
+  <div style="margin-bottom:14px">
+    <h3 style="font-size:13px;color:var(--dim);margin-bottom:8px">Pipeline</h3>
+    <div class="pipeline-row" id="pipelineRow"></div>
+  </div>
+  <div style="margin-bottom:14px">
+    <h3 style="font-size:13px;color:var(--dim);margin-bottom:8px">Последняя активность агентов</h3>
+    <div id="overviewFeed"></div>
+  </div>
+  <div>
+    <h3 style="font-size:13px;color:var(--dim);margin-bottom:8px">Горячие лиды</h3>
+    <div id="hotLeads"></div>
+  </div>
+</div>
+
+<!-- AGENTS -->
+<div class="mob-section" id="sec-agents">
+  <div id="agentsList"></div>
+</div>
+
+<!-- LEADS -->
+<div class="mob-section" id="sec-leads">
+  <div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto">
+    <button class="mob-tab active" data-lf="all" style="padding:6px 12px;font-size:11px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text)">Все</button>
+    <button class="mob-tab" data-lf="hot" style="padding:6px 12px;font-size:11px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text)">🔥 Hot</button>
+    <button class="mob-tab" data-lf="warm" style="padding:6px 12px;font-size:11px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text)">⭐ Warm</button>
+  </div>
+  <div id="leadsList"></div>
+</div>
+
+<!-- FEED -->
+<div class="mob-section" id="sec-feed">
+  <div id="feedList"></div>
+</div>
+
+<!-- REPORTS -->
+<div class="mob-section" id="sec-reports">
+  <div id="reportsList"></div>
+</div>
+
+<!-- TEAM -->
+<div class="mob-section" id="sec-team">
+  <div id="teamList"></div>
+</div>
+
+</div>
+</div>
+
+<script>
+// ═══ CONFIG ═══
+var SB_URL='https://cuvmjkavluixkbzblcie.supabase.co';
+var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1dm1qa2F2bHVpeGtiemJsY2llIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NDg4ODgsImV4cCI6MjA4OTMyNDg4OH0.Ie1xGbB45nELK0PbwnKgDu56yxhZugVEdXYoUQT7TG4';
+var data={leads:[],reports:[],team:[],content:[],events:[],agents:[]};
+var currentFilter='all';
+
+// ═══ AUTH ═══
+function getSession(){try{return JSON.parse(sessionStorage.getItem('f2f_mob_session'))}catch(e){return null}}
+function doLogin(){
+  var n=document.getElementById('loginName').value.trim();
+  var t=document.getElementById('loginToken').value.trim();
+  if(!t){showLoginErr('Введите токен');return}
+  // check against Supabase auth_tokens
+  sbQuery('auth_tokens','select=*&token=eq.'+t).then(function(r){
+    if(r&&r.length>0){
+      sessionStorage.setItem('f2f_mob_session',JSON.stringify({name:r[0].name||n,role:r[0].role||'viewer',token:t}));
+      document.getElementById('loginScreen').style.display='none';
+      document.getElementById('app').style.display='block';
+      loadAll();
+    } else { showLoginErr('Неверный токен'); }
+  }).catch(function(){showLoginErr('Ошибка подключения')});
+}
+function showLoginErr(m){var e=document.getElementById('loginErr');e.textContent=m;e.style.display='block'}
+
+// Check session on load
+(function(){
+  var s=getSession();
+  if(s&&s.token){
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('app').style.display='block';
+    loadAll();
+  }
+})();
+
+// ═══ SUPABASE HELPERS ═══
+function sbQuery(table,query){
+  return fetch(SB_URL+'/rest/v1/'+table+'?'+query,{
+    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+  }).then(function(r){return r.json()});
+}
+
+// ═══ DATA LOADING ═══
+function loadAll(){
+  Promise.all([
+    sbQuery('partner_pipeline','select=*&order=created_at.desc&limit=100'),
+    sbQuery('agent_reports','select=*&order=created_at.desc&limit=30'),
+    sbQuery('team_members','select=*'),
+    sbQuery('content_queue','select=*&order=created_at.desc&limit=30'),
+    sbQuery('agent_events','select=*&order=created_at.desc&limit=50'),
+    sbQuery('ai_agents','select=*')
+  ]).then(function(results){
+    data.leads=results[0]||[];
+    data.reports=results[1]||[];
+    data.team=results[2]||[];
+    data.content=results[3]||[];
+    data.events=results[4]||[];
+    data.agents=results[5]||[];
+    renderAll();
+    updateSync(true);
+  }).catch(function(e){
+    console.error('Load error:',e);
+    updateSync(false);
+  });
+}
+
+function updateSync(ok){
+  var b=document.getElementById('syncBadge');
+  if(ok){b.textContent='● LIVE';b.className='sync'}
+  else{b.textContent='● OFFLINE';b.className='sync offline'}
+}
+
+// ═══ RENDER ALL ═══
+function renderAll(){
+  renderKPIs();
+  renderOverview();
+  renderAgents();
+  renderLeads();
+  renderFeed();
+  renderReports();
+  renderTeam();
+}
+
+// KPIs
+function renderKPIs(){
+  document.getElementById('kLeads').textContent=data.leads.length;
+  document.getElementById('kPosts').textContent=data.content.length;
+  document.getElementById('kReports').textContent=data.reports.length;
+  document.getElementById('kAgents').textContent=data.agents.length;
+}
+
+// Overview
+function renderOverview(){
+  // Pipeline
+  var stages={identified:0,contacted:0,negotiating:0,closed_won:0};
+  data.leads.forEach(function(l){if(stages[l.stage]!==undefined)stages[l.stage]++;else stages.identified++});
+  var stageNames={identified:'Найдены',contacted:'Контакт',negotiating:'Переговоры',closed_won:'Закрыты'};
+  var stageColors={identified:'var(--cyan)',contacted:'var(--amber)',negotiating:'var(--magenta)',closed_won:'var(--green)'};
+  var ph='';
+  Object.keys(stages).forEach(function(s){
+    ph+='<div class="pipeline-col"><h4>'+stageNames[s]+'</h4><div class="count" style="color:'+stageColors[s]+'">'+stages[s]+'</div></div>';
+  });
+  document.getElementById('pipelineRow').innerHTML=ph;
+
+  // Recent feed (last 5)
+  var fh='';
+  data.events.slice(0,5).forEach(function(e){
+    fh+='<div class="feed-item"><span class="feed-time">'+fmtTime(e.created_at)+'</span> <span class="feed-agent">'+esc(e.agent_slug||'system')+'</span> — '+(esc(e.event_type||''))+': '+esc((e.detail||'').substring(0,80))+'</div>';
+  });
+  document.getElementById('overviewFeed').innerHTML=fh||'<div style="color:var(--dim);font-size:12px">Нет событий</div>';
+
+  // Hot leads
+  var hot=data.leads.filter(function(l){return l.priority==='hot'||l.match_score>=80}).slice(0,5);
+  var hh='';
+  hot.forEach(function(l){
+    hh+='<div class="lead-card"><div class="lead-top"><div><div class="lead-name">'+esc(l.contact_name||'—')+'</div><div class="lead-company">'+esc(l.company_name||'—')+'</div></div><span class="lead-priority hot">🔥 HOT</span></div></div>';
+  });
+  document.getElementById('hotLeads').innerHTML=hh||'<div style="color:var(--dim);font-size:12px">Нет горячих лидов</div>';
+}
+
+// Agents
+function renderAgents(){
+  var h='';
+  var agentMeta={
+    coordinator:{emoji:'🎯',color:'var(--green)'},content:{emoji:'📱',color:'var(--magenta)'},
+    market:{emoji:'📊',color:'var(--cyan)'},leads:{emoji:'📧',color:'var(--amber)'},
+    outreach:{emoji:'🎯',color:'#a78bfa'},social:{emoji:'👥',color:'#34d399'},
+    lead_finder:{emoji:'🔍',color:'#f472b6'},followup:{emoji:'📨',color:'#fb923c'},
+    processor:{emoji:'⚙️',color:'#94a3b8'},watchdog:{emoji:'🛡️',color:'#ef4444'},
+    briefing:{emoji:'☀️',color:'#fbbf24'}
+  };
+  data.agents.forEach(function(a){
+    var m=agentMeta[a.slug]||{emoji:'🤖',color:'var(--cyan)'};
+    var lastEvent=data.events.find(function(e){return e.agent_slug===a.slug});
+    var lastStr=lastEvent?fmtTime(lastEvent.created_at)+' — '+esc((lastEvent.detail||'').substring(0,60)):'Нет данных';
+    h+='<div class="agent-card">'+
+      '<div class="agent-top"><div class="agent-emoji">'+m.emoji+'</div><div><div class="agent-name" style="color:'+m.color+'">'+esc(a.name||a.slug)+'</div><div class="agent-role">'+esc(a.role_desc||a.slug)+'</div>'+
+      '<span class="agent-status '+(a.is_active?'active':'idle')+'">'+(a.is_active?'● Active':'● Idle')+'</span></div></div>'+
+      '<div class="agent-last">📋 '+lastStr+'</div>'+
+      '<div class="agent-actions"><button onclick="runAgent(\''+a.slug+'\')">▶ Запустить</button><button onclick="viewAgentReport(\''+a.slug+'\')">📊 Отчёт</button></div>'+
+      '</div>';
+  });
+  document.getElementById('agentsList').innerHTML=h||'<div style="color:var(--dim);padding:20px;text-align:center">Загрузка агентов...</div>';
+}
+
+// Leads
+function renderLeads(){
+  var filtered=data.leads;
+  if(currentFilter==='hot')filtered=filtered.filter(function(l){return l.priority==='hot'||l.match_score>=80});
+  else if(currentFilter==='warm')filtered=filtered.filter(function(l){return l.priority==='warm'||(l.match_score>=50&&l.match_score<80)});
+
+  var h='';
+  filtered.forEach(function(l){
+    var pri=l.priority||'medium';
+    if(!l.priority&&l.match_score>=80)pri='hot';
+    else if(!l.priority&&l.match_score>=50)pri='warm';
+    var stageLabel={identified:'Найден',contacted:'Контакт',negotiating:'Переговоры',closed_won:'✅ Закрыт',closed_lost:'❌ Потерян'}[l.stage]||l.stage;
+    h+='<div class="lead-card" onclick="showLeadDetail(\''+l.id+'\')">'+
+      '<div class="lead-top"><div><div class="lead-name">'+esc(l.contact_name||'—')+'</div><div class="lead-company">'+esc(l.company_name||'—')+'</div></div>'+
+      '<span class="lead-priority '+pri+'">'+({hot:'🔥',warm:'⭐',medium:'💡',cold:'❄️'}[pri]||'')+ ' '+pri.toUpperCase()+'</span></div>'+
+      '<div class="lead-stage">Стейдж: <span>'+stageLabel+'</span></div>'+
+      '<div class="lead-contact">'+(l.email?'✉ '+esc(l.email)+'<br>':'')+(l.phone?'📞 '+esc(l.phone)+'<br>':'')+(l.linkedin?'🔗 LinkedIn':'')+'</div>'+
+      '</div>';
+  });
+  document.getElementById('leadsList').innerHTML=h||'<div style="color:var(--dim);padding:20px;text-align:center">Нет лидов</div>';
+}
+
+// Feed
+function renderFeed(){
+  var h='';
+  data.events.forEach(function(e){
+    h+='<div class="feed-item"><span class="feed-time">'+fmtTime(e.created_at)+'</span> <span class="feed-agent">'+esc(e.agent_slug||'system')+'</span><br>'+esc(e.event_type||'')+': '+esc((e.detail||'').substring(0,150))+'</div>';
+  });
+  document.getElementById('feedList').innerHTML=h||'<div style="color:var(--dim);padding:20px;text-align:center">Нет событий</div>';
+}
+
+// Reports
+function renderReports(){
+  var h='';
+  data.reports.forEach(function(r){
+    var body=r.summary||r.content||'';
+    h+='<div class="report-card">'+
+      '<div class="report-title">'+esc(r.title||r.report_type||'Отчёт')+'</div>'+
+      '<div class="report-meta">'+esc(r.agent_slug||'system')+' • '+fmtTime(r.created_at)+'</div>'+
+      '<div class="report-body" id="rb_'+r.id+'">'+esc(body.substring(0,300))+(body.length>300?'...':'')+'</div>'+
+      (body.length>300?'<button class="report-expand" onclick="toggleReport(\''+r.id+'\')">Показать полностью</button>':'')+
+      '</div>';
+  });
+  document.getElementById('reportsList').innerHTML=h||'<div style="color:var(--dim);padding:20px;text-align:center">Нет отчётов</div>';
+}
+
+// Team
+function renderTeam(){
+  var depts={};
+  data.team.filter(function(t){return(t.status||'active')==='active'}).forEach(function(t){
+    var d=t.dept||'Другое';
+    if(!depts[d])depts[d]=[];
+    depts[d].push(t);
+  });
+  var h='';
+  Object.keys(depts).forEach(function(d){
+    h+='<div class="dept-card"><div class="dept-name">'+esc(d)+' ('+depts[d].length+')</div><div class="dept-members">';
+    depts[d].forEach(function(m){
+      h+='<div>'+(m.is_head?'👑 ':'• ')+'<b>'+esc(m.name)+'</b> — '+esc(m.role||'')+'</div>';
+    });
+    h+='</div></div>';
+  });
+  document.getElementById('teamList').innerHTML=h||'<div style="color:var(--dim);padding:20px;text-align:center">Нет данных</div>';
+}
+
+// ═══ ACTIONS ═══
+function runAgent(slug){
+  showToast('▶ Запуск '+slug+'...');
+  fetch(SB_URL+'/functions/v1/agent-autonomous-cycle',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_KEY},
+    body:JSON.stringify({agentSlug:slug})
+  }).then(function(r){return r.json()}).then(function(d){
+    showToast('✅ '+slug+' завершён');
+    setTimeout(loadAll,2000);
+  }).catch(function(){showToast('❌ Ошибка запуска')});
+}
+
+function viewAgentReport(slug){
+  var r=data.reports.find(function(r){return r.agent_slug===slug});
+  if(r){
+    switchTab('reports');
+    var el=document.getElementById('rb_'+r.id);
+    if(el)el.scrollIntoView({behavior:'smooth'});
+  } else { showToast('Нет отчётов для '+slug); }
+}
+
+function showLeadDetail(id){
+  var l=data.leads.find(function(x){return x.id===id||x.id===parseInt(id)});
+  if(!l)return;
+  var msg='📋 '+esc(l.contact_name||'—')+'\n🏢 '+esc(l.company_name||'—')+'\n✉ '+esc(l.email||'—')+'\n📞 '+esc(l.phone||'—')+'\n🔗 '+esc(l.linkedin||'—')+'\n🌐 '+esc(l.website||'—')+'\nStage: '+esc(l.stage||'—');
+  alert(msg);
+}
+
+function toggleReport(id){
+  var el=document.getElementById('rb_'+id);
+  if(el)el.classList.toggle('expanded');
+}
+
+// ═══ TABS ═══
+document.querySelectorAll('.mob-tab[data-tab]').forEach(function(t){
+  t.addEventListener('click',function(){switchTab(t.dataset.tab)});
+});
+function switchTab(name){
+  document.querySelectorAll('.mob-tab[data-tab]').forEach(function(t){t.classList.toggle('active',t.dataset.tab===name)});
+  document.querySelectorAll('.mob-section').forEach(function(s){s.classList.toggle('active',s.id==='sec-'+name)});
+}
+
+// Lead filters
+document.querySelectorAll('[data-lf]').forEach(function(b){
+  b.addEventListener('click',function(){
+    document.querySelectorAll('[data-lf]').forEach(function(x){x.classList.remove('active');x.style.borderColor='var(--border)'});
+    b.classList.add('active');b.style.borderColor='var(--green)';
+    currentFilter=b.dataset.lf;
+    renderLeads();
+  });
+});
+
+// ═══ CLOCK ═══
+setInterval(function(){
+  var d=new Date();var h=d.getHours();var m=d.getMinutes();
+  document.getElementById('clockEl').textContent=(h<10?'0':'')+h+':'+(m<10?'0':'')+m;
+},10000);
+
+// ═══ AUTO REFRESH ═══
+setInterval(function(){
+  if(getSession())loadAll();
+},30000);
+
+// ═══ HELPERS ═══
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function fmtTime(iso){
+  if(!iso)return'—';
+  try{var d=new Date(iso);var h=d.getHours();var m=d.getMinutes();var dd=d.getDate();var mo=d.getMonth()+1;
+  return (dd<10?'0':'')+dd+'.'+(mo<10?'0':'')+mo+' '+(h<10?'0':'')+h+':'+(m<10?'0':'')+m}catch(e){return'—'}
+}
+function showToast(msg){
+  var t=document.createElement('div');t.className='mob-toast';t.textContent=msg;
+  document.body.appendChild(t);setTimeout(function(){t.remove()},2500);
+}
+
+// ═══ SERVICE WORKER ═══
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(function(e){console.log('SW reg failed:',e)});
+}
+</script>
+</body>
+</html>

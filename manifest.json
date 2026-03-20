@@ -1,0 +1,16 @@
+{
+  "name": "F2F Virtual Office",
+  "short_name": "F2F Office",
+  "description": "AI Virtual Office — мониторинг агентов, CRM, отделы",
+  "start_url": "/F2F-office/mobile.html",
+  "scope": "/F2F-office/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#060d13",
+  "theme_color": "#2cff80",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
