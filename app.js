@@ -2265,9 +2265,9 @@ function renderPosts(){
         <button onclick="quickPostAction('${p.sbId||p.id}','approve')" style="flex:1;padding:5px;background:#00ff8812;color:#00ff88;border:1px solid #00ff8833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">✅ Одобрить</button>
         <button onclick="quickPostAction('${p.sbId||p.id}','reject')" style="flex:1;padding:5px;background:#ff2d7812;color:#ff2d78;border:1px solid #ff2d7833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">❌ Отклонить</button>
       </div>`:''}
-      ${p.sbStatus==='approved'&&p.sbId?`<div style="display:flex;gap:6px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px" onclick="event.stopPropagation()">
-        ${!p.imageUrl?`<button onclick="generatePostImage('${p.sbId}')" style="flex:1;padding:5px;background:#9c27b018;color:#9c27b0;border:1px solid #9c27b044;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">🖼 Генерировать картинку</button>`:''}
-        <button onclick="publishPostToTelegram('${p.sbId}')" style="flex:1;padding:5px;background:#0088cc18;color:#0088cc;border:1px solid #0088cc44;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">📢 Опубликовать в Telegram</button>
+      ${p.sbStatus==='approved'&&p.sbId?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;border-top:1px solid var(--border);padding-top:8px" onclick="event.stopPropagation()">
+        <button onclick="generatePostImage('${p.sbId}')" style="flex:1;min-width:45%;padding:5px;background:#9c27b018;color:#9c27b0;border:1px solid #9c27b044;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">${p.imageUrl?'🔄 Перегенерировать':'🖼 Генерировать картинку'}</button>
+        <button onclick="publishPostToTelegram('${p.sbId}')" style="flex:1;min-width:45%;padding:5px;background:#0088cc18;color:#0088cc;border:1px solid #0088cc44;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">📢 Опубликовать в Telegram</button>
       </div>`:''}
     </div>`).join('');
 }
@@ -2287,11 +2287,13 @@ window.openPostModal=function(id){
       <span class="post-status ${p.status}">${p.status==='ready'?'✅ Ready':'📝 Draft'}</span>
       <span class="tag" style="background:#ffffff08;color:var(--dim)">${p.category}</span>
     </div>
-    ${p.imageUrl?'<div style="margin-bottom:12px;border-radius:8px;overflow:hidden"><img src="'+p.imageUrl+'" style="width:100%;max-height:250px;object-fit:cover;display:block" onerror="this.parentElement.style.display=\'none\'"></div>':''}
+    ${p.imageUrl?'<div style="margin-bottom:12px;border-radius:8px;overflow:hidden;position:relative"><img src="'+p.imageUrl+'" style="width:100%;max-height:250px;object-fit:cover;display:block" onerror="this.parentElement.style.display=\'none\'"></div>':''}
     <div style="font-size:15px;line-height:1.8;white-space:pre-wrap;margin-bottom:16px;padding:16px;background:var(--bg);
       border-radius:8px;border:1px solid var(--border)">${p.text}</div>
     <p style="color:var(--purple)">${p.hashtags}</p>
     <p style="color:var(--dim);margin-top:8px">📅 Дата: ${p.date} | Агент: ${AGENTS[p.agentId]?.emoji||''} ${AGENTS[p.agentId]?.name||p.agentId}</p>
+    ${p.imagePrompt?'<p style="color:var(--dim);font-size:11px;margin-top:4px">🖼 Промпт: <span style="color:#9c27b0">'+((p.imagePrompt||'').length>100?(p.imagePrompt||'').slice(0,100)+'...':p.imagePrompt)+'</span></p>':''}
+    ${p.sbId?'<div style="margin:12px 0;padding:10px;background:#9c27b008;border:1px solid #9c27b033;border-radius:8px"><div style="font-size:11px;color:#9c27b0;font-weight:600;margin-bottom:6px">🖼 AI-картинка — кастомный промпт (необязательно):</div><textarea id="customImagePrompt" placeholder="Опиши что хочешь видеть на картинке... Например: F2F logo in center, neon arena, dark background" style="width:100%;min-height:50px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px;resize:vertical;box-sizing:border-box"></textarea><div style="display:flex;gap:6px;margin-top:6px"><button onclick="generatePostImage(\''+p.sbId+'\',document.getElementById(\'customImagePrompt\').value)" style="flex:1;padding:6px;background:#9c27b022;color:#9c27b0;border:1px solid #9c27b044;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600">'+(p.imageUrl?'🔄 Перегенерировать':'🖼 Сгенерировать картинку')+'</button></div></div>':''}
     <div class="action-bar">
       <button class="act-btn" onclick="navigator.clipboard.writeText(document.querySelector('.modal div[style*=pre-wrap]').textContent).then(function(){alert('Скопировано!')})">📋 Копировать</button>
       <button class="act-btn success" onclick="postAction(${p.id},'approve')">✅ ${p.status==='draft'?'Утвердить':'Вернуть в черновик'}</button>
@@ -2398,20 +2400,22 @@ window.quickPostAction=function(id,action){
 };
 
 // Generate AI image for a post via Edge Function
-window.generatePostImage=function(postId){
+window.generatePostImage=function(postId,customPrompt){
   if(!SUPABASE_LIVE){showToast('Supabase не подключён','error');return;}
   showToast('🖼 Генерирую AI-картинку... (10-30 сек)','info');
+  var payload={post_id:postId};
+  if(customPrompt&&customPrompt.trim()){payload.custom_prompt=customPrompt.trim();}
   fetch(SUPABASE_URL+'/functions/v1/generate-image',{
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
-    body:JSON.stringify({post_id:postId})
+    body:JSON.stringify(payload)
   }).then(function(r){return r.json();}).then(function(data){
     if(data.success&&data.image_url){
       var p=D.posts.find(function(x){return x.sbId===postId;});
       if(p){p.imageUrl=data.image_url;p.imagePrompt=data.prompt_used||'';}
       showToast('🖼 Картинка сгенерирована! Стиль: '+data.style+' ('+data.category+')','success');
       addFeed('content','🖼 AI-картинка сгенерирована для поста');
-      renderPosts();
+      renderPosts();closeModal();
     } else if(data.error){
       showToast('Ошибка генерации: '+data.error+(data.detail?' — '+data.detail:''),'error');
     }
