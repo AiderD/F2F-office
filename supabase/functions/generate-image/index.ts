@@ -217,20 +217,72 @@ function mapPostToCategory(rubric: string, content: string): string {
 
 // ═══ Helper: extract image context from post text ═══
 function extractImageContext(text: string, category: string): string {
-  // Take first 100 chars of post as context for the image
-  const shortText = text.slice(0, 150).replace(/[#@\n]/g, " ").trim();
+  // Extract key visual elements from post text
+  const keywords = extractKeywords(text);
+  const subject = extractSubject(text);
 
-  const categoryHints: Record<string, string> = {
-    news: "breaking news about competitive gaming and CS2",
-    tournament: "esports tournament championship atmosphere",
-    match: "competitive match between two teams, rivalry energy",
-    entertainment: "fun gaming culture moment, community vibes",
-    educational: "clean tutorial interface, strategic gaming",
-    promo: "exciting new game mode showcase, dynamic action",
-    meme: "humorous gaming situation, internet culture",
+  const categoryScenes: Record<string, string> = {
+    news: "dramatic newsroom-style esports broadcast scene",
+    tournament: "epic esports tournament arena with massive screens and crowd",
+    match: "intense head-to-head gaming battle scene, split-screen rivalry",
+    entertainment: "vibrant gaming community gathering, fun chaotic energy",
+    educational: "clean strategic overview, tactical gaming HUD elements",
+    promo: "cinematic product showcase with dynamic lighting",
+    meme: "exaggerated comedic gaming moment, meme-worthy scene",
   };
 
-  return `${categoryHints[category] || "professional esports"}, context: ${shortText}`;
+  const scene = categoryScenes[category] || "professional esports atmosphere";
+
+  // Build specific prompt from post content
+  const parts = [scene];
+  if (subject) parts.push(`featuring: ${subject}`);
+  if (keywords.length > 0) parts.push(`key elements: ${keywords.join(", ")}`);
+
+  return parts.join(". ");
+}
+
+// ═══ Helper: extract subject/topic from post text ═══
+function extractSubject(text: string): string {
+  const t = text.toLowerCase();
+  // Detect specific topics for visual representation
+  if (t.includes("rc cup") || t.includes("кубок")) return "tournament trophy with teams competing, bracket board";
+  if (t.includes("akros") || t.includes("античит")) return "digital shield protecting gaming, security barrier, anti-cheat system";
+  if (t.includes("awp") || t.includes("снайпер")) return "precision sniper scope view, AWP rifle, long-range shot";
+  if (t.includes("rank") || t.includes("ранг") || t.includes("рейтинг")) return "ranking ladder climbing up, skill progression chart, ELO numbers";
+  if (t.includes("toxik") || t.includes("токсик") || t.includes("тиммейт")) return "team communication scene, headsets and monitors, squad coordination";
+  if (t.includes("mm") || t.includes("матчмейкинг") || t.includes("подбор")) return "matchmaking queue interface, players being matched, algorithm visualization";
+  if (t.includes("ace") || t.includes("клатч") || t.includes("clutch")) return "clutch moment, last player standing, bomb site scenario";
+  if (t.includes("тренировк") || t.includes("aim") || t.includes("скилл")) return "training range, aim practice targets, skill improvement";
+  if (t.includes("стрим") || t.includes("stream")) return "live streaming setup with multiple screens and chat";
+  if (t.includes("обновлен") || t.includes("патч") || t.includes("update")) return "software update visualization, changelog, new features emerging";
+  if (t.includes("подписк") || t.includes("premium") || t.includes("pro")) return "premium membership card, VIP access, golden tier";
+  return "";
+}
+
+// ═══ Helper: extract keywords for visual context ═══
+function extractKeywords(text: string): string[] {
+  const keywords: string[] = [];
+  const t = text.toLowerCase();
+
+  // Game-specific
+  if (t.includes("cs2") || t.includes("counter-strike")) keywords.push("CS2 game");
+  if (t.includes("dust") || t.includes("mirage") || t.includes("inferno") || t.includes("nuke")) keywords.push("iconic map");
+  if (t.includes("5x5") || t.includes("5v5")) keywords.push("5v5 team battle");
+  if (t.includes("1v1") || t.includes("1x1")) keywords.push("1v1 duel");
+  if (t.includes("2v2") || t.includes("2x2")) keywords.push("2v2 arena");
+
+  // Emotions
+  if (t.includes("победа") || t.includes("win") || t.includes("выигр")) keywords.push("victory celebration");
+  if (t.includes("проигр") || t.includes("lose") || t.includes("поражен")) keywords.push("defeat, determination to comeback");
+  if (t.includes("злость") || t.includes("бесит") || t.includes("rage")) keywords.push("gaming rage moment");
+  if (t.includes("смешно") || t.includes("лол") || t.includes("😂")) keywords.push("funny moment");
+
+  // F2F specific
+  if (t.includes("f2f") || t.includes("ф2ф")) keywords.push("F2F platform branding green neon");
+  if (t.includes("dominion")) keywords.push("2v5 asymmetric mode");
+  if (t.includes("arena")) keywords.push("arena combat");
+
+  return keywords.slice(0, 4); // Max 4 keywords
 }
 
 // ═══ Helper: build final prompt from preset + context ═══
