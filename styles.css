@@ -181,8 +181,10 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
   max-height:80vh;overflow-y:auto;padding:24px;position:relative}
 .modal::-webkit-scrollbar{width:4px}
 .modal::-webkit-scrollbar-thumb{background:var(--border)}
+.modal-drag-handle{display:none}
 .modal-close{position:absolute;top:12px;right:16px;background:none;border:none;color:var(--dim);
   font-size:20px;cursor:pointer}
+.modal-close::before{content:none}
 .modal-close:hover{color:var(--text)}
 .modal h2{font-size:18px;font-weight:700;margin-bottom:4px}
 .modal h3{font-size:14px;font-weight:600;margin:16px 0 8px;color:var(--cyan)}
@@ -445,8 +447,16 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
 
   /* ─── MODAL ─── */
   .modal-overlay{align-items:flex-end}
-  .modal{width:100%;max-width:100%;max-height:90dvh;border-radius:16px 16px 0 0;padding:16px;margin:0}
-  .modal-close{top:8px;right:12px}
+  .modal{width:100%;max-width:100%;max-height:90dvh;border-radius:16px 16px 0 0;padding:16px;padding-top:8px;margin:0;
+    transition:transform .25s ease}
+  .modal-drag-handle{display:flex!important;align-items:center;justify-content:center;padding:8px 0 4px;cursor:grab;
+    touch-action:none;-webkit-user-select:none;user-select:none}
+  .modal-drag-handle::after{content:'';width:40px;height:4px;background:#64748b;border-radius:4px}
+  .modal-close{top:auto;right:auto;left:auto;transform:none;bottom:0;position:sticky;display:block;
+    width:100%;padding:14px;margin-top:12px;background:var(--border);border:none;border-radius:10px;
+    color:var(--text);font-size:14px;font-weight:600;cursor:pointer;text-align:center;letter-spacing:0.5px;
+    font-size:0}
+  .modal-close::before{content:'Закрыть';font-size:14px}
   .modal h2{font-size:16px}
   .modal h3{font-size:13px}
 

@@ -1447,7 +1447,7 @@ function renderChat(){
 const CHAT_EDGE_URL=SUPABASE_URL+'/functions/v1/agent-chat';
 let f2fApiKey=localStorage.getItem('f2f_api_key')||'';
 
-function closeModal(){modal.classList.remove('open');}
+function closeModal(){modal.classList.remove('open');var m=document.querySelector('.modal');if(m){m.style.transform='';m.style.transition='';}}
 function openApiKeyModal(){
   var html='<h2 style="margin-bottom:16px">🔑 Anthropic API Key</h2>'+
     '<p style="color:var(--dim);margin-bottom:12px;font-size:13px">Для AI-ответов агентов нужен ключ Claude API. Он хранится только локально в вашем браузере.</p>'+
@@ -2085,8 +2085,44 @@ setInterval(()=>{
 // ═══ MODAL ═══
 const modal=document.getElementById('modal');
 const modalContent=document.getElementById('modalContent');
-document.getElementById('modalClose').addEventListener('click',()=>modal.classList.remove('open'));
-modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open')});
+document.getElementById('modalClose').addEventListener('click',()=>closeModal());
+modal.addEventListener('click',e=>{if(e.target===modal)closeModal()});
+
+// ═══ MOBILE SWIPE-TO-CLOSE ═══
+(function(){
+  var modalEl=document.querySelector('.modal');
+  var handle=document.getElementById('modalDragHandle');
+  var startY=0,currentY=0,dragging=false;
+  function onStart(e){
+    if(!isMob())return;
+    dragging=true;startY=(e.touches?e.touches[0].clientY:e.clientY);currentY=0;
+    modalEl.style.transition='none';
+  }
+  function onMove(e){
+    if(!dragging)return;
+    var y=(e.touches?e.touches[0].clientY:e.clientY)-startY;
+    if(y<0)y=0;
+    currentY=y;
+    modalEl.style.transform='translateY('+y+'px)';
+  }
+  function onEnd(){
+    if(!dragging)return;
+    dragging=false;
+    modalEl.style.transition='transform .25s ease';
+    if(currentY>100){
+      modalEl.style.transform='translateY(100%)';
+      setTimeout(function(){closeModal();modalEl.style.transform='';},250);
+    }else{
+      modalEl.style.transform='';
+    }
+  }
+  handle.addEventListener('touchstart',onStart,{passive:true});
+  handle.addEventListener('touchmove',onMove,{passive:false});
+  handle.addEventListener('touchend',onEnd);
+  handle.addEventListener('mousedown',onStart);
+  document.addEventListener('mousemove',onMove);
+  document.addEventListener('mouseup',onEnd);
+})();
 
 function openModal(html){ modalContent.innerHTML=html; modal.classList.add('open'); }
 
