@@ -325,6 +325,7 @@
 
 <!-- APP LOGIC -->
 <script src="app.js"></script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});</script>
 
 <!-- ANTHEM OVERLAY -->
 <div class="anthem-overlay" id="anthemOverlay">

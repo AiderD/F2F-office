@@ -2,7 +2,7 @@
   "name": "F2F Virtual Office",
   "short_name": "F2F Office",
   "description": "AI Virtual Office — мониторинг агентов, CRM, отделы",
-  "start_url": "/F2F-office/mobile.html",
+  "start_url": "/F2F-office/",
   "scope": "/F2F-office/",
   "display": "standalone",
   "orientation": "portrait",

@@ -1,7 +1,12 @@
 // F2F PWA Service Worker v1
-const CACHE_NAME = 'f2f-pwa-v1';
+const CACHE_NAME = 'f2f-pwa-v2';
 const URLS_TO_CACHE = [
-  '/F2F-office/mobile.html',
+  '/F2F-office/',
+  '/F2F-office/index.html',
+  '/F2F-office/styles.css',
+  '/F2F-office/app.js',
+  '/F2F-office/supabase.js',
+  '/F2F-office/f2f_data.js',
   '/F2F-office/manifest.json',
   '/F2F-office/icon-192.png',
   '/F2F-office/icon-512.png'
