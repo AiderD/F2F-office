@@ -2177,16 +2177,16 @@ window.openLeadModal=function(id){
     // Stage bar
     '<div style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap">'+stageHTML+'</div>'+
 
-    // Contact info
+    // Contact info (click to edit)
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;padding:12px;background:#0a151e;border-radius:8px;border:1px solid #1a2d3d">'+
-      '<div style="font-size:11px"><span style="color:var(--dim)">📧 Email:</span> '+(l.email?'<a href="mailto:'+l.email+'" style="color:var(--cyan)">'+l.email+'</a>':'<span style="color:#384858">—</span>')+'</div>'+
-      '<div style="font-size:11px"><span style="color:var(--dim)">📞 Тел:</span> '+(l.phone||'<span style="color:#384858">—</span>')+'</div>'+
-      '<div style="font-size:11px"><span style="color:var(--dim)">🔗 LinkedIn:</span> '+(l.linkedin?'<a href="'+l.linkedin+'" target="_blank" style="color:var(--cyan)">Профиль</a>':'<span style="color:#384858">—</span>')+'</div>'+
-      '<div style="font-size:11px"><span style="color:var(--dim)">🌐 Сайт:</span> '+(l.website?'<a href="'+l.website+'" target="_blank" style="color:var(--cyan)">'+l.website.replace(/https?:\/\//,'')+'</a>':'<span style="color:#384858">—</span>')+'</div>'+
-      '<div style="font-size:11px"><span style="color:var(--dim)">📍 Локация:</span> '+(l.location||'—')+'</div>'+
-      '<div style="font-size:11px"><span style="color:var(--dim)">📅 Добавлен:</span> '+(l.startDate||'—')+'</div>'+
-      '<div style="font-size:11px"><span style="color:var(--dim)">🔎 Источник:</span> '+(l.source||'—')+'</div>'+
-      '<div style="font-size:11px"><span style="color:var(--dim)">👤 Отв-ный:</span> '+(l.assignedTo||'AI Agent')+'</div>'+
+      '<div onclick="editLeadField('+id+',\'name\',\'Имя контакта\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">👤 Контакт:</span> <span style="color:#e8edf2;border-bottom:1px dashed #384858">'+(l.name||'—')+'</span></div>'+
+      '<div onclick="editLeadField('+id+',\'company\',\'Компания\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">🏢 Компания:</span> <span style="color:#e8edf2;border-bottom:1px dashed #384858">'+(l.company||'—')+'</span></div>'+
+      '<div onclick="editLeadField('+id+',\'email\',\'Email\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">📧 Email:</span> <span style="color:var(--cyan);border-bottom:1px dashed #384858">'+(l.email||'—')+'</span></div>'+
+      '<div onclick="editLeadField('+id+',\'phone\',\'Телефон\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">📞 Тел:</span> <span style="color:#e8edf2;border-bottom:1px dashed #384858">'+(l.phone||'—')+'</span></div>'+
+      '<div onclick="editLeadField('+id+',\'linkedin\',\'LinkedIn URL\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">🔗 LinkedIn:</span> <span style="color:var(--cyan);border-bottom:1px dashed #384858">'+(l.linkedin?'Профиль':'—')+'</span></div>'+
+      '<div onclick="editLeadField('+id+',\'website\',\'Сайт\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">🌐 Сайт:</span> <span style="color:var(--cyan);border-bottom:1px dashed #384858">'+(l.website?l.website.replace(/https?:\/\//,''):'—')+'</span></div>'+
+      '<div onclick="editLeadField('+id+',\'location\',\'Локация\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">📍 Локация:</span> <span style="color:#e8edf2;border-bottom:1px dashed #384858">'+(l.location||'—')+'</span></div>'+
+      '<div onclick="editLeadField('+id+',\'title\',\'Должность / Сегмент\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">💼 Должность:</span> <span style="color:#e8edf2;border-bottom:1px dashed #384858">'+(l.title||'—')+'</span></div>'+
     '</div>'+
 
     // Pitch / AI notes
@@ -2351,6 +2351,98 @@ window.addLeadInteraction=function(id,type){
     showToast('✅ '+(typeLabels[type]||type)+' сохранён(а) локально','success');
   }
   addFeed('leads',(type==='email_sent'?'📧':type==='call'?'📞':type==='meeting'?'🤝':'📝')+' '+l.name+': '+text.slice(0,60));
+};
+
+// CRM: Add new lead manually
+window.openAddLeadModal=function(){
+  var typeLabels={partner:'🤝 Партнёр',client_b2b:'💼 Клиент B2B',investor:'💰 Инвестор',media_influencer:'📺 Медиа/Инфлюенсер',federation:'🏛 Федерация',other:'📋 Другое'};
+  var typeOptions=Object.keys(typeLabels).map(function(k){return '<option value="'+k+'">'+typeLabels[k]+'</option>';}).join('');
+  var stageOptions=['identified','contacted','negotiating','closed_won'].map(function(s){
+    var labels={identified:'🔍 Найден',contacted:'📧 Контакт',negotiating:'🤝 Переговоры',closed_won:'✅ Закрыт'};
+    return '<option value="'+s+'">'+labels[s]+'</option>';
+  }).join('');
+  openModal(
+    '<h2 style="margin-bottom:16px">➕ Новый лид</h2>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:10px;color:var(--dim)">Компания *</label><input id="nl_company" placeholder="Название компании" style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px"></div>'+
+      '<div><label style="font-size:10px;color:var(--dim)">Контакт *</label><input id="nl_name" placeholder="Имя Фамилия" style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px"></div>'+
+      '<div><label style="font-size:10px;color:var(--dim)">Email</label><input id="nl_email" placeholder="email@example.com" style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px"></div>'+
+      '<div><label style="font-size:10px;color:var(--dim)">Телефон</label><input id="nl_phone" placeholder="+7..." style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px"></div>'+
+      '<div><label style="font-size:10px;color:var(--dim)">LinkedIn</label><input id="nl_linkedin" placeholder="https://linkedin.com/in/..." style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px"></div>'+
+      '<div><label style="font-size:10px;color:var(--dim)">Сайт</label><input id="nl_website" placeholder="https://..." style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px"></div>'+
+      '<div><label style="font-size:10px;color:var(--dim)">Тип контакта</label><select id="nl_type" style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px">'+typeOptions+'</select></div>'+
+      '<div><label style="font-size:10px;color:var(--dim)">Стейдж</label><select id="nl_stage" style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px">'+stageOptions+'</select></div>'+
+      '<div><label style="font-size:10px;color:var(--dim)">Сегмент / Должность</label><input id="nl_segment" placeholder="CEO / esports_team" style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px"></div>'+
+      '<div><label style="font-size:10px;color:var(--dim)">Локация</label><input id="nl_location" placeholder="CIS / EU / US" style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px"></div>'+
+    '</div>'+
+    '<div style="margin-top:10px"><label style="font-size:10px;color:var(--dim)">Заметка / Pitch</label><textarea id="nl_notes" placeholder="Почему этот контакт интересен..." style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;min-height:60px;resize:vertical;margin-top:2px;font-family:inherit"></textarea></div>'+
+    '<div style="margin-top:14px;display:flex;gap:8px">'+
+      '<button onclick="saveNewLead()" style="flex:1;padding:10px;background:#00ff8822;color:#00ff88;border:1px solid #00ff8844;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700">✅ Сохранить лид</button>'+
+      '<button onclick="closeModal()" style="padding:10px 16px;background:#ff2d7812;color:#ff2d78;border:1px solid #ff2d7833;border-radius:8px;cursor:pointer;font-size:13px">Отмена</button>'+
+    '</div>'
+  );
+};
+
+window.saveNewLead=async function(){
+  var company=(document.getElementById('nl_company').value||'').trim();
+  var name=(document.getElementById('nl_name').value||'').trim();
+  if(!company||!name){showToast('Заполните компанию и имя контакта','error');return;}
+  var leadData={
+    company_name:company,
+    contact_name:name,
+    contact_email:(document.getElementById('nl_email').value||'').trim(),
+    phone:(document.getElementById('nl_phone').value||'').trim(),
+    linkedin:(document.getElementById('nl_linkedin').value||'').trim(),
+    website:(document.getElementById('nl_website').value||'').trim(),
+    contact_type:document.getElementById('nl_type').value,
+    stage:document.getElementById('nl_stage').value,
+    segment:(document.getElementById('nl_segment').value||'').trim(),
+    pitch_text:(document.getElementById('nl_notes').value||'').trim(),
+    notes:document.getElementById('nl_location').value||'CIS',
+    source:'manual',
+    priority:'medium'
+  };
+  if(SUPABASE_LIVE){
+    var res=await sbInsert('partner_pipeline',leadData);
+    if(res&&res[0]){
+      showToast('✅ Лид '+company+' добавлен!','success');
+      // Also log interaction
+      await sbInsert('lead_interactions',{lead_id:res[0].id,interaction_type:'auto_found',content:'Лид добавлен вручную: '+company+' / '+name,created_by:(_currentSession?_currentSession.login_name:'CEO')});
+      // Refresh data
+      window._sbPartnersMerged=false;
+      if(typeof initSupabase==='function')setTimeout(initSupabase,500);
+      addFeed('leads','➕ Новый лид: '+company+' ('+name+') — добавлен вручную');
+      modal.classList.remove('open');
+    } else {
+      showToast('Ошибка сохранения','error');
+    }
+  } else {
+    // Local mode
+    D.leads.push({id:D.leads.length+9000,name:name,company:company,email:leadData.contact_email,
+      title:leadData.segment,priority:'medium',notes:leadData.pitch_text,location:leadData.notes,
+      source:'manual',contactType:leadData.contact_type,sbStage:leadData.stage,
+      linkedin:leadData.linkedin,phone:leadData.phone,website:leadData.website,
+      startDate:new Date().toISOString().slice(0,10),status:'active'});
+    renderLeads();if(leadViewMode==='pipeline')renderPipeline();
+    modal.classList.remove('open');
+    showToast('✅ Лид добавлен локально','success');
+  }
+};
+
+// CRM: Edit lead field inline
+window.editLeadField=function(id,field,label){
+  var l=D.leads.find(function(x){return x.id===id;});if(!l)return;
+  var val=prompt(label+':',l[field]||'');
+  if(val===null)return;
+  l[field]=val.trim();
+  // Map frontend fields → Supabase columns
+  var sbMap={name:'contact_name',company:'company_name',email:'contact_email',phone:'phone',
+    linkedin:'linkedin',website:'website',location:'notes',title:'segment'};
+  if(l.sbId&&SUPABASE_LIVE&&sbMap[field]){
+    var upd={};upd[sbMap[field]]=val.trim();
+    sbPatch('partner_pipeline','id=eq.'+l.sbId,upd);
+  }
+  openLeadModal(id);
 };
 
 renderLeads();
