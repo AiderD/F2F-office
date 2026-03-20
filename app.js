@@ -2049,7 +2049,9 @@ function renderPipeline(){
   var html=stages.map(function(s){
     var leads=D.leads.filter(function(l){
       var ls=l.sbStage||stageMap[l.priority]||'identified';
-      return ls===s.key;
+      if(ls!==s.key) return false;
+      if(leadFilter!=='all' && l.priority!==leadFilter) return false;
+      return true;
     });
     return '<div style="flex:1;min-width:200px;background:#0a151e;border:1px solid '+s.color+'33;border-radius:10px;padding:10px;display:flex;flex-direction:column">'+
       '<div style="text-align:center;padding:8px;margin-bottom:8px;background:'+s.color+'15;border-radius:6px;border-bottom:2px solid '+s.color+'">'+
@@ -2102,10 +2104,15 @@ function renderLeads(){
         var src=nParts.length>0?nParts[0].trim():'AI Agent';
         D.leads.push({
           id:8000+i,sbId:p.id,name:p.contact_name||'Контакт',title:p.segment||'',
-          company:p.company_name||'',email:p.contact_email||'',linkedin:'',
+          company:p.company_name||'',email:p.contact_email||'',
+          linkedin:p.linkedin||'',phone:p.phone||'',website:p.website||'',
           location:loc,source:src,
+          contactType:p.contact_type||'partner',
           priority:p.stage==='negotiating'?'hot':p.stage==='contacted'?'warm':'medium',
-          notes:p.pitch_text||'Найден AI агентом',startDate:(p.created_at||'').slice(0,10),
+          notes:p.pitch_text||'Найден AI агентом',notesText:p.notes_text||'',
+          startDate:(p.created_at||'').slice(0,10),
+          nextFollowup:p.next_followup_date||null,
+          assignedTo:p.assigned_to||'',
           status:'active',sbStage:p.stage
         });
       }
@@ -2126,6 +2133,8 @@ function renderLeads(){
       </div>
       <div class="lead-notes">${l.notes}</div>
     </div>`).join('');
+  // Also re-render pipeline if in pipeline view
+  if(leadViewMode==='pipeline') renderPipeline();
 }
 document.getElementById('leadFilters').addEventListener('click',e=>{
   if(!e.target.classList.contains('filter-btn'))return;
@@ -2136,35 +2145,100 @@ document.getElementById('leadFilters').addEventListener('click',e=>{
 });
 
 window.openLeadModal=function(id){
-  const l=D.leads.find(x=>x.id===id);if(!l)return;
-  const comp=D.companies.find(c=>l.company.includes(c.name.split(' ')[0]));
-  openModal(`
-    <h2>${l.name}</h2>
-    <p style="color:var(--dim)">${l.title} @ <span style="color:var(--cyan)">${l.company}</span></p>
-    <div style="margin:12px 0;display:flex;gap:8px;flex-wrap:wrap">
-      <span class="tag" style="background:${l.priority==='hot'?'#ff444422':l.priority==='warm'?'#ffaa0022':'#4488ff22'};
-        color:${l.priority==='hot'?'var(--hot)':l.priority==='warm'?'var(--warm)':'var(--medium)'}">${l.priority.toUpperCase()}</span>
-      <span class="tag" style="background:#ffffff08;color:var(--dim)">📍 ${l.location}</span>
-      <span class="tag" style="background:#ffffff08;color:var(--dim)">📅 В должности с ${l.startDate}</span>
-      <span class="tag" style="background:#ffffff08;color:var(--dim)">Источник: ${l.source}</span>
-    </div>
-    ${l.email?`<p>📧 Email: <a href="mailto:${l.email}">${l.email}</a></p>`:''}
-    ${l.linkedin?`<p>🔗 LinkedIn: <a href="${l.linkedin}" target="_blank">${l.linkedin}</a></p>`:''}
-    <h3>Заметки</h3>
-    <p>${l.notes}</p>
-    ${comp?`<h3>О компании: ${comp.name}</h3>
-    <p>🌐 ${comp.website} | 👥 ${comp.employees} сотр. | 💰 ${comp.revenue} | 🏆 ${comp.prizeWinnings}</p>
-    <p>${comp.notes}</p>`:''}
-    <h3>Действия</h3>
-    <div class="action-bar">
-      <button class="act-btn success" onclick="leadAction(${l.id},'outreach')">📧 Написать письмо</button>
-      <button class="act-btn" onclick="leadAction(${l.id},'priority')">🔄 Сменить приоритет</button>
-      <button class="act-btn" onclick="leadAction(${l.id},'note')">📝 Добавить заметку</button>
-      <button class="act-btn warn" onclick="leadAction(${l.id},'contacted')">📞 Отметить контакт</button>
-      <button class="act-btn" onclick="leadAction(${l.id},'task')">📋 Создать задачу</button>
-      <button class="act-btn danger" onclick="leadAction(${l.id},'remove')">🗑 Удалить лид</button>
-    </div>
-  `);
+  var l=D.leads.find(function(x){return x.id===id;});if(!l)return;
+  var typeLabels={partner:'🤝 Партнёр',client_b2b:'💼 Клиент B2B',investor:'💰 Инвестор',media_influencer:'📺 Медиа/Инфлюенсер',federation:'🏛 Федерация',other:'📋 Другое'};
+  var typeColors={partner:'#00e5ff',client_b2b:'#00ff88',investor:'#ffb800',media_influencer:'#a855f7',federation:'#ff6b6b',other:'#64748b'};
+  var stageLabels={identified:'🔍 Найден',contacted:'📧 Контакт',negotiating:'🤝 Переговоры',closed_won:'✅ Закрыт',closed_lost:'❌ Потерян'};
+  var stages=['identified','contacted','negotiating','closed_won','closed_lost'];
+  var curStage=l.sbStage||'identified';
+  var ct=l.contactType||'partner';
+
+  // Stage buttons
+  var stageHTML=stages.map(function(s){
+    var isCur=s===curStage;
+    return '<button onclick="changeLeadStage('+id+',\''+s+'\')" style="padding:6px 10px;font-size:10px;border-radius:6px;cursor:pointer;border:1px solid '+(isCur?typeColors[ct]||'#00e5ff':'#1a2d3d')+';background:'+(isCur?(typeColors[ct]||'#00e5ff')+'22':'transparent')+';color:'+(isCur?typeColors[ct]||'#00e5ff':'#64748b')+';font-weight:'+(isCur?'700':'400')+'">'+(stageLabels[s]||s)+'</button>';
+  }).join('');
+
+  // Type selector
+  var typeOptions=Object.keys(typeLabels).map(function(k){
+    return '<option value="'+k+'" '+(ct===k?'selected':'')+'>'+typeLabels[k]+'</option>';
+  }).join('');
+
+  openModal(
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
+      '<div style="width:48px;height:48px;border-radius:12px;background:'+(typeColors[ct]||'#00e5ff')+'18;border:2px solid '+(typeColors[ct]||'#00e5ff')+'44;display:flex;align-items:center;justify-content:center;font-size:24px">'+(typeLabels[ct]||'📋').charAt(0)+'</div>'+
+      '<div style="flex:1">'+
+        '<h2 style="margin:0;font-size:18px">'+l.company+'</h2>'+
+        '<div style="color:var(--dim);font-size:12px;margin-top:2px">'+l.name+(l.title?' • '+l.title:'')+'</div>'+
+      '</div>'+
+      '<select onchange="changeLeadType('+id+',this.value)" style="padding:6px 10px;background:#0d1820;color:'+(typeColors[ct]||'#00e5ff')+';border:1px solid '+(typeColors[ct]||'#00e5ff')+'44;border-radius:6px;font-size:11px;cursor:pointer">'+typeOptions+'</select>'+
+    '</div>'+
+
+    // Stage bar
+    '<div style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap">'+stageHTML+'</div>'+
+
+    // Contact info
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;padding:12px;background:#0a151e;border-radius:8px;border:1px solid #1a2d3d">'+
+      '<div style="font-size:11px"><span style="color:var(--dim)">📧 Email:</span> '+(l.email?'<a href="mailto:'+l.email+'" style="color:var(--cyan)">'+l.email+'</a>':'<span style="color:#384858">—</span>')+'</div>'+
+      '<div style="font-size:11px"><span style="color:var(--dim)">📞 Тел:</span> '+(l.phone||'<span style="color:#384858">—</span>')+'</div>'+
+      '<div style="font-size:11px"><span style="color:var(--dim)">🔗 LinkedIn:</span> '+(l.linkedin?'<a href="'+l.linkedin+'" target="_blank" style="color:var(--cyan)">Профиль</a>':'<span style="color:#384858">—</span>')+'</div>'+
+      '<div style="font-size:11px"><span style="color:var(--dim)">🌐 Сайт:</span> '+(l.website?'<a href="'+l.website+'" target="_blank" style="color:var(--cyan)">'+l.website.replace(/https?:\/\//,'')+'</a>':'<span style="color:#384858">—</span>')+'</div>'+
+      '<div style="font-size:11px"><span style="color:var(--dim)">📍 Локация:</span> '+(l.location||'—')+'</div>'+
+      '<div style="font-size:11px"><span style="color:var(--dim)">📅 Добавлен:</span> '+(l.startDate||'—')+'</div>'+
+      '<div style="font-size:11px"><span style="color:var(--dim)">🔎 Источник:</span> '+(l.source||'—')+'</div>'+
+      '<div style="font-size:11px"><span style="color:var(--dim)">👤 Отв-ный:</span> '+(l.assignedTo||'AI Agent')+'</div>'+
+    '</div>'+
+
+    // Pitch / AI notes
+    (l.notes?'<div style="margin-bottom:12px;padding:10px;background:#00ff8808;border:1px solid #00ff8822;border-radius:6px;font-size:11px;line-height:1.5"><b style="color:#00ff88;font-size:9px;text-transform:uppercase">💡 AI Pitch / Заметка:</b><br>'+l.notes+'</div>':'')+
+
+    // Interaction history placeholder
+    '<div id="leadHistory_'+id+'" style="margin-bottom:12px;max-height:200px;overflow-y:auto">'+
+      '<div style="font-size:11px;font-weight:700;color:var(--dim);margin-bottom:6px">📋 ИСТОРИЯ ВЗАИМОДЕЙСТВИЙ</div>'+
+      '<div style="text-align:center;color:#384858;font-size:10px;padding:12px" id="leadHistoryContent_'+id+'">Загрузка...</div>'+
+    '</div>'+
+
+    // Add note textarea
+    '<div style="margin-bottom:12px">'+
+      '<textarea id="leadNoteInput_'+id+'" placeholder="Добавить заметку..." style="width:100%;padding:8px 10px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:11px;resize:vertical;min-height:50px;font-family:inherit"></textarea>'+
+      '<div style="display:flex;gap:6px;margin-top:6px">'+
+        '<button onclick="addLeadInteraction('+id+',\'note\')" style="flex:1;padding:6px;background:#00ff8812;color:#00ff88;border:1px solid #00ff8833;border-radius:6px;cursor:pointer;font-size:10px;font-weight:600">📝 Заметка</button>'+
+        '<button onclick="addLeadInteraction('+id+',\'email_sent\')" style="flex:1;padding:6px;background:#00e5ff12;color:#00e5ff;border:1px solid #00e5ff33;border-radius:6px;cursor:pointer;font-size:10px;font-weight:600">📧 Email</button>'+
+        '<button onclick="addLeadInteraction('+id+',\'call\')" style="flex:1;padding:6px;background:#ffb80012;color:#ffb800;border:1px solid #ffb80033;border-radius:6px;cursor:pointer;font-size:10px;font-weight:600">📞 Звонок</button>'+
+        '<button onclick="addLeadInteraction('+id+',\'meeting\')" style="flex:1;padding:6px;background:#a855f712;color:#a855f7;border:1px solid #a855f733;border-radius:6px;cursor:pointer;font-size:10px;font-weight:600">🤝 Встреча</button>'+
+      '</div>'+
+    '</div>'+
+
+    // Action buttons
+    '<div style="display:flex;gap:6px;padding-top:8px;border-top:1px solid var(--border)">'+
+      '<button onclick="leadAction('+id+',\'outreach\')" style="flex:1;padding:8px;background:#00e5ff12;color:#00e5ff;border:1px solid #00e5ff33;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600">📧 Outreach задача</button>'+
+      '<button onclick="leadAction('+id+',\'task\')" style="flex:1;padding:8px;background:#ffb80012;color:#ffb800;border:1px solid #ffb80033;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600">📋 Задача</button>'+
+      '<button onclick="leadAction('+id+',\'remove\')" style="padding:8px 12px;background:#ff2d7812;color:#ff2d78;border:1px solid #ff2d7833;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600">🗑</button>'+
+    '</div>'
+  );
+
+  // Load interaction history from Supabase
+  if(l.sbId&&SUPABASE_LIVE){
+    sbFetch('lead_interactions','lead_id=eq.'+l.sbId+'&order=created_at.desc&limit=20').then(function(data){
+      var el=document.getElementById('leadHistoryContent_'+id);
+      if(!el)return;
+      if(!data||!data.length){el.textContent='Нет записей';return;}
+      var icons={note:'📝',email_sent:'📧',email_received:'📩',call:'📞',meeting:'🤝',stage_change:'🔄',auto_found:'🤖',follow_up:'⏰'};
+      el.innerHTML=data.map(function(h){
+        var d=new Date(h.created_at);
+        var dateStr=d.toLocaleDateString('ru',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'});
+        return '<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #1a2d3d08;font-size:10px">'+
+          '<span style="color:var(--dim);white-space:nowrap">'+dateStr+'</span>'+
+          '<span>'+(icons[h.interaction_type]||'📋')+'</span>'+
+          '<span style="color:#cbd5e1;flex:1">'+h.content+'</span>'+
+          '<span style="color:#384858">'+h.created_by+'</span>'+
+        '</div>';
+      }).join('');
+    });
+  } else {
+    var el=document.getElementById('leadHistoryContent_'+id);
+    if(el)el.textContent='Нет записей';
+  }
 };
 window.leadAction=function(id,action){
   var l=D.leads.find(function(x){return x.id===id;});if(!l)return;
@@ -2199,13 +2273,8 @@ window.leadAction=function(id,action){
     addFeed('leads','🔄 Приоритет '+l.name+' → '+l.priority.toUpperCase());
   }
   if(action==='note'){
-    var note=prompt('Добавить заметку к '+l.name+':');
-    if(note&&note.trim()){
-      l.notes+=' | '+note.trim();
-      syncLead({notes:(l.notes||'')});
-      renderLeads();openLeadModal(id);
-      addFeed('leads','📝 Заметка к '+l.name+': '+note.trim());
-    }
+    // Now handled by addLeadInteraction via textarea in modal
+    return;
   }
   if(action==='contacted'){
     l.notes+=' | ✅ Контакт '+new Date().toLocaleDateString('ru');
@@ -2235,6 +2304,55 @@ window.leadAction=function(id,action){
     }
   }
 };
+
+// CRM: Change lead stage
+window.changeLeadStage=function(id,newStage){
+  var l=D.leads.find(function(x){return x.id===id;});if(!l)return;
+  var oldStage=l.sbStage||'identified';
+  l.sbStage=newStage;
+  l.priority=newStage==='negotiating'?'hot':newStage==='contacted'?'warm':'medium';
+  if(l.sbId&&SUPABASE_LIVE){
+    sbPatch('partner_pipeline','id=eq.'+l.sbId,{stage:newStage,updated_at:new Date().toISOString()});
+  }
+  renderLeads();if(leadViewMode==='pipeline')renderPipeline();
+  openLeadModal(id);
+  addFeed('leads','🔄 '+l.name+': '+oldStage+' → '+newStage);
+};
+
+// CRM: Change lead contact type
+window.changeLeadType=function(id,newType){
+  var l=D.leads.find(function(x){return x.id===id;});if(!l)return;
+  l.contactType=newType;
+  if(l.sbId&&SUPABASE_LIVE){
+    sbPatch('partner_pipeline','id=eq.'+l.sbId,{contact_type:newType});
+  }
+  openLeadModal(id);
+  addFeed('leads','🏷 '+l.name+' → тип: '+newType);
+};
+
+// CRM: Add interaction
+window.addLeadInteraction=function(id,type){
+  var l=D.leads.find(function(x){return x.id===id;});if(!l)return;
+  var textarea=document.getElementById('leadNoteInput_'+id);
+  var text=(textarea?textarea.value:'').trim();
+  if(!text){showToast('Введите текст заметки','error');return;}
+  var typeLabels={note:'Заметка',email_sent:'Email отправлен',call:'Звонок',meeting:'Встреча'};
+  if(l.sbId&&SUPABASE_LIVE){
+    sbInsert('lead_interactions',{
+      lead_id:l.sbId,
+      interaction_type:type,
+      content:text,
+      created_by:(_currentSession?_currentSession.login_name:'CEO')
+    }).then(function(){
+      showToast('✅ '+(typeLabels[type]||type)+' добавлен(а)','success');
+      openLeadModal(id); // refresh modal with new history
+    });
+  } else {
+    showToast('✅ '+(typeLabels[type]||type)+' сохранён(а) локально','success');
+  }
+  addFeed('leads',(type==='email_sent'?'📧':type==='call'?'📞':type==='meeting'?'🤝':'📝')+' '+l.name+': '+text.slice(0,60));
+};
+
 renderLeads();
 // Pipeline default: show pipeline container, hide grid, render pipeline
 if(leadViewMode==='pipeline'){
