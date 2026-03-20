@@ -1,3 +1,7 @@
+// ═══ MOBILE DETECT ═══
+function isMob(){return window.innerWidth<768}
+function mobGrid(){return isMob()?'1fr':'1fr 1fr'}
+
 // ═══ TOKEN AUTH SYSTEM ═══
 let _currentSession = JSON.parse(sessionStorage.getItem('f2f_session')||'null');
 // { token_id, token, employee_name, login_name, role, matched_team_id }
@@ -1030,15 +1034,15 @@ window.openTeamMemberModal=function(id){
     '<h3>💰 Зарплата и расчёт</h3>'+
     (isPM()&&!canSeeSalary() ? '<p style="color:var(--amber);font-size:11px;margin-bottom:8px">⚠️ Вы можете задать ЗП, но существующие значения скрыты</p>' : '')+
     '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">'+
-      '<div style="flex:1;min-width:120px">'+
+      '<div style="flex:1;min-width:0">'+
         '<label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">ЗП (USDT/мес):</label>'+
         '<input type="number" id="empSalaryUSDT" value="'+(canSeeSalary()?(t.salary_usdt||''):'')+'" step="0.01" placeholder="'+(isPM()&&t.salary_usdt?'Значение скрыто':'0')+'" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
       '</div>'+
-      '<div style="flex:1;min-width:120px">'+
+      '<div style="flex:1;min-width:0">'+
         '<label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">ЗП (RUB/мес):</label>'+
         '<input type="number" id="empSalaryRUB" value="'+(canSeeSalary()?(t.salary_rub||''):'')+'" step="0.01" placeholder="'+(isPM()&&t.salary_rub?'Значение скрыто':'0')+'" style="width:100%;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
       '</div>'+
-      '<div style="flex:1;min-width:120px">'+
+      '<div style="flex:1;min-width:0">'+
         '<label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Валюта выплаты:</label>'+
         '<select id="empPayType" class="task-select" style="width:100%">'+
           '<option value="usdt" '+(t.payment_type==='usdt'?'selected':'')+'>USDT</option>'+
@@ -2178,7 +2182,7 @@ window.openLeadModal=function(id){
     '<div style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap">'+stageHTML+'</div>'+
 
     // Contact info (click to edit)
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;padding:12px;background:#0a151e;border-radius:8px;border:1px solid #1a2d3d">'+
+    '<div style="display:grid;grid-template-columns:'+mobGrid()+';gap:8px;margin-bottom:16px;padding:12px;background:#0a151e;border-radius:8px;border:1px solid #1a2d3d">'+
       '<div onclick="editLeadField('+id+',\'name\',\'Имя контакта\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">👤 Контакт:</span> <span style="color:#e8edf2;border-bottom:1px dashed #384858">'+(l.name||'—')+'</span></div>'+
       '<div onclick="editLeadField('+id+',\'company\',\'Компания\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">🏢 Компания:</span> <span style="color:#e8edf2;border-bottom:1px dashed #384858">'+(l.company||'—')+'</span></div>'+
       '<div onclick="editLeadField('+id+',\'email\',\'Email\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">📧 Email:</span> <span style="color:var(--cyan);border-bottom:1px dashed #384858">'+(l.email||'—')+'</span></div>'+
@@ -2363,7 +2367,7 @@ window.openAddLeadModal=function(){
   }).join('');
   openModal(
     '<h2 style="margin-bottom:16px">➕ Новый лид</h2>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+    '<div style="display:grid;grid-template-columns:'+mobGrid()+';gap:10px">'+
       '<div><label style="font-size:10px;color:var(--dim)">Компания *</label><input id="nl_company" placeholder="Название компании" style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px"></div>'+
       '<div><label style="font-size:10px;color:var(--dim)">Контакт *</label><input id="nl_name" placeholder="Имя Фамилия" style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px"></div>'+
       '<div><label style="font-size:10px;color:var(--dim)">Email</label><input id="nl_email" placeholder="email@example.com" style="width:100%;padding:8px;background:#0d1820;color:#e8edf2;border:1px solid #1a2d3d;border-radius:6px;font-size:12px;margin-top:2px"></div>'+

@@ -503,6 +503,21 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
   .act-btn{padding:5px 10px;font-size:10px}
 }
 
+/* ═══ RESPONSIVE — TABLET (769-1024px) ═══ */
+@media(min-width:769px) and (max-width:1024px){
+  .header-kpis{gap:10px}
+  .kpi .v{font-size:14px}
+  .kpi .l{font-size:8px}
+  .office-left{width:200px}
+  .office-feed{width:220px}
+  .data-grid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))!important}
+  .fin-grid{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))!important}
+  .team-grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))!important}
+  #analyticsBar{grid-template-columns:repeat(2,1fr)!important}
+  .modal{max-width:90%;width:90%}
+  .tab{padding:8px 14px;font-size:11px}
+}
+
 /* ═══ RESPONSIVE — SMALL PHONE (<400px) ═══ */
 @media(max-width:400px){
   .header-kpis{gap:2px}
