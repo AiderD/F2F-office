@@ -2235,6 +2235,7 @@ function renderPosts(){
         category:catLabel,
         text:c.content_text||'[Текст не указан]', hashtags:'', date:(c.created_at||'').slice(0,10),
         scheduledAt:c.scheduled_at, publishedAt:c.published_at,
+        imageUrl:c.image_url||null, imagePrompt:c.image_prompt||null,
         agentId:dashAgentId, status:statusMap[c.status]||'draft', sbStatus:c.status, isLive:true
       });
     });
@@ -2256,14 +2257,16 @@ function renderPosts(){
         <span class="post-status ${p.status}">${p.sbStatus==='pending_approval'?'⏳ Ждёт одобрения':p.sbStatus==='approved'?'✅ Одобрен':p.sbStatus==='published'?'📢 Опубликован':p.sbStatus==='rejected'?'❌ Отклонён':p.status==='ready'?'✅ Ready':'📝 Draft'}</span>
       </div>
       <div class="post-category">${p.category||''}</div>
+      ${p.imageUrl?'<div style="margin:6px 0;border-radius:6px;overflow:hidden;max-height:120px"><img src="'+p.imageUrl+'" style="width:100%;height:auto;display:block;object-fit:cover" onerror="this.parentElement.style.display=\'none\'"></div>':''}
       <div class="post-text">${(p.text||'').length>180?(p.text||'').slice(0,180)+'...':(p.text||'')}</div>
       <div class="post-tags">${p.hashtags||''}</div>
-      <div class="post-date">📅 ${p.date||''}${!p.isLive?' <span style="color:#ff9800;font-size:9px">(mock)</span>':''}</div>
+      <div class="post-date">📅 ${p.date||''}${!p.isLive?' <span style="color:#ff9800;font-size:9px">(mock)</span>':''}${p.imageUrl?' <span style="color:#00e55f;font-size:9px">🖼 AI Image</span>':''}</div>
       ${p.sbStatus==='pending_approval'?`<div style="display:flex;gap:6px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px" onclick="event.stopPropagation()">
         <button onclick="quickPostAction('${p.sbId||p.id}','approve')" style="flex:1;padding:5px;background:#00ff8812;color:#00ff88;border:1px solid #00ff8833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">✅ Одобрить</button>
         <button onclick="quickPostAction('${p.sbId||p.id}','reject')" style="flex:1;padding:5px;background:#ff2d7812;color:#ff2d78;border:1px solid #ff2d7833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">❌ Отклонить</button>
       </div>`:''}
       ${p.sbStatus==='approved'&&p.sbId?`<div style="display:flex;gap:6px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px" onclick="event.stopPropagation()">
+        ${!p.imageUrl?`<button onclick="generatePostImage('${p.sbId}')" style="flex:1;padding:5px;background:#9c27b018;color:#9c27b0;border:1px solid #9c27b044;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">🖼 Генерировать картинку</button>`:''}
         <button onclick="publishPostToTelegram('${p.sbId}')" style="flex:1;padding:5px;background:#0088cc18;color:#0088cc;border:1px solid #0088cc44;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">📢 Опубликовать в Telegram</button>
       </div>`:''}
     </div>`).join('');
@@ -2284,6 +2287,7 @@ window.openPostModal=function(id){
       <span class="post-status ${p.status}">${p.status==='ready'?'✅ Ready':'📝 Draft'}</span>
       <span class="tag" style="background:#ffffff08;color:var(--dim)">${p.category}</span>
     </div>
+    ${p.imageUrl?'<div style="margin-bottom:12px;border-radius:8px;overflow:hidden"><img src="'+p.imageUrl+'" style="width:100%;max-height:250px;object-fit:cover;display:block" onerror="this.parentElement.style.display=\'none\'"></div>':''}
     <div style="font-size:15px;line-height:1.8;white-space:pre-wrap;margin-bottom:16px;padding:16px;background:var(--bg);
       border-radius:8px;border:1px solid var(--border)">${p.text}</div>
     <p style="color:var(--purple)">${p.hashtags}</p>
@@ -2391,6 +2395,29 @@ window.quickPostAction=function(id,action){
     addFeed('content','❌ Пост отклонён: '+p.platform);
   }
   renderPosts();updateKPI();
+};
+
+// Generate AI image for a post via Edge Function
+window.generatePostImage=function(postId){
+  if(!SUPABASE_LIVE){showToast('Supabase не подключён','error');return;}
+  showToast('🖼 Генерирую AI-картинку... (10-30 сек)','info');
+  fetch(SUPABASE_URL+'/functions/v1/generate-image',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+    body:JSON.stringify({post_id:postId})
+  }).then(function(r){return r.json();}).then(function(data){
+    if(data.success&&data.image_url){
+      var p=D.posts.find(function(x){return x.sbId===postId;});
+      if(p){p.imageUrl=data.image_url;p.imagePrompt=data.prompt_used||'';}
+      showToast('🖼 Картинка сгенерирована! Стиль: '+data.style+' ('+data.category+')','success');
+      addFeed('content','🖼 AI-картинка сгенерирована для поста');
+      renderPosts();
+    } else if(data.error){
+      showToast('Ошибка генерации: '+data.error+(data.detail?' — '+data.detail:''),'error');
+    }
+  }).catch(function(err){
+    showToast('Ошибка генерации картинки: '+err,'error');
+  });
 };
 
 // Publish approved post to Telegram via Edge Function
