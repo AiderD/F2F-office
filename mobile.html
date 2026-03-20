@@ -144,7 +144,8 @@ a{color:var(--cyan);text-decoration:none}
 .modal-bg.on{display:flex}
 .modal-sheet{background:var(--panel);border-radius:20px 20px 0 0;width:100%;max-width:500px;max-height:85dvh;overflow-y:auto;padding:20px 16px calc(20px + var(--safe-bot));animation:slideUp .3s ease}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
-.modal-handle{width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 16px}
+.modal-handle{width:36px;height:4px;background:#556;border-radius:2px;margin:0 auto 12px;cursor:grab}
+.modal-x{position:absolute;top:12px;right:16px;background:var(--card);border:1px solid var(--border);color:var(--dim);width:30px;height:30px;border-radius:50%;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .modal-title{font-size:16px;font-weight:700;margin-bottom:12px}
 .modal-close{position:absolute;top:16px;right:16px;background:none;border:none;color:var(--dim);font-size:20px;cursor:pointer}
 
@@ -286,8 +287,9 @@ a{color:var(--cyan);text-decoration:none}
 
 <!-- MODAL -->
 <div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
-  <div class="modal-sheet" id="modalSheet">
-    <div class="modal-handle"></div>
+  <div class="modal-sheet" id="modalSheet" style="position:relative">
+    <div class="modal-handle" id="modalHandle"></div>
+    <button class="modal-x" onclick="closeModal()">✕</button>
     <div id="modalContent"></div>
   </div>
 </div>
@@ -644,8 +646,28 @@ document.querySelectorAll('[data-lf]').forEach(function(b){
 });
 
 // ═══ MODAL ═══
-function openModal(html){el('modalContent').innerHTML=html;el('modalBg').classList.add('on')}
-function closeModal(){el('modalBg').classList.remove('on')}
+function openModal(html){el('modalContent').innerHTML=html;el('modalBg').classList.add('on');el('modalSheet').style.transform=''}
+function closeModal(){el('modalSheet').style.transform='translateY(100%)';setTimeout(function(){el('modalBg').classList.remove('on');el('modalSheet').style.transform=''},250)}
+
+// Swipe-to-close
+(function(){
+  var sheet=document.getElementById('modalSheet'),startY=0,curY=0,dragging=false;
+  sheet.addEventListener('touchstart',function(e){
+    var t=e.target;
+    if(t.id==='modalHandle'||t.classList.contains('modal-handle')){dragging=true;startY=e.touches[0].clientY;curY=0;sheet.style.transition='none'}
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    if(!dragging)return;
+    curY=e.touches[0].clientY-startY;
+    if(curY<0)curY=0;
+    sheet.style.transform='translateY('+curY+'px)';
+  },{passive:true});
+  document.addEventListener('touchend',function(){
+    if(!dragging)return;
+    dragging=false;sheet.style.transition='transform .25s ease';
+    if(curY>100){closeModal()}else{sheet.style.transform='translateY(0)'}
+  });
+})()
 
 // ═══ UTILS ═══
 function el(id){return document.getElementById(id)}
