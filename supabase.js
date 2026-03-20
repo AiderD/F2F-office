@@ -145,9 +145,11 @@ async function syncSupabaseData(){
   const credits=await sbFetch('ai_credits','select=agent_id,tokens_input,tokens_output,cost_usd,model,task_type,created_at&order=created_at.desc&limit=30');
   if(credits)window._sbCredits=credits;
 
-  // Team
+  // Team (only active — dismissed filtered on server side)
   const team=await sbFetch('team','select=*&order=id.asc');
   if(team)window._sbTeam=team;
+  // Debug: log dismissed count
+  if(team){var dismissed=team.filter(function(t){return t.status==='dismissed';});if(dismissed.length)console.log('📋 Team: '+team.length+' total, '+dismissed.length+' dismissed (filtered in UI)');}
 
   return true;
 }
