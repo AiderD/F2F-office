@@ -238,6 +238,10 @@ function refreshAfterSync(){
         id:6000+i, sbId:a.id, title:p.title||p.description||a.type||'Действие',
         assignedTo:dashId, dept:ag?'':AGENTS[dashId]?.dept||'cmd',
         status:p.status||'done', priority:p.priority||'normal',
+        kanbanStatus:p.kanban_status||p.status||'done',
+        description:p.description||'', deadline:p.deadline||'', estimate:p.estimate||'',
+        tags:p.tags||[], subtasks:p.subtasks||[], reworkCount:p.rework_count||0,
+        reworkNotes:p.rework_notes||'',
         createdDate:(a.created_at||'').slice(0,10), completedDate:p.completed_at||(a.created_at||'').slice(0,10),
         result:p.result||null, isLive:true,
         _actionType:a.type||'', _payload:p

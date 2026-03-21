@@ -215,6 +215,37 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
 .task-priority.low{background:#4488ff22;color:var(--medium)}
 .task-row.cancelled .task-title-text{text-decoration:line-through;color:#475569}
 .task-row.postponed{opacity:0.6}
+.task-row.rework{border-left:3px solid #f97316}
+.task-row.in_progress{border-left:3px solid #f59e0b}
+.task-row.backlog{opacity:0.7}
+.task-priority.critical{background:#ff000033;color:#ff4444;animation:pulse-critical 1.5s infinite}
+@keyframes pulse-critical{0%,100%{opacity:1}50%{opacity:0.6}}
+
+/* ═══ KANBAN BOARD ═══ */
+.kanban-board{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;overflow-x:auto;padding-bottom:8px;min-height:400px}
+.kanban-col{background:var(--bg);border:1px solid var(--border);border-radius:8px;min-width:180px;display:flex;flex-direction:column}
+.kanban-col-header{padding:10px 12px;display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;
+  color:var(--text);border-bottom:1px solid var(--border)}
+.kanban-count{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:1px 7px;font-size:10px;color:var(--dim)}
+.kanban-cards{flex:1;padding:6px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;max-height:500px}
+.kanban-card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px 10px;cursor:pointer;
+  transition:all .15s;position:relative}
+.kanban-card:hover{border-color:var(--cyan);transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,229,255,.08)}
+.kanban-card .kc-title{font-size:12px;font-weight:600;line-height:1.4;margin-bottom:4px}
+.kanban-card .kc-meta{display:flex;gap:6px;align-items:center;font-size:10px;color:var(--dim)}
+.kanban-card .kc-priority{width:6px;height:6px;border-radius:50%;position:absolute;top:10px;right:10px}
+.kanban-card .kc-priority.critical{background:#ff4444;box-shadow:0 0 6px #ff4444}
+.kanban-card .kc-priority.high{background:#ff9800}
+.kanban-card .kc-priority.normal{background:#2196f3}
+.kanban-card .kc-priority.low{background:#64748b}
+.kanban-card .kc-subtasks{margin-top:4px;font-size:10px;color:var(--dim)}
+.kanban-card .kc-subtasks .done{color:var(--green)}
+.kanban-card .kc-tags{display:flex;gap:3px;flex-wrap:wrap;margin-top:4px}
+.kanban-card .kc-tag{font-size:9px;padding:1px 5px;border-radius:3px;background:var(--bg);border:1px solid var(--border)}
+.kanban-card .kc-rework-badge{font-size:9px;padding:1px 5px;border-radius:3px;background:#f9731622;color:#f97316;
+  border:1px solid #f9731633;margin-top:3px;display:inline-block}
+.kanban-card .kc-deadline{font-size:9px;color:#ff4444}
+.kanban-card .kc-estimate{font-size:9px;padding:1px 4px;background:#06b6d418;color:#06b6d4;border-radius:3px}
 
 /* ═══ AGENT CHAT ═══ */
 .agent-chat{margin-top:16px;background:var(--bg);border-radius:8px;border:1px solid var(--border);overflow:hidden}
@@ -467,6 +498,12 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
   .task-submit{width:100%}
   .task-row{padding:10px 12px;gap:8px}
   .task-title-text{font-size:12px}
+  .kanban-board{grid-template-columns:repeat(3,1fr)!important;gap:6px}
+  .kanban-col{min-width:140px}
+  .kanban-col-header{padding:6px 8px;font-size:10px}
+  .kanban-card .kc-title{font-size:11px}
+  .task-input-area{flex-wrap:wrap}
+  .task-input-area .task-select{max-width:none;flex:1}
 
   /* ─── STRATEGY ─── */
   #panel-strategy > div[style*="grid-template-columns"]{grid-template-columns:1fr!important;gap:12px;padding:12px!important}

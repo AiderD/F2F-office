@@ -2628,12 +2628,31 @@ window.postAction=function(id,action){
   if(action==='rework'){
     var feedback=prompt('Укажи что переделать (стиль, тон, тема, длина и т.д.):');
     if(feedback&&feedback.trim()){
+      var origText=p.text;
       p.status='draft';p.sbStatus='rework';
       p.category='🔄 На переработке';
-      p.text='[ПЕРЕРАБОТКА] '+feedback.trim()+'\\n\\nОригинал: '+p.text;
-      // Save rework instruction to Supabase if live
+      // Save rework instruction to Supabase
       if(SUPABASE_LIVE&&p.sbId){
         sbPatch('content_queue','id=eq.'+p.sbId,{status:'rework',rework_notes:feedback.trim()});
+        // Auto-trigger rework via smm-generate with feedback
+        showToast('🔄 Запускаю переработку поста...','info');
+        fetch(SUPABASE_URL+'/functions/v1/smm-generate',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+          body:JSON.stringify({mode:'rework',post_id:p.sbId,feedback:feedback.trim(),original_text:origText,platform:p.platform})
+        }).then(function(res){return res.json();}).then(function(data){
+          if(data.success&&data.new_text){
+            p.text=data.new_text;
+            p.sbStatus='pending_approval';
+            p.category=data.category||p.category;
+            sbPatch('content_queue','id=eq.'+p.sbId,{content_text:data.new_text,status:'pending_approval',hashtags:data.hashtags||''});
+            renderPosts();
+            showToast('✅ Пост переработан! Проверь новую версию.','success');
+            addFeed('content','✅ Пост переработан по фидбэку: '+feedback.trim().slice(0,50));
+          }else{
+            showToast('⚠️ Переработка не удалась: '+(data.error||'попробуй ещё раз'),'error');
+          }
+        }).catch(function(e){showToast('❌ Ошибка переработки: '+e.message,'error');});
       }
       renderPosts();modal.classList.remove('open');
       addFeed('content','🔄 Пост отправлен на переработку: '+feedback.trim().slice(0,50));
@@ -2703,28 +2722,32 @@ window.qaReviewPost=async function(postId){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
       body:JSON.stringify({post_id:postId})
     });
+    if(!res.ok){
+      var errText=await res.text().catch(function(){return 'HTTP '+res.status;});
+      showToast('QA ошибка ('+res.status+'): Edge Function не отвечает. Задеплой quality-review.','error');
+      return;
+    }
     var data=await res.json();
-    if(data.success){
+    if(data.success&&typeof data.score==='number'){
       var verdict=data.verdict==='approved'?'✅ Одобрен':data.verdict==='needs_work'?'🔄 Нужна доработка':'❌ Отклонён';
       var msg='QA: '+data.score+'/10 — '+verdict;
       if(data.issues&&data.issues.length){
-        msg+='\n\nПроблемы:\n'+data.issues.map(function(i){return '• '+i.text;}).join('\n');
+        msg+='\n\nПроблемы:\n'+data.issues.map(function(i){return '• '+(i.text||i);}).join('\n');
       }
       if(data.suggestions&&data.suggestions.length){
-        msg+='\n\nРекомендации:\n'+data.suggestions.map(function(s){return '• '+s.text;}).join('\n');
+        msg+='\n\nРекомендации:\n'+data.suggestions.map(function(s){return '• '+(s.text||s);}).join('\n');
       }
       if(data.improved_text){
         msg+='\n\n📝 Улучшенная версия:\n'+data.improved_text;
       }
       alert(msg);
-      // Update local data
       var p=D.posts.find(function(x){return x.sbId===postId;});
       if(p){p.qaScore=data.score;p.qaVerdict=verdict;renderPosts();openPostModal(p.sbId);}
       addFeed('quality_controller','QA: пост оценён '+data.score+'/10 — '+verdict);
     }else{
-      showToast('QA ошибка: '+(data.error||'unknown'),'error');
+      showToast('QA ошибка: '+(data.error||'Edge Function вернула некорректный ответ. Проверь деплой quality-review.'),'error');
     }
-  }catch(e){showToast('QA ошибка: '+e.message,'error');}
+  }catch(e){showToast('QA ошибка: '+e.message+'. Проверь деплой quality-review Edge Function.','error');}
 };
 
 // CEO Score a post
@@ -3081,51 +3104,174 @@ function taskPreviewHTML(t){
   html+='</div>';
   return html;
 }
+// ═══ KANBAN TASK STATUSES ═══
+var KANBAN_STATUSES={
+  backlog:{label:'📥 Бэклог',color:'#64748b'},
+  decomposed:{label:'🧩 Декомпозиция',color:'#8b5cf6'},
+  planned:{label:'📋 Запланировано',color:'#06b6d4'},
+  in_progress:{label:'🔧 В работе',color:'#f59e0b'},
+  done:{label:'✅ Выполнено',color:'#10b981'},
+  rework:{label:'🔄 Переработка',color:'#f97316'},
+  cancelled:{label:'❌ Отменено',color:'#475569'}
+};
+// Map old statuses to kanban statuses
+function mapToKanban(status){
+  if(status==='pending'||status==='backlog')return 'backlog';
+  if(status==='decomposed')return 'decomposed';
+  if(status==='planned')return 'planned';
+  if(status==='in_progress'||status==='working')return 'in_progress';
+  if(status==='done'||status==='executed')return 'done';
+  if(status==='rework')return 'rework';
+  if(status==='cancelled')return 'cancelled';
+  if(status==='postponed')return 'backlog';
+  return 'backlog';
+}
+var taskViewMode='list'; // 'list' or 'kanban'
+window.toggleTaskView=function(){
+  taskViewMode=taskViewMode==='list'?'kanban':'list';
+  document.getElementById('taskViewToggle').textContent=taskViewMode==='kanban'?'📋 Список':'📊 Kanban';
+  document.getElementById('kanbanBoard').style.display=taskViewMode==='kanban'?'grid':'none';
+  document.getElementById('tasksList').style.display=taskViewMode==='kanban'?'none':'flex';
+  renderTasks();
+};
+
+function renderKanban(){
+  var cols={backlog:[],decomposed:[],planned:[],in_progress:[],done:[],rework:[]};
+  D.tasks.forEach(function(t){
+    var ks=mapToKanban(t.kanbanStatus||t.status);
+    if(ks==='cancelled')return; // hide cancelled from kanban
+    if(!cols[ks])cols[ks]=[];
+    cols[ks].push(t);
+  });
+  // Sort each column: critical first, then high, then by date
+  var priOrder={critical:0,high:1,normal:2,low:3};
+  Object.keys(cols).forEach(function(k){
+    cols[k].sort(function(a,b){return (priOrder[a.priority]||2)-(priOrder[b.priority]||2);});
+  });
+  Object.keys(cols).forEach(function(status){
+    var el=document.getElementById('kanban-'+status);
+    var countEl=document.getElementById('kc-'+status);
+    if(!el)return;
+    if(countEl)countEl.textContent=cols[status].length;
+    el.innerHTML=cols[status].map(function(t){
+      var pri=t.priority||'normal';
+      var agent=AGENTS[t.assignedTo]||{emoji:'📋',name:'?'};
+      var displayTitle=taskSmartTitle(t);
+      // Subtasks
+      var subtasksHTML='';
+      if(t.subtasks&&t.subtasks.length){
+        var doneCount=t.subtasks.filter(function(s){return s.done;}).length;
+        subtasksHTML='<div class="kc-subtasks"><span class="done">'+doneCount+'</span>/'+t.subtasks.length+' подзадач</div>';
+      }
+      // Estimate
+      var estimateHTML=t.estimate?'<span class="kc-estimate">'+t.estimate+'</span>':'';
+      // Deadline
+      var deadlineHTML='';
+      if(t.deadline){
+        var dl=new Date(t.deadline);var now=new Date();
+        var daysLeft=Math.ceil((dl-now)/(86400000));
+        if(daysLeft<0)deadlineHTML='<span class="kc-deadline">⚠️ Просрочено '+Math.abs(daysLeft)+'д</span>';
+        else if(daysLeft<=2)deadlineHTML='<span class="kc-deadline">⏰ '+daysLeft+'д</span>';
+        else deadlineHTML='<span style="font-size:9px;color:var(--dim)">📅 '+t.deadline+'</span>';
+      }
+      // Rework count
+      var reworkHTML=(t.reworkCount&&t.reworkCount>0)?'<span class="kc-rework-badge">🔄×'+t.reworkCount+'</span>':'';
+      // Tags
+      var tagsHTML='';
+      if(t.tags&&t.tags.length){
+        tagsHTML='<div class="kc-tags">'+t.tags.map(function(tag){return '<span class="kc-tag">'+tag+'</span>';}).join('')+'</div>';
+      }
+      return '<div class="kanban-card" onclick="openTaskDetail('+t.id+')">'+
+        '<div class="kc-priority '+pri+'"></div>'+
+        '<div class="kc-title">'+displayTitle+'</div>'+
+        '<div class="kc-meta">'+agent.emoji+' '+(agent.name||'').split(' ')[0]+' '+estimateHTML+' '+deadlineHTML+'</div>'+
+        subtasksHTML+reworkHTML+tagsHTML+
+      '</div>';
+    }).join('');
+  });
+}
+
 function renderTasks(){
-  const order={pending:0,postponed:1,done:2,cancelled:3};
-  const sorted=[...D.tasks].sort((a,b)=>(order[a.status]||0)-(order[b.status]||0));
-  document.getElementById('tasksList').innerHTML=sorted.map(t=>{
-    const pri=t.priority||'normal';
-    const statusIcon=t.status==='done'?'✓':t.status==='cancelled'?'✕':t.status==='postponed'?'⏸':'⏳';
-    const priLabel=pri==='high'?'HIGH':pri==='low'?'LOW':'';
-    // Determine action type badge
+  if(taskViewMode==='kanban'){renderKanban();return;}
+  // Enhanced list view with kanban statuses
+  var statusOrder={in_progress:0,rework:1,planned:2,decomposed:3,backlog:4,pending:4,done:5,cancelled:6,postponed:4};
+  var sorted=[...D.tasks].sort(function(a,b){
+    var sa=statusOrder[a.kanbanStatus||a.status]??4;
+    var sb=statusOrder[b.kanbanStatus||b.status]??4;
+    if(sa!==sb)return sa-sb;
+    var pa={critical:0,high:1,normal:2,low:3};
+    return (pa[a.priority]||2)-(pa[b.priority]||2);
+  });
+  document.getElementById('tasksList').innerHTML=sorted.map(function(t){
+    var pri=t.priority||'normal';
+    var ks=mapToKanban(t.kanbanStatus||t.status);
+    var ksInfo=KANBAN_STATUSES[ks]||{label:ks,color:'#64748b'};
+    var statusIcon=ks==='done'?'✓':ks==='cancelled'?'✕':ks==='rework'?'🔄':ks==='in_progress'?'🔧':ks==='planned'?'📋':ks==='decomposed'?'🧩':'📥';
+    var priLabel=pri==='critical'?'CRITICAL':pri==='high'?'HIGH':pri==='low'?'LOW':'';
+    // Action type badge
     var actionBadge='';
     var aType=(t._actionType||'').toLowerCase();
     if(aType.includes('email_template'))actionBadge='<span style="font-size:9px;padding:1px 6px;background:#00e5ff22;color:#00e5ff;border:1px solid #00e5ff44;border-radius:4px;margin-left:6px">📧 EMAIL</span>';
     else if(aType.includes('lead_suggested'))actionBadge='<span style="font-size:9px;padding:1px 6px;background:#00ff8822;color:#00ff88;border:1px solid #00ff8844;border-radius:4px;margin-left:6px">🆕 LEAD</span>';
     else if(aType.includes('task_from_chat')||t.fromChat)actionBadge='<span style="font-size:9px;padding:1px 6px;background:#ffb80022;color:#ffb800;border:1px solid #ffb80044;border-radius:4px;margin-left:6px">💬 ИЗ ЧАТА</span>';
-    // Smart approve button label
     var approveLabel='✅';var approveTitle='Выполнено';
-    if(t.status==='pending'&&aType.includes('email_template')){approveLabel='📧 Отправить';approveTitle='Одобрить и отправить email';}
-    else if(t.status==='pending'&&aType.includes('lead_suggested')){approveLabel='➕ В Pipeline';approveTitle='Добавить лид в Pipeline';}
-    // Smart title from payload
+    if((ks==='backlog'||ks==='planned')&&aType.includes('email_template')){approveLabel='📧 Отправить';approveTitle='Одобрить и отправить email';}
+    else if((ks==='backlog'||ks==='planned')&&aType.includes('lead_suggested')){approveLabel='➕ В Pipeline';approveTitle='Добавить лид в Pipeline';}
     var displayTitle=taskSmartTitle(t);
-    // Expandable preview
     var hasPayload=t._payload&&Object.keys(t._payload).length>2;
     var previewId='task-preview-'+t.id;
-    return '<div class="task-row '+t.status+'">'+
-      '<div class="task-check '+t.status+'">'+statusIcon+'</div>'+
-      '<div class="task-body" style="cursor:'+(hasPayload?'pointer':'default')+'" onclick="'+(hasPayload?'toggleTaskPreview('+t.id+')':'')+'" title="'+(hasPayload?'Нажми для превью':'')+'">'+
-        '<div class="task-title-text">'+displayTitle+actionBadge+(priLabel?'<span class="task-priority '+pri+'">'+priLabel+'</span>':'')+(hasPayload?'<span style="font-size:9px;color:var(--dim);margin-left:4px">▼</span>':'')+'</div>'+
-        '<div class="task-assigned">'+(AGENTS[t.assignedTo]?.emoji||'')+' '+(AGENTS[t.assignedTo]?.name||t.assignedTo)+' • '+(t.dept?.toUpperCase()||'')+'</div>'+
+    // Rework indicator
+    var reworkBadge=(t.reworkCount&&t.reworkCount>0)?'<span style="font-size:9px;padding:1px 5px;background:#f9731622;color:#f97316;border:1px solid #f9731633;border-radius:3px;margin-left:4px">🔄×'+t.reworkCount+'</span>':'';
+    // Deadline
+    var deadlineBadge='';
+    if(t.deadline){
+      var dl=new Date(t.deadline);var now=new Date();var daysLeft=Math.ceil((dl-now)/86400000);
+      if(daysLeft<0)deadlineBadge='<span style="font-size:9px;color:#ff4444;margin-left:6px">⚠️ Просрочено</span>';
+      else if(daysLeft<=2)deadlineBadge='<span style="font-size:9px;color:#ff9800;margin-left:6px">⏰ '+daysLeft+'д</span>';
+    }
+    // Subtasks progress
+    var subtaskBadge='';
+    if(t.subtasks&&t.subtasks.length){
+      var doneC=t.subtasks.filter(function(s){return s.done;}).length;
+      subtaskBadge='<span style="font-size:9px;color:var(--dim);margin-left:6px">📦 '+doneC+'/'+t.subtasks.length+'</span>';
+    }
+    // Status badge
+    var statusBadge='<span style="font-size:9px;padding:1px 6px;background:'+ksInfo.color+'18;color:'+ksInfo.color+';border:1px solid '+ksInfo.color+'33;border-radius:4px;margin-left:6px">'+ksInfo.label+'</span>';
+    // Action buttons based on kanban status
+    var actions='';
+    if(ks==='backlog'){
+      actions='<button class="task-act" onclick="event.stopPropagation();moveTask('+t.id+',\'decomposed\')" title="Декомпозировать">🧩</button>'+
+        '<button class="task-act" onclick="event.stopPropagation();moveTask('+t.id+',\'in_progress\')" title="В работу">🔧</button>'+
+        '<button class="task-act del" onclick="event.stopPropagation();moveTask('+t.id+',\'cancelled\')" title="Отменить">❌</button>';
+    }else if(ks==='decomposed'){
+      actions='<button class="task-act" onclick="event.stopPropagation();moveTask('+t.id+',\'planned\')" title="Запланировать">📋</button>'+
+        '<button class="task-act" onclick="event.stopPropagation();moveTask('+t.id+',\'backlog\')" title="В бэклог">📥</button>';
+    }else if(ks==='planned'){
+      actions='<button class="task-act" onclick="event.stopPropagation();moveTask('+t.id+',\'in_progress\')" title="Начать">🔧</button>'+
+        '<button class="task-act" onclick="event.stopPropagation();moveTask('+t.id+',\'backlog\')" title="В бэклог">📥</button>';
+    }else if(ks==='in_progress'){
+      actions='<button class="task-act" onclick="event.stopPropagation();taskAction('+t.id+',\'done\')" title="'+approveTitle+'">'+approveLabel+'</button>'+
+        '<button class="task-act" onclick="event.stopPropagation();moveTask('+t.id+',\'rework\')" title="На переработку">🔄</button>';
+    }else if(ks==='rework'){
+      actions='<button class="task-act" onclick="event.stopPropagation();moveTask('+t.id+',\'in_progress\')" title="Снова в работу">🔧</button>'+
+        '<button class="task-act del" onclick="event.stopPropagation();moveTask('+t.id+',\'cancelled\')" title="Отменить">❌</button>';
+    }else if(ks==='done'){
+      actions='<button class="task-act" onclick="event.stopPropagation();moveTask('+t.id+',\'rework\')" title="На переработку">🔄</button>';
+    }else if(ks==='cancelled'){
+      actions='<button class="task-act" onclick="event.stopPropagation();moveTask('+t.id+',\'backlog\')" title="Восстановить">♻️</button>';
+    }
+    return '<div class="task-row '+ks+'" onclick="openTaskDetail('+t.id+')">'+
+      '<div class="task-check" style="border-color:'+ksInfo.color+'">'+statusIcon+'</div>'+
+      '<div class="task-body" style="cursor:pointer">'+
+        '<div class="task-title-text">'+displayTitle+actionBadge+(priLabel?'<span class="task-priority '+pri+'">'+priLabel+'</span>':'')+statusBadge+reworkBadge+deadlineBadge+subtaskBadge+'</div>'+
+        '<div class="task-assigned">'+(AGENTS[t.assignedTo]?.emoji||'')+' '+(AGENTS[t.assignedTo]?.name||t.assignedTo)+' • '+(t.dept?.toUpperCase()||'')+
+          (t.estimate?' • ⏱ '+t.estimate:'')+
+        '</div>'+
         (t.result?'<div class="task-result">'+t.result+'</div>':'')+
-        '<div id="'+previewId+'" style="display:none">'+taskPreviewHTML(t)+'</div>'+
+        (hasPayload?'<div id="'+previewId+'" style="display:none">'+taskPreviewHTML(t)+'</div>':'')+
       '</div>'+
-      '<div class="task-actions">'+
-        (t.status==='pending'?
-          '<button class="task-act" onclick="event.stopPropagation();taskAction('+t.id+',\'done\')" title="'+approveTitle+'" style="'+(aType.includes('email')||aType.includes('lead')?'background:#00ff8822;padding:2px 8px;font-size:10px':'')+'">'+approveLabel+'</button>'+
-          '<button class="task-act" onclick="event.stopPropagation();taskAction('+t.id+',\'postponed\')" title="Отложить">⏸</button>'+
-          '<button class="task-act" onclick="event.stopPropagation();taskPriority('+t.id+',\'up\')" title="Приоритет ↑">⬆</button>'+
-          '<button class="task-act" onclick="event.stopPropagation();taskPriority('+t.id+',\'down\')" title="Приоритет ↓">⬇</button>'+
-          '<button class="task-act del" onclick="event.stopPropagation();taskAction('+t.id+',\'cancelled\')" title="Отменить">❌</button>'
-        :t.status==='postponed'?
-          '<button class="task-act" onclick="event.stopPropagation();taskAction('+t.id+',\'pending\')" title="Возобновить">▶️</button>'+
-          '<button class="task-act del" onclick="event.stopPropagation();taskAction('+t.id+',\'cancelled\')" title="Отменить">❌</button>'
-        :t.status==='cancelled'?
-          '<button class="task-act" onclick="event.stopPropagation();taskAction('+t.id+',\'pending\')" title="Восстановить">♻️</button>'
-        :'')+
-      '</div>'+
-      '<div class="task-date">'+(t.completedDate||t.createdDate)+'</div>'+
+      '<div class="task-actions" onclick="event.stopPropagation()">'+actions+'</div>'+
+      '<div class="task-date">'+(t.deadline||t.completedDate||t.createdDate)+'</div>'+
     '</div>';
   }).join('');
 }
@@ -3133,6 +3279,216 @@ window.toggleTaskPreview=function(id){
   var el=document.getElementById('task-preview-'+id);
   if(el)el.style.display=el.style.display==='none'?'block':'none';
 };
+
+// ═══ KANBAN: Move task to new status ═══
+window.moveTask=function(id,newKanbanStatus){
+  var t=D.tasks.find(function(x){return x.id===id;});if(!t)return;
+  var oldStatus=t.kanbanStatus||mapToKanban(t.status);
+  t.kanbanStatus=newKanbanStatus;
+  // Map kanban → old status for compatibility
+  if(newKanbanStatus==='done'){t.status='done';t.completedDate=new Date().toISOString().slice(0,10);}
+  else if(newKanbanStatus==='cancelled'){t.status='cancelled';}
+  else if(newKanbanStatus==='rework'){
+    t.status='rework';
+    t.reworkCount=(t.reworkCount||0)+1;
+    // Auto bump priority on rework
+    if(t.reworkCount>=2&&t.priority!=='critical')t.priority='high';
+  }
+  else if(newKanbanStatus==='in_progress'){t.status='pending';}
+  else{t.status='pending';}
+  // Sync to Supabase
+  if(SUPABASE_LIVE&&t.sbId){
+    sbPatch('actions','id=eq.'+t.sbId,{
+      payload_json:JSON.stringify(Object.assign({},t._payload||{},{status:newKanbanStatus,kanban_status:newKanbanStatus,
+        priority:t.priority,rework_count:t.reworkCount||0}))
+    });
+  }
+  renderTasks();
+  var ksLabel=KANBAN_STATUSES[newKanbanStatus]?.label||newKanbanStatus;
+  addFeed(t.assignedTo||'coordinator',ksLabel+': '+(t.title||'').slice(0,60));
+};
+
+// ═══ TASK DETAIL MODAL ═══
+window.openTaskDetail=function(id){
+  var t=D.tasks.find(function(x){return x.id===id;});if(!t)return;
+  var ks=mapToKanban(t.kanbanStatus||t.status);
+  var ksInfo=KANBAN_STATUSES[ks]||{label:ks,color:'#64748b'};
+  var agent=AGENTS[t.assignedTo]||{emoji:'📋',name:'Не назначен'};
+  var displayTitle=taskSmartTitle(t);
+  // Subtasks HTML
+  var subtasksHTML='';
+  if(t.subtasks&&t.subtasks.length){
+    subtasksHTML='<div style="margin:12px 0"><h4 style="font-size:12px;color:var(--dim);margin-bottom:6px">📦 Подзадачи ('+t.subtasks.filter(function(s){return s.done;}).length+'/'+t.subtasks.length+')</h4>'+
+      t.subtasks.map(function(s,i){
+        return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0">'+
+          '<input type="checkbox" '+(s.done?'checked':'')+' onchange="toggleSubtask('+t.id+','+i+')" style="cursor:pointer">'+
+          '<span style="font-size:12px;'+(s.done?'text-decoration:line-through;color:var(--dim)':'')+'">'+s.text+'</span></div>';
+      }).join('')+
+      '<div style="margin-top:6px"><input placeholder="Добавить подзадачу..." style="width:100%;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px" onkeydown="if(event.key===\'Enter\'){addSubtask('+t.id+',this.value);this.value=\'\';openTaskDetail('+t.id+');}"></div></div>';
+  }else{
+    subtasksHTML='<div style="margin:8px 0"><input placeholder="Добавить подзадачу (Enter)..." style="width:100%;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px" onkeydown="if(event.key===\'Enter\'){addSubtask('+t.id+',this.value);this.value=\'\';openTaskDetail('+t.id+');}"></div>';
+  }
+  // Status transition buttons
+  var transitions='';
+  if(ks==='backlog')transitions='<button class="act-btn" onclick="moveTask('+t.id+',\'decomposed\');openTaskDetail('+t.id+')">🧩 Декомпозировать</button><button class="act-btn" onclick="moveTask('+t.id+',\'planned\');openTaskDetail('+t.id+')">📋 Запланировать</button><button class="act-btn success" onclick="moveTask('+t.id+',\'in_progress\');openTaskDetail('+t.id+')">🔧 В работу</button>';
+  else if(ks==='decomposed')transitions='<button class="act-btn" onclick="moveTask('+t.id+',\'planned\');openTaskDetail('+t.id+')">📋 Запланировать</button><button class="act-btn success" onclick="moveTask('+t.id+',\'in_progress\');openTaskDetail('+t.id+')">🔧 В работу</button><button class="act-btn" onclick="moveTask('+t.id+',\'backlog\');openTaskDetail('+t.id+')">📥 В бэклог</button>';
+  else if(ks==='planned')transitions='<button class="act-btn success" onclick="moveTask('+t.id+',\'in_progress\');openTaskDetail('+t.id+')">🔧 Начать</button><button class="act-btn" onclick="moveTask('+t.id+',\'backlog\');openTaskDetail('+t.id+')">📥 В бэклог</button>';
+  else if(ks==='in_progress')transitions='<button class="act-btn success" onclick="taskAction('+t.id+',\'done\');closeModal()">✅ Готово</button><button class="act-btn warn" onclick="moveTask('+t.id+',\'rework\');openTaskDetail('+t.id+')">🔄 На переработку</button>';
+  else if(ks==='rework')transitions='<button class="act-btn success" onclick="moveTask('+t.id+',\'in_progress\');openTaskDetail('+t.id+')">🔧 Снова в работу</button><button class="act-btn" onclick="moveTask('+t.id+',\'decomposed\');openTaskDetail('+t.id+')">🧩 Передекомпозировать</button>';
+  else if(ks==='done')transitions='<button class="act-btn warn" onclick="moveTask('+t.id+',\'rework\');openTaskDetail('+t.id+')">🔄 Вернуть на переработку</button>';
+
+  openModal(`
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+      <span style="font-size:9px;padding:2px 8px;background:${ksInfo.color}18;color:${ksInfo.color};border:1px solid ${ksInfo.color}33;border-radius:4px;font-weight:700">${ksInfo.label}</span>
+      <span style="font-size:9px;padding:2px 8px;background:${t.priority==='critical'?'#ff000033':t.priority==='high'?'#ff980022':'#ffffff08'};color:${t.priority==='critical'?'#ff4444':t.priority==='high'?'#ff9800':'var(--dim)'};border-radius:4px;font-weight:700">${(t.priority||'normal').toUpperCase()}</span>
+      ${t.reworkCount?'<span style="font-size:9px;padding:2px 6px;background:#f9731622;color:#f97316;border-radius:4px">🔄×'+t.reworkCount+'</span>':''}
+      ${t.estimate?'<span style="font-size:9px;padding:2px 6px;background:#06b6d418;color:#06b6d4;border-radius:4px">⏱ '+t.estimate+'</span>':''}
+    </div>
+    <h3 style="margin:0 0 8px 0;font-size:16px">${displayTitle}</h3>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:12px">${agent.emoji} ${agent.name} • ${t.dept?.toUpperCase()||''} • 📅 ${t.createdDate||'?'}</div>
+    ${t.description?'<div style="padding:10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);font-size:13px;line-height:1.6;margin-bottom:12px;white-space:pre-wrap">'+t.description+'</div>':''}
+    ${t.deadline?'<div style="font-size:12px;margin-bottom:8px">⏰ Дедлайн: <b>'+t.deadline+'</b></div>':''}
+    ${t.result?'<div style="padding:8px;background:#10b98118;border-radius:6px;font-size:12px;color:#10b981;margin-bottom:8px">✅ '+t.result+'</div>':''}
+    ${t.reworkNotes?'<div style="padding:8px;background:#f9731618;border-radius:6px;font-size:12px;color:#f97316;margin-bottom:8px">🔄 Замечания: '+t.reworkNotes+'</div>':''}
+    ${subtasksHTML}
+    ${t._payload&&Object.keys(t._payload).length>2?'<details style="margin:8px 0"><summary style="font-size:11px;color:var(--dim);cursor:pointer">📋 Данные задачи</summary><div style="margin-top:6px">'+taskPreviewHTML(t)+'</div></details>':''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:16px 0;padding-top:12px;border-top:1px solid var(--border)">
+      ${transitions}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="act-btn" onclick="editTaskField(${t.id},'priority')">🏷 Приоритет</button>
+      <button class="act-btn" onclick="editTaskField(${t.id},'deadline')">📅 Дедлайн</button>
+      <button class="act-btn" onclick="editTaskField(${t.id},'estimate')">⏱ Оценка</button>
+      <button class="act-btn" onclick="editTaskField(${t.id},'description')">📝 Описание</button>
+      <button class="act-btn" onclick="editTaskField(${t.id},'tags')">🏷 Теги</button>
+      <button class="act-btn" onclick="editTaskField(${t.id},'assignee')">👤 Назначить</button>
+      <button class="act-btn danger" onclick="moveTask(${t.id},'cancelled');closeModal()">❌ Отменить</button>
+    </div>
+  `);
+};
+
+// ═══ SUBTASKS ═══
+window.addSubtask=function(taskId,text){
+  if(!text||!text.trim())return;
+  var t=D.tasks.find(function(x){return x.id===taskId;});if(!t)return;
+  if(!t.subtasks)t.subtasks=[];
+  t.subtasks.push({text:text.trim(),done:false});
+  renderTasks();
+};
+window.toggleSubtask=function(taskId,idx){
+  var t=D.tasks.find(function(x){return x.id===taskId;});if(!t||!t.subtasks)return;
+  t.subtasks[idx].done=!t.subtasks[idx].done;
+  // Check if all subtasks done → auto-suggest move to done
+  var allDone=t.subtasks.every(function(s){return s.done;});
+  if(allDone&&mapToKanban(t.kanbanStatus||t.status)==='in_progress'){
+    if(confirm('Все подзадачи выполнены! Перевести задачу в "Выполнено"?')){
+      moveTask(taskId,'done');
+    }
+  }
+  renderTasks();
+};
+
+// ═══ EDIT TASK FIELDS ═══
+window.editTaskField=function(id,field){
+  var t=D.tasks.find(function(x){return x.id===id;});if(!t)return;
+  if(field==='priority'){
+    var val=prompt('Приоритет (critical / high / normal / low):',t.priority||'normal');
+    if(val&&['critical','high','normal','low'].includes(val.trim().toLowerCase())){
+      t.priority=val.trim().toLowerCase();
+    }
+  }else if(field==='deadline'){
+    var val=prompt('Дедлайн (YYYY-MM-DD):',t.deadline||new Date().toISOString().slice(0,10));
+    if(val&&val.trim())t.deadline=val.trim();
+  }else if(field==='estimate'){
+    var val=prompt('Оценка времени (напр: 2h, 1d, 30m):',t.estimate||'');
+    if(val&&val.trim())t.estimate=val.trim();
+  }else if(field==='description'){
+    var val=prompt('Описание задачи:',t.description||'');
+    if(val!==null)t.description=val.trim();
+  }else if(field==='tags'){
+    var val=prompt('Теги через запятую:',t.tags?t.tags.join(', '):'');
+    if(val!==null)t.tags=val.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  }else if(field==='assignee'){
+    var opts=Object.keys(AGENTS).map(function(k){return k+' ('+AGENTS[k].name+')';}).join(', ');
+    var val=prompt('Агент (ID):\n'+opts,t.assignedTo||'');
+    if(val&&AGENTS[val.trim()])t.assignedTo=val.trim();
+  }
+  renderTasks();openTaskDetail(id);
+};
+
+// ═══ CREATE TASK MODAL ═══
+window.openCreateTaskModal=function(){
+  openModal(`
+    <h3 style="margin:0 0 16px 0">➕ Новая задача</h3>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <input id="newTaskTitle" placeholder="Название задачи *" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">
+      <textarea id="newTaskDesc" placeholder="Описание (опционально)" rows="3" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;resize:vertical"></textarea>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <select id="newTaskAgent" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px">
+          <option value="">Агент</option>
+          ${Object.keys(AGENTS).map(function(k){return '<option value="'+k+'">'+AGENTS[k].emoji+' '+AGENTS[k].name+'</option>';}).join('')}
+        </select>
+        <select id="newTaskPriority" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px">
+          <option value="normal">🔵 Normal</option>
+          <option value="high">🔴 High</option>
+          <option value="critical">🚨 Critical</option>
+          <option value="low">⚪ Low</option>
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <select id="newTaskStatus" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px">
+          <option value="backlog">📥 Бэклог</option>
+          <option value="decomposed">🧩 Декомпозиция</option>
+          <option value="planned">📋 Запланировано</option>
+          <option value="in_progress">🔧 В работу сразу</option>
+        </select>
+        <input id="newTaskDeadline" type="date" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <input id="newTaskEstimate" placeholder="Оценка (2h, 1d...)" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px">
+        <input id="newTaskTags" placeholder="Теги через запятую" style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px">
+      </div>
+      <button onclick="createTaskFromModal()" style="padding:10px;background:var(--cyan);color:var(--bg);border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;margin-top:4px">Создать задачу</button>
+    </div>
+  `);
+};
+window.createTaskFromModal=function(){
+  var title=document.getElementById('newTaskTitle').value.trim();
+  if(!title){showToast('Укажи название задачи','error');return;}
+  var t={
+    id:D.tasks.reduce(function(m,x){return Math.max(m,x.id);},0)+1,
+    title:title,
+    description:document.getElementById('newTaskDesc').value.trim()||'',
+    assignedTo:document.getElementById('newTaskAgent').value||'coordinator',
+    dept:AGENTS[document.getElementById('newTaskAgent').value||'coordinator']?.dept||'cmd',
+    priority:document.getElementById('newTaskPriority').value||'normal',
+    kanbanStatus:document.getElementById('newTaskStatus').value||'backlog',
+    status:document.getElementById('newTaskStatus').value==='in_progress'?'pending':'pending',
+    deadline:document.getElementById('newTaskDeadline').value||'',
+    estimate:document.getElementById('newTaskEstimate').value.trim()||'',
+    tags:document.getElementById('newTaskTags').value.split(',').map(function(s){return s.trim();}).filter(Boolean),
+    subtasks:[],
+    reworkCount:0,
+    createdDate:new Date().toISOString().slice(0,10),
+    _payload:{},_actionType:''
+  };
+  D.tasks.push(t);
+  // Save to Supabase
+  if(SUPABASE_LIVE){
+    var agentSlug=DASH_TO_SB_SLUG[t.assignedTo]||'coordinator';
+    var sbAgent=window._sbAgents[agentSlug];
+    sbInsert('actions',{
+      agent_id:sbAgent?sbAgent.id:null,
+      type:'task_manual',
+      payload_json:{title:t.title,description:t.description,status:t.kanbanStatus,kanban_status:t.kanbanStatus,
+        priority:t.priority,deadline:t.deadline,estimate:t.estimate,tags:t.tags}
+    }).then(function(res){if(res&&res[0])t.sbId=res[0].id;});
+  }
+  closeModal();renderTasks();updateKPI();
+  addFeed(t.assignedTo,'📌 Новая задача: '+title.slice(0,50));
+};
+window.closeModal=function(){document.querySelector('.modal')?.classList.remove('open');};
+
 window.taskAction=function(id,newStatus){
   const t=D.tasks.find(x=>x.id===id);if(!t)return;
   // ═══ SMART APPROVAL: If marking as done AND task is actionable → execute real action ═══
@@ -3171,14 +3527,16 @@ window.taskPriority=function(id,dir){
 document.getElementById('taskSubmit').addEventListener('click',async()=>{
   const input=document.getElementById('taskInput');
   const agent=document.getElementById('taskAgent').value;
+  const priSelect=document.getElementById('taskPrioritySelect');
   if(!input.value.trim())return;
   const ag=AGENTS[agent];
   const title=input.value.trim();
+  const pri=priSelect?priSelect.value:'normal';
   const taskData={
-    id:D.tasks.length+1, title:title,
+    id:D.tasks.reduce(function(m,x){return Math.max(m,x.id);},0)+1, title:title,
     assignedTo:agent||'coordinator', dept:ag?ag.dept:'cmd',
-    status:'pending', priority:'normal', createdDate:new Date().toISOString().slice(0,10),
-    completedDate:null, result:null
+    status:'pending', kanbanStatus:'backlog', priority:pri, createdDate:new Date().toISOString().slice(0,10),
+    completedDate:null, result:null, subtasks:[], tags:[], reworkCount:0, description:'', deadline:'', estimate:''
   };
   // Save to Supabase
   if(SUPABASE_LIVE){
@@ -3188,7 +3546,7 @@ document.getElementById('taskSubmit').addEventListener('click',async()=>{
       var res=await sbInsert('actions',{
         agent_id:sbAgent.id,
         type:'task_created',
-        payload_json:{title:title,status:'pending',priority:'normal',source:'dashboard'}
+        payload_json:{title:title,status:'backlog',kanban_status:'backlog',priority:pri,source:'dashboard'}
       });
       if(res&&res[0])taskData.sbId=res[0].id;
     }

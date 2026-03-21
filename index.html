@@ -276,25 +276,66 @@
 
 <!-- TASKS PANEL -->
 <div class="panel data-panel" id="panel-tasks">
-  <div class="data-header"><h2>📋 Задачи агентам</h2></div>
-  <div class="task-input-area">
-    <input class="task-input" id="taskInput" placeholder="Опиши задачу для агента...">
-    <select class="task-select" id="taskAgent">
-      <option value="">Выбери агента</option>
-      <option value="coordinator">🎯 Coordinator v8</option>
-      <option value="content">📱 SMM Agent v9</option>
-      <option value="market">📊 Analyst Agent v8</option>
-      <option value="leads">📧 BizDev Agent v13</option>
-      <option value="outreach">🎯 Outreach Agent v8</option>
-      <option value="social">👥 Community Agent v8</option>
-      <option value="lead_finder">🔍 Lead Finder v2</option>
-      <option value="followup">📨 Follow-Up v1</option>
-      <option value="processor">⚙️ Processor v2</option>
-      <option value="watchdog">🛡️ Watchdog v1</option>
-      <option value="briefing">☀️ Morning Briefing v2</option>
-    </select>
-    <button class="task-submit" id="taskSubmit">Поставить задачу</button>
+  <div class="data-header">
+    <h2>📋 Задачи</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="act-btn" onclick="toggleTaskView()" id="taskViewToggle" style="font-size:11px;padding:3px 10px">📊 Kanban</button>
+      <button class="act-btn success" onclick="openCreateTaskModal()" style="font-size:11px;padding:3px 10px">➕ Новая задача</button>
+    </div>
   </div>
+  <!-- Quick create bar -->
+  <div class="task-input-area">
+    <input class="task-input" id="taskInput" placeholder="Быстрая задача — опиши и нажми Enter...">
+    <select class="task-select" id="taskAgent">
+      <option value="">Агент</option>
+      <option value="coordinator">🎯 Coordinator</option>
+      <option value="content">📱 SMM Agent</option>
+      <option value="market">📊 Analyst</option>
+      <option value="leads">📧 BizDev</option>
+      <option value="outreach">🎯 Outreach</option>
+      <option value="social">👥 Community</option>
+      <option value="lead_finder">🔍 Lead Finder</option>
+      <option value="followup">📨 Follow-Up</option>
+      <option value="processor">⚙️ Processor</option>
+      <option value="watchdog">🛡️ Watchdog</option>
+      <option value="quality_controller">✅ QA</option>
+    </select>
+    <select class="task-select" id="taskPrioritySelect" style="max-width:100px">
+      <option value="normal">🔵 Normal</option>
+      <option value="high">🔴 High</option>
+      <option value="critical">🚨 Critical</option>
+      <option value="low">⚪ Low</option>
+    </select>
+    <button class="task-submit" id="taskSubmit">Поставить</button>
+  </div>
+  <!-- Kanban Board -->
+  <div id="kanbanBoard" class="kanban-board" style="display:none">
+    <div class="kanban-col" data-status="backlog">
+      <div class="kanban-col-header" style="border-top:3px solid #64748b"><span>📥 Бэклог</span><span class="kanban-count" id="kc-backlog">0</span></div>
+      <div class="kanban-cards" id="kanban-backlog"></div>
+    </div>
+    <div class="kanban-col" data-status="decomposed">
+      <div class="kanban-col-header" style="border-top:3px solid #8b5cf6"><span>🧩 Декомпозиция</span><span class="kanban-count" id="kc-decomposed">0</span></div>
+      <div class="kanban-cards" id="kanban-decomposed"></div>
+    </div>
+    <div class="kanban-col" data-status="planned">
+      <div class="kanban-col-header" style="border-top:3px solid #06b6d4"><span>📋 Запланировано</span><span class="kanban-count" id="kc-planned">0</span></div>
+      <div class="kanban-cards" id="kanban-planned"></div>
+    </div>
+    <div class="kanban-col" data-status="in_progress">
+      <div class="kanban-col-header" style="border-top:3px solid #f59e0b"><span>🔧 В работе</span><span class="kanban-count" id="kc-in_progress">0</span></div>
+      <div class="kanban-cards" id="kanban-in_progress"></div>
+    </div>
+    <div class="kanban-col" data-status="done">
+      <div class="kanban-col-header" style="border-top:3px solid #10b981"><span>✅ Выполнено</span><span class="kanban-count" id="kc-done">0</span></div>
+      <div class="kanban-cards" id="kanban-done"></div>
+    </div>
+    <div class="kanban-col" data-status="rework">
+      <div class="kanban-col-header" style="border-top:3px solid #f97316"><span>🔄 Переработка</span><span class="kanban-count" id="kc-rework">0</span></div>
+      <div class="kanban-cards" id="kanban-rework"></div>
+    </div>
+  </div>
+  <!-- List view -->
   <div id="tasksList" style="display:flex;flex-direction:column;gap:8px"></div>
 </div>
 
