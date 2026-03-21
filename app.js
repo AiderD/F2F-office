@@ -113,7 +113,7 @@ function logoutUser(){
   SUPABASE_LIVE=false;
   window._sbTeam=null;window._sbPartners=null;window._sbContent=null;
   window._sbMemory=null;window._sbEvents=null;window._sbReports=null;
-  window._sbFeedLoaded=false;window._sbContentMerged=false;window._sbPartnersMerged=false;
+  window._sbFeedLoaded=false;window._sbFeedLoadedIds=null;window._sbFeedEnriched=false;window._sbContentMerged=false;window._sbPartnersMerged=false;
   if(typeof feedItems!=='undefined')feedItems.length=0;
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('app').style.display='none';
@@ -472,9 +472,10 @@ function updateKPI(){
   document.getElementById('tab-posts-count').textContent=pendingCount>0?pendingCount+' ⏳':D.posts.length;
   document.getElementById('tab-reports-count').textContent=D.reports.length;
   // SyncBadge: don't override LIVE status if Supabase is connected
-  if(!SUPABASE_LIVE){
-    document.getElementById('syncBadge').textContent='● LOCAL '+new Date(D.lastUpdated||Date.now()).toLocaleDateString('ru');
-    document.getElementById('syncBadge').style.color='#ffb800';
+  var _syncB=document.getElementById('syncBadge');
+  if(!SUPABASE_LIVE&&_syncB){
+    _syncB.textContent='● LOCAL '+new Date(D.lastUpdated||Date.now()).toLocaleDateString('ru');
+    _syncB.style.color='#ffb800';
   }
 }
 updateKPI();
@@ -2999,8 +3000,9 @@ function renderPipeline(){
 }
 
 // ═══ CLOCK ═══
-setInterval(()=>{
-  document.getElementById('clock').textContent=new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+var _clockInterval=setInterval(()=>{
+  var clk=document.getElementById('clock');
+  if(clk)clk.textContent=new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
 },1000);
 
 // ═══ MODAL ═══
@@ -3059,12 +3061,22 @@ function renderLeads(){
     }
     window._sbPartners.forEach(function(p,i){
       var exists=D.leads.find(function(l){return l.sbId===p.id;});
-      if(!exists){
-        var nParts=(p.notes||'').split('|');
-        var loc=nParts.length>1?nParts[1].trim():'CIS';
-        var src=nParts.length>0?nParts[0].trim():'AI Agent';
-        D.leads.push({
-          id:8000+i,sbId:p.id,name:p.contact_name||'Контакт',title:p.segment||'',
+      if(exists){
+        // Update existing lead with fresh SB data
+        exists.name=p.contact_name||exists.name;
+        exists.company=p.company_name||exists.company;
+        exists.email=p.contact_email||exists.email;
+        exists.sbStage=p.stage;
+        exists.priority=p.stage==='negotiating'?'hot':p.stage==='contacted'?'warm':'medium';
+        return;
+      }
+      var nParts=(p.notes||'').split('|');
+      var loc=nParts.length>1?nParts[1].trim():'CIS';
+      var src=nParts.length>0?nParts[0].trim():'AI Agent';
+      // Use stable ID derived from sbId hash to avoid index-based collision
+      var stableId=8000+Math.abs(String(p.id).split('').reduce(function(a,c){return ((a<<5)-a)+c.charCodeAt(0);},0)%9000);
+      D.leads.push({
+          id:stableId,sbId:p.id,name:p.contact_name||'Контакт',title:p.segment||'',
           company:p.company_name||'',email:p.contact_email||'',
           linkedin:p.linkedin||'',phone:p.phone||'',website:p.website||'',
           location:loc,source:src,
@@ -3076,7 +3088,6 @@ function renderLeads(){
           assignedTo:p.assigned_to||'',
           status:'active',sbStage:p.stage
         });
-      }
     });
   }
   const filtered=D.leads.filter(l=>leadFilter==='all'||l.priority===leadFilter);
@@ -3429,14 +3440,22 @@ function renderPosts(){
       D.posts=D.posts.filter(p=>p.sbId); // keep only previously merged SB posts (will re-add)
     }
     window._sbContent.forEach(function(c,i){
-      // Skip if already merged
-      if(D.posts.find(p=>p.sbId===c.id))return;
+      // Update existing if already merged
+      var existPost=D.posts.find(p=>p.sbId===c.id);
+      if(existPost){
+        existPost.sbStatus=c.status;
+        existPost.status=({'pending_approval':'draft','approved':'ready','rejected':'draft','published':'published'})[c.status]||existPost.status;
+        existPost.qaScore=c.qa_score||existPost.qaScore;
+        existPost.qaVerdict=c.qa_verdict||existPost.qaVerdict;
+        return;
+      }
       var statusMap={'pending_approval':'draft','approved':'ready','rejected':'draft','published':'published'};
       var ag=window._sbAgentById&&c.agent_id?window._sbAgentById[c.agent_id]:null;
       var dashAgentId=ag?SB_SLUG_TO_DASH[ag.slug]:'content';
       var catLabel=c.status==='pending_approval'?'🤖 AI Generated (LIVE)':c.status==='approved'?'✅ Approved (LIVE)':c.status==='published'?'📢 Published (LIVE)':'📝 Content (LIVE)';
+      var stablePostId=9000+Math.abs(String(c.id).split('').reduce(function(a,ch){return ((a<<5)-a)+ch.charCodeAt(0);},0)%9000);
       D.posts.unshift({
-        id:9000+i, sbId:c.id, platform:c.platform||'telegram',
+        id:stablePostId, sbId:c.id, platform:c.platform||'telegram',
         category:catLabel,
         text:c.content_text||'[Текст не указан]', hashtags:'', date:(c.created_at||'').slice(0,10),
         scheduledAt:c.scheduled_at, publishedAt:c.published_at,
@@ -5414,10 +5433,13 @@ document.getElementById('agentToggle').addEventListener('click',function(){
   this.classList.toggle('active',agentsActive);
   this.title=agentsActive?'Агенты активны — нажми для паузы':'Агенты на паузе — нажми для продолжения';
   addFeed('coordinator',agentsActive?'▶️ Агенты возобновлены':'⏸ Агенты приостановлены');
-  document.getElementById('syncBadge').textContent=agentsActive?'● ACTIVE':'⏸ PAUSED';
-  document.getElementById('syncBadge').style.color=agentsActive?'var(--green)':'var(--amber)';
-  document.getElementById('syncBadge').style.borderColor=agentsActive?'#00ff8833':'#ffb80033';
-  document.getElementById('syncBadge').style.background=agentsActive?'#00ff8811':'#ffb80011';
+  var _sb=document.getElementById('syncBadge');
+  if(_sb){
+    _sb.textContent=agentsActive?'● ACTIVE':'⏸ PAUSED';
+    _sb.style.color=agentsActive?'var(--green)':'var(--amber)';
+    _sb.style.borderColor=agentsActive?'#00ff8833':'#ffb80033';
+    _sb.style.background=agentsActive?'#00ff8811':'#ffb80011';
+  }
 });
 
 // Credits are now tracked via ai_credits table — no simulation needed

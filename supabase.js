@@ -215,8 +215,9 @@ function refreshAfterSync(){
       if(r.type_ab==='morning')rType='morning';
       else if(r.type_ab==='evening')rType='evening';
       else if(r.type_ab==='weekly')rType='weekly';
+      var stableRptId=7000+Math.abs(String(r.id).split('').reduce(function(h,c){return ((h<<5)-h)+c.charCodeAt(0);},0)%9000);
       D.reports.push({
-        id:7000+i, sbId:r.id, title:parsed&&parsed.title?parsed.title:(r.summary||'Отчёт'),
+        id:stableRptId, sbId:r.id, title:parsed&&parsed.title?parsed.title:(r.summary||'Отчёт'),
         type:rType,
         agentId:dashId, date:(r.created_at||'').slice(0,10),
         content:content,
@@ -234,8 +235,9 @@ function refreshAfterSync(){
       var ag=window._sbAgentById&&a.agent_id?window._sbAgentById[a.agent_id]:null;
       var dashId=ag?SB_SLUG_TO_DASH[ag.slug]:'coordinator';
       var p=a.payload_json||{};
+      var stableTaskId=6000+Math.abs(String(a.id).split('').reduce(function(h,c){return ((h<<5)-h)+c.charCodeAt(0);},0)%9000);
       D.tasks.push({
-        id:6000+i, sbId:a.id, title:p.title||p.description||a.type||'Действие',
+        id:stableTaskId, sbId:a.id, title:p.title||p.description||a.type||'Действие',
         assignedTo:dashId, dept:ag?'':AGENTS[dashId]?.dept||'cmd',
         status:p.status||'done', priority:p.priority||'normal',
         kanbanStatus:p.kanban_status||p.status||'done',
@@ -313,24 +315,27 @@ function refreshAfterSync(){
 
   // ═══ 8. FEED: Restore from Supabase events ═══
   if(window._sbEvents&&window._sbEvents.length>0&&typeof feedItems!=='undefined'){
-    // Only load once per session (don't re-add on auto-refresh)
-    if(!window._sbFeedLoaded){
-      window._sbFeedLoaded=true;
-      window._sbEvents.forEach(function(ev){
-        if(!ev.metadata_json)return;
-        var meta;try{meta=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;}catch(e){return;}
-        if(!meta.text)return;
-        var agId=meta.agent_dash_id||'coordinator';
-        var ag=AGENTS[agId]||{color:'#64748b'};
-        var t=new Date(ev.created_at);
-        feedItems.push({
-          id:feedItems.length+1,agentId:agId,text:meta.text,
-          time:t.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}),
-          fullTime:ev.created_at,color:ag.color
-        });
+    // Track loaded event IDs to avoid duplicates but allow new events on refresh
+    if(!window._sbFeedLoadedIds)window._sbFeedLoadedIds=new Set();
+    var feedAdded=false;
+    window._sbEvents.forEach(function(ev){
+      if(!ev.id||window._sbFeedLoadedIds.has(ev.id))return;
+      if(!ev.metadata_json)return;
+      var meta;try{meta=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;}catch(e){return;}
+      if(!meta.text)return;
+      window._sbFeedLoadedIds.add(ev.id);
+      var agId=meta.agent_dash_id||'coordinator';
+      var ag=AGENTS[agId]||{color:'#64748b'};
+      var t=new Date(ev.created_at);
+      feedItems.push({
+        id:feedItems.length+1,agentId:agId,text:meta.text,
+        time:t.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}),
+        fullTime:ev.created_at,color:ag.color
       });
-      if(typeof renderFeed==='function')renderFeed();
-    }
+      feedAdded=true;
+    });
+    if(feedAdded&&typeof renderFeed==='function')renderFeed();
+    window._sbFeedLoaded=true; // backward compat flag
   }
 
   // ═══ 8b. AGENT PROMPTS: Load from agents.system_prompt ═══
@@ -433,8 +438,10 @@ async function initSupabase(){
 // Run after DOM ready + auto-refresh every 30s
 // SECURITY: Only init Supabase if user is authenticated
 function isAuthenticated(){
-  var s=JSON.parse(localStorage.getItem('f2f_session')||'null');
-  return !!(s&&s.token);
+  try{
+    var s=JSON.parse(localStorage.getItem('f2f_session')||'null');
+    return !!(s&&s.token&&s.token_id);
+  }catch(e){return false;}
 }
 window.addEventListener('load',()=>{
   var _sb2=document.getElementById('syncBadge');
@@ -445,7 +452,7 @@ window.addEventListener('load',()=>{
     if(_sb2){_sb2.textContent='● OFFLINE';_sb2.style.color='#666';}
   }
   var _syncing=false;
-  setInterval(async()=>{
+  var _autoRefreshInterval=setInterval(async()=>{
     if(!SUPABASE_LIVE||!isAuthenticated()||_syncing)return;
     _syncing=true;
     try{
@@ -454,4 +461,6 @@ window.addEventListener('load',()=>{
     }catch(e){console.warn('Auto-refresh error:',e);}
     finally{_syncing=false;}
   },30000);
+  // Clean up on page unload
+  window.addEventListener('beforeunload',function(){clearInterval(_autoRefreshInterval);});
 });

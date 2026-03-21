@@ -246,11 +246,9 @@
 <div class="panel data-panel" id="panel-calendar">
   <div class="data-header">
     <h2>🏆 Мероприятия</h2>
-    <div style="display:flex;gap:6px;align-items:center">
-      <button class="ctrl-btn" onclick="calCreateEvent()" style="background:#a855f7;color:#fff;font-weight:700;padding:6px 14px">+ Создать</button>
-    </div>
+    <button onclick="calCreateEvent()" style="padding:8px 18px;background:#a855f7;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s;box-shadow:0 2px 8px #a855f733" onmouseover="this.style.background='#9333ea';this.style.transform='translateY(-1px)'" onmouseout="this.style.background='#a855f7';this.style.transform=''">+ Новое мероприятие</button>
   </div>
-  <!-- Toolbar: view toggle + filters -->
+  <!-- Toolbar -->
   <div class="ev-toolbar">
     <div class="ev-view-toggle">
       <button class="ev-view-btn active" id="evViewList" onclick="calSwitchView('list')">📋 Карточки</button>
@@ -272,10 +270,10 @@
     </div>
     <!-- Calendar nav (shown only in calendar view) -->
     <div class="ev-cal-nav" id="evCalNav" style="display:none">
-      <button class="ctrl-btn" onclick="calNavigate(-1)">◀</button>
-      <span id="calMonthLabel" style="font-size:12px;font-weight:700;min-width:110px;text-align:center">—</span>
-      <button class="ctrl-btn" onclick="calNavigate(1)">▶</button>
-      <button class="ctrl-btn" onclick="calGoToday()" style="font-size:10px;background:var(--green)22;color:var(--green)">Сегодня</button>
+      <button onclick="calNavigate(-1)" style="padding:4px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer;font-size:12px">◀</button>
+      <span id="calMonthLabel" style="font-size:13px;font-weight:700;min-width:120px;text-align:center;color:var(--text)">—</span>
+      <button onclick="calNavigate(1)" style="padding:4px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer;font-size:12px">▶</button>
+      <button onclick="calGoToday()" style="padding:4px 12px;background:#00ff8815;color:#00ff88;border:1px solid #00ff8833;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600">Сегодня</button>
     </div>
   </div>
   <!-- Event count -->
