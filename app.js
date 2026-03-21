@@ -3215,7 +3215,13 @@ function showAgentDetail(id){
       '<button class="quick-act" onclick="agentAIChat(\''+id+'\',\'/help\')" style="color:#a78bfa;border-color:#a78bfa33">⌘ Команды</button>'+
       '<button class="quick-act" onclick="chatCmdPromptEdit(\''+id+'\')" style="color:#ffb800;border-color:#ffb80033">📝 Промпт</button>'+
       '<button class="quick-act" onclick="agentAIChat(\''+id+'\',\'/task Проверь текущие KPI и дай рекомендации\')" style="color:#00ff88;border-color:#00ff8833">📌 Задача</button>'+
-      (id==='art_director'?'<button class="quick-act" onclick="agentAIChat(\''+id+'\',\'/rate 5 Отличный стиль\')" style="color:#9c27b0;border-color:#9c27b033">⭐ Оценить</button>':'')+
+      (id==='art_director'?'<button class="quick-act" onclick="chatCmdRate(\''+id+'\')" style="color:#9c27b0;border-color:#9c27b033">⭐ Оценить</button>':'')+
+    '</div>'+
+    '<div class="agent-quick-actions" style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px">'+
+      '<button class="quick-act" onclick="chatCmdLearn(\''+id+'\')" style="color:#f59e0b;border-color:#f59e0b33">🧠 Научить</button>'+
+      '<button class="quick-act" onclick="chatCmdLearnGlobal()" style="color:#06b6d4;border-color:#06b6d433">🌍 Научить всех</button>'+
+      '<button class="quick-act" onclick="agentAIChat(\''+id+'\',\'/knowledge\')" style="color:#8b5cf6;border-color:#8b5cf633">📚 Знания</button>'+
+      (id==='art_director'?'<button class="quick-act" onclick="uploadReferenceImage()" style="color:#ec4899;border-color:#ec489933">🖼 Загрузить</button>':'')+
     '</div>'+
     '<div class="agent-chat-input">'+
       '<input id="agentChatInput" placeholder="Напиши агенту или /команду..." onkeydown="if(event.key===\'Enter\')agentAIChat(\''+id+'\')">'+
@@ -3456,6 +3462,85 @@ window.chatCmdRate=function(id){
   if(rating&&rating.trim()){
     agentAIChat(id,'/rate '+rating.trim());
   }
+};
+
+// Learn — teach THIS agent
+window.chatCmdLearn=function(id){
+  var a=AGENTS[id];
+  var cats='Категории: product, audience, style, competitor, process, general\n';
+  var input=prompt(a.emoji+' Научить '+a.name+':\n'+cats+'Формат: категория: текст знания\nНапример: competitor: CyberShoke убрал платные серверы');
+  if(input&&input.trim()){
+    agentAIChat(id,'/learn '+input.trim());
+  }
+};
+
+// Learn Global — teach ALL agents
+window.chatCmdLearnGlobal=function(){
+  var cats='Категории: product, audience, style, competitor, process, general\n';
+  var input=prompt('🌍 Научить ВСЕХ агентов:\n'+cats+'Формат: категория: текст знания\nНапример: product: Dominion запуск перенесён на Q3');
+  if(input&&input.trim()){
+    // Send via coordinator but with /learn_global command
+    agentAIChat('coordinator','/learn_global '+input.trim());
+  }
+};
+
+// Upload reference image for Art Director
+window.uploadReferenceImage=function(){
+  var input=document.createElement('input');
+  input.type='file';
+  input.accept='image/jpeg,image/png,image/webp';
+  input.onchange=async function(){
+    var file=input.files[0];
+    if(!file)return;
+    var category=prompt('Категория картинки:\nnews, tournament, match, meme, educational, promo, entertainment','news');
+    if(!category)return;
+    var desc=prompt('Опиши стиль этой картинки (что именно тебе нравится):','');
+    var rating=prompt('Оценка (1-5), если хочешь сразу оценить:','5');
+    var tags=prompt('Теги через запятую (опционально):\nНапример: neon, dark, arena','');
+
+    // Show uploading state in chat
+    var log=document.getElementById('agentChatLog');
+    if(log){
+      log.innerHTML+='<div style="padding:6px 10px;background:#f59e0b18;border-radius:8px;margin:4px 0;font-size:12px">⏳ Загружаю '+file.name+'...</div>';
+      log.scrollTop=log.scrollHeight;
+    }
+
+    var formData=new FormData();
+    formData.append('file',file);
+    formData.append('category',category);
+    if(desc)formData.append('style_description',desc);
+    if(rating)formData.append('rating',rating);
+    if(tags)formData.append('tags',tags);
+
+    try{
+      var res=await fetch(SUPABASE_URL+'/functions/v1/upload-reference',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+SUPABASE_KEY},
+        body:formData
+      });
+      var data=await res.json();
+      if(data.success){
+        if(log){
+          log.innerHTML+='<div style="padding:6px 10px;background:#00ff8818;border-radius:8px;margin:4px 0;font-size:12px">'+
+            '✅ Референс загружен!<br>'+
+            '<img src="'+data.image_url+'" style="max-width:200px;border-radius:6px;margin-top:4px"><br>'+
+            '<span style="color:var(--dim)">Категория: '+data.category+(desc?' | Стиль: '+desc.slice(0,50):'')+'</span></div>';
+          log.scrollTop=log.scrollHeight;
+        }
+        addFeed('art_director','🖼 Загружен новый референс ['+category+']'+(desc?' — '+desc.slice(0,60):''));
+      }else{
+        if(log){
+          log.innerHTML+='<div style="padding:6px 10px;background:#ff444418;border-radius:8px;margin:4px 0;font-size:12px;color:#ff4444">❌ '+
+            (data.error||'Ошибка загрузки')+'</div>';
+        }
+      }
+    }catch(e){
+      if(log){
+        log.innerHTML+='<div style="padding:6px 10px;background:#ff444418;border-radius:8px;margin:4px 0;font-size:12px;color:#ff4444">❌ Ошибка: '+e.message+'</div>';
+      }
+    }
+  };
+  input.click();
 };
 
 // ═══ FEED ═══
