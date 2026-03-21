@@ -7,7 +7,7 @@ let SUPABASE_LIVE=false;
 const SB_SLUG_TO_DASH={
   'smm':'content','analyst':'market','bizdev':'leads',
   'outreach':'outreach','community':'social','coordinator':'coordinator',
-  'lead_finder':'lead_finder','followup':'followup'
+  'lead_finder':'lead_finder','followup':'followup','art_director':'art_director'
 };
 const DASH_TO_SB_SLUG={};
 Object.keys(SB_SLUG_TO_DASH).forEach(k=>{DASH_TO_SB_SLUG[SB_SLUG_TO_DASH[k]]=k;});

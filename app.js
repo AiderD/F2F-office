@@ -319,12 +319,13 @@ const AGENTS = {
   followup:{name:'Follow-Up v1',emoji:'📨',dept:'biz',color:'#00ff88',scenarioId:4890852,interval:'12ч'},
   watchdog:{name:'Watchdog v1',emoji:'🛡️',dept:'sys',color:'#a78bfa',scenarioId:4890390,interval:'1ч'},
   briefing:{name:'Morning Briefing v2',emoji:'☀️',dept:'cmd',color:'#ffb800',scenarioId:4890657,interval:'24ч'},
-  kpi_updater:{name:'KPI Updater',emoji:'📈',dept:'sys',color:'#a78bfa',scenarioId:4884485,interval:'—'}
+  kpi_updater:{name:'KPI Updater',emoji:'📈',dept:'sys',color:'#a78bfa',scenarioId:4884485,interval:'—'},
+  art_director:{name:'Art Director',emoji:'🎨',dept:'smm',color:'#9c27b0',scenarioId:null,interval:'по запросу'}
 };
 const DEPTS = [
   {id:'cmd', name:'Command Center', color:'#ffb800', agents:['coordinator','briefing']},
   {id:'rd', name:'Analytics', color:'#00e5ff', agents:['market']},
-  {id:'smm', name:'SMM & Community', color:'#ff2d78', agents:['content','social']},
+  {id:'smm', name:'SMM & Community', color:'#ff2d78', agents:['content','social','art_director']},
   {id:'biz', name:'Business Dev', color:'#00ff88', agents:['leads','outreach','lead_finder','followup']},
   {id:'sys', name:'System Services', color:'#a78bfa', agents:['processor','watchdog','kpi_updater']}
 ];
@@ -1196,7 +1197,8 @@ const AGENT_DESC={
   followup:{purpose:'Автоматические follow-up письма через 3 дня после первого контакта без ответа. Другой тон и угол.',replaces:'BizDev follow-up — экономит 1-2ч/день',sources:['CRM pipeline','Email история'],interval:'12ч'},
   watchdog:{purpose:'Мониторинг всех сценариев. Если агент упал — автоперезапуск + TG алерт CEO. Self-healing.',replaces:'DevOps/мониторинг — работает 24/7',sources:['Make.com API','Supabase health'],interval:'1ч'},
   briefing:{purpose:'Утренний брифинг с реальными KPI из Supabase: лиды, письма, контент, статусы всех агентов, приоритеты.',replaces:'Утренняя планёрка — экономит 30мин/день',sources:['Supabase metrics','Agent memory','Events'],interval:'24ч'},
-  kpi_updater:{purpose:'Обновление метрик в Supabase для дашборда и аналитики. Синхронизация данных между системами.',replaces:'Ручной ввод метрик',sources:['Supabase analytics'],interval:'—'}
+  kpi_updater:{purpose:'Обновление метрик в Supabase для дашборда и аналитики. Синхронизация данных между системами.',replaces:'Ручной ввод метрик',sources:['Supabase analytics'],interval:'—'},
+  art_director:{purpose:'AI Арт-директор — генерация image-промптов, контроль визуального стиля бренда, оценка картинок. Учится на лучших примерах из image_references.',replaces:'Ручной подбор промптов для картинок',sources:['image_references','image_style_presets','content_queue'],interval:'по запросу'}
 };
 
 function renderAgentsPanel(){
@@ -1284,7 +1286,8 @@ const AGENT_PROMPTS_DEFAULT={
   followup:'Follow-up письма через 3 дня после первого контакта без ответа.',
   watchdog:'Проверка всех сценариев каждый час. Автоперезапуск упавших + TG алерт.',
   briefing:'Утренний брифинг с реальными KPI: лиды, письма, контент, статусы агентов. Раз в 24ч.',
-  kpi_updater:'Обновление метрик в Supabase для дашборда.'
+  kpi_updater:'Обновление метрик в Supabase для дашборда.',
+  art_director:'AI Арт-директор. Генерирует image-промпты для Flux, контролирует визуальный стиль: тёмный фон, neon-зелёный, кибер-арена.'
 };
 // LIVE prompts — starts as defaults, overridden from Supabase
 const AGENT_PROMPTS=Object.assign({},AGENT_PROMPTS_DEFAULT);
@@ -2548,7 +2551,7 @@ function renderPosts(){
         <button onclick="quickPostAction('${p.sbId||p.id}','reject')" style="flex:1;padding:5px;background:#ff2d7812;color:#ff2d78;border:1px solid #ff2d7833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">❌ Отклонить</button>
       </div>`:''}
       ${p.sbStatus==='approved'&&p.sbId?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;border-top:1px solid var(--border);padding-top:8px" onclick="event.stopPropagation()">
-        <button onclick="generatePostImage('${p.sbId}')" style="flex:1;min-width:45%;padding:5px;background:#9c27b018;color:#9c27b0;border:1px solid #9c27b044;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">${p.imageUrl?'🔄 Перегенерировать':'🖼 Генерировать картинку'}</button>
+        <button onclick="generatePostImage('${p.sbId}'${p.imagePrompt?",'"+p.imagePrompt.replace(/'/g,"\\'").slice(0,200)+"'":""})" style="flex:1;min-width:45%;padding:5px;background:#9c27b018;color:#9c27b0;border:1px solid #9c27b044;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">${p.imageUrl?'🔄 Перегенерировать':'🖼 Генерировать картинку'}</button>
         <button onclick="publishPostToTelegram('${p.sbId}')" style="flex:1;min-width:45%;padding:5px;background:#0088cc18;color:#0088cc;border:1px solid #0088cc44;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">📢 Опубликовать в Telegram</button>
       </div>`:''}
     </div>`).join('');
@@ -3208,8 +3211,14 @@ function showAgentDetail(id){
       '<button class="quick-act" onclick="agentAIChat(\''+id+'\',\'Что нового в твоём направлении? Есть идеи?\')">💡 Идеи</button>'+
       '<button class="quick-act" onclick="agentAIChat(\''+id+'\',\'Дай краткий отчёт за сегодня\')">📋 Отчёт</button>'+
     '</div>'+
+    '<div class="agent-quick-actions" style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px">'+
+      '<button class="quick-act" onclick="agentAIChat(\''+id+'\',\'/help\')" style="color:#a78bfa;border-color:#a78bfa33">⌘ Команды</button>'+
+      '<button class="quick-act" onclick="chatCmdPromptEdit(\''+id+'\')" style="color:#ffb800;border-color:#ffb80033">📝 Промпт</button>'+
+      '<button class="quick-act" onclick="agentAIChat(\''+id+'\',\'/task Проверь текущие KPI и дай рекомендации\')" style="color:#00ff88;border-color:#00ff8833">📌 Задача</button>'+
+      (id==='art_director'?'<button class="quick-act" onclick="agentAIChat(\''+id+'\',\'/rate 5 Отличный стиль\')" style="color:#9c27b0;border-color:#9c27b033">⭐ Оценить</button>':'')+
+    '</div>'+
     '<div class="agent-chat-input">'+
-      '<input id="agentChatInput" placeholder="Напиши агенту..." onkeydown="if(event.key===\'Enter\')agentAIChat(\''+id+'\')">'+
+      '<input id="agentChatInput" placeholder="Напиши агенту или /команду..." onkeydown="if(event.key===\'Enter\')agentAIChat(\''+id+'\')">'+
       '<button onclick="agentAIChat(\''+id+'\')">Отправить</button>'+
     '</div></div>';
 
@@ -3255,7 +3264,8 @@ const agentChatHistory={};// per-agent message history
 const CHAT_SLUG_MAP={
   coordinator:'coordinator',briefing:'coordinator',market:'analyst',content:'smm',
   social:'community',leads:'bizdev',outreach:'outreach',lead_finder:'bizdev',
-  followup:'outreach',processor:'coordinator',watchdog:'coordinator',kpi_updater:'analyst'
+  followup:'outreach',processor:'coordinator',watchdog:'coordinator',kpi_updater:'analyst',
+  art_director:'art_director'
 };
 
 window.agentAIChat=async function(id,presetMsg){
@@ -3429,6 +3439,24 @@ window.agentQuickAction=function(id,action){
   agentAIChat(id,msgs[action]||'Привет!');
 };
 window.agentSendMsg=function(id){agentAIChat(id);};
+
+// Quick prompt editor via chat modal
+window.chatCmdPromptEdit=function(id){
+  var a=AGENTS[id];
+  var current=AGENT_PROMPTS[id]||'';
+  var newPrompt=prompt(a.emoji+' '+a.name+': Введите новый промпт (или отредактируйте текущий)',current);
+  if(newPrompt&&newPrompt.trim()&&newPrompt!==current){
+    agentAIChat(id,'/prompt '+newPrompt.trim());
+  }
+};
+
+// Quick image rating
+window.chatCmdRate=function(id){
+  var rating=prompt('Оцените последнюю картинку (1-5) и добавьте комментарий:\nПример: 5 Отличный стиль, зелёный неон идеален');
+  if(rating&&rating.trim()){
+    agentAIChat(id,'/rate '+rating.trim());
+  }
+};
 
 // ═══ FEED ═══
 const feedItems=[];
