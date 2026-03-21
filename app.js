@@ -320,10 +320,11 @@ const AGENTS = {
   watchdog:{name:'Watchdog v1',emoji:'🛡️',dept:'sys',color:'#a78bfa',scenarioId:4890390,interval:'1ч'},
   briefing:{name:'Morning Briefing v2',emoji:'☀️',dept:'cmd',color:'#ffb800',scenarioId:4890657,interval:'24ч'},
   kpi_updater:{name:'KPI Updater',emoji:'📈',dept:'sys',color:'#a78bfa',scenarioId:4884485,interval:'—'},
-  art_director:{name:'Art Director',emoji:'🎨',dept:'smm',color:'#9c27b0',scenarioId:null,interval:'по запросу'}
+  art_director:{name:'Art Director',emoji:'🎨',dept:'smm',color:'#9c27b0',scenarioId:null,interval:'по запросу'},
+  quality_controller:{name:'Quality Controller',emoji:'✅',dept:'cmd',color:'#10b981',scenarioId:null,interval:'авто'}
 };
 const DEPTS = [
-  {id:'cmd', name:'Command Center', color:'#ffb800', agents:['coordinator','briefing']},
+  {id:'cmd', name:'Command Center', color:'#ffb800', agents:['coordinator','briefing','quality_controller']},
   {id:'rd', name:'Analytics', color:'#00e5ff', agents:['market']},
   {id:'smm', name:'SMM & Community', color:'#ff2d78', agents:['content','social','art_director']},
   {id:'biz', name:'Business Dev', color:'#00ff88', agents:['leads','outreach','lead_finder','followup']},
@@ -2521,6 +2522,8 @@ function renderPosts(){
         text:c.content_text||'[Текст не указан]', hashtags:'', date:(c.created_at||'').slice(0,10),
         scheduledAt:c.scheduled_at, publishedAt:c.published_at,
         imageUrl:c.image_url||null, imagePrompt:c.image_prompt||null,
+        qaScore:c.qa_score||null, qaVerdict:c.qa_verdict||null, ceoScore:c.ceo_score||null,
+        templateId:c.template_id||null,
         agentId:dashAgentId, status:statusMap[c.status]||'draft', sbStatus:c.status, isLive:true
       });
     });
@@ -2545,7 +2548,7 @@ function renderPosts(){
       ${p.imageUrl?'<div style="margin:6px 0;border-radius:6px;overflow:hidden;max-height:120px"><img src="'+p.imageUrl+'" style="width:100%;height:auto;display:block;object-fit:cover" onerror="this.parentElement.style.display=\'none\'"></div>':''}
       <div class="post-text">${(p.text||'').length>180?(p.text||'').slice(0,180)+'...':(p.text||'')}</div>
       <div class="post-tags">${p.hashtags||''}</div>
-      <div class="post-date">📅 ${p.date||''}${!p.isLive?' <span style="color:#ff9800;font-size:9px">(mock)</span>':''}${p.imageUrl?' <span style="color:#00e55f;font-size:9px">🖼 AI Image</span>':''}</div>
+      <div class="post-date">📅 ${p.date||''}${!p.isLive?' <span style="color:#ff9800;font-size:9px">(mock)</span>':''}${p.imageUrl?' <span style="color:#00e55f;font-size:9px">🖼</span>':''}${p.qaScore?` <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:${p.qaScore>=8?'#10b98122;color:#10b981':p.qaScore>=5?'#f59e0b22;color:#f59e0b':'#ef444422;color:#ef4444'}">QA:${p.qaScore}</span>`:''}${p.ceoScore?` <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#f59e0b22;color:#f59e0b">⭐${p.ceoScore}</span>`:''}</div>
       ${p.sbStatus==='pending_approval'?`<div style="display:flex;gap:6px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px" onclick="event.stopPropagation()">
         <button onclick="quickPostAction('${p.sbId||p.id}','approve')" style="flex:1;padding:5px;background:#00ff8812;color:#00ff88;border:1px solid #00ff8833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">✅ Одобрить</button>
         <button onclick="quickPostAction('${p.sbId||p.id}','reject')" style="flex:1;padding:5px;background:#ff2d7812;color:#ff2d78;border:1px solid #ff2d7833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">❌ Отклонить</button>
@@ -2579,6 +2582,12 @@ window.openPostModal=function(id){
     <p style="color:var(--dim);margin-top:8px">📅 Дата: ${p.date} | Агент: ${AGENTS[p.agentId]?.emoji||''} ${AGENTS[p.agentId]?.name||p.agentId}</p>
     ${p.imagePrompt?'<p style="color:var(--dim);font-size:11px;margin-top:4px">🖼 Промпт: <span style="color:#9c27b0">'+((p.imagePrompt||'').length>100?(p.imagePrompt||'').slice(0,100)+'...':p.imagePrompt)+'</span></p>':''}
     ${p.sbId?'<div style="margin:12px 0;padding:10px;background:#9c27b008;border:1px solid #9c27b033;border-radius:8px"><div style="font-size:11px;color:#9c27b0;font-weight:600;margin-bottom:6px">🖼 AI-картинка — промпт '+(p.imagePrompt?'(от агента)':'(пусто — введи свой)')+':</div><textarea id="customImagePrompt" placeholder="Опиши что хочешь видеть на картинке... Например: F2F logo in center, neon arena, dark background" style="width:100%;min-height:60px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px;resize:vertical;box-sizing:border-box">'+((p.imagePrompt||'').replace(/'/g,"&#39;").replace(/"/g,"&quot;"))+'</textarea><div style="display:flex;gap:6px;margin-top:6px"><button onclick="generatePostImage(\''+p.sbId+'\',document.getElementById(\'customImagePrompt\').value)" style="flex:1;padding:6px;background:#9c27b022;color:#9c27b0;border:1px solid #9c27b044;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600">'+(p.imageUrl?'🔄 Перегенерировать':'🖼 Сгенерировать картинку')+'</button></div></div>':''}
+    <div style="display:flex;gap:6px;margin:12px 0;flex-wrap:wrap">
+      ${p.sbId?'<button onclick="qaReviewPost(\''+p.sbId+'\')" style="flex:1;min-width:45%;padding:6px 10px;background:#10b98118;color:#10b981;border:1px solid #10b98133;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">✅ QA-проверка</button>':''}
+      ${p.sbId?'<button onclick="ceoScorePost(\''+p.sbId+'\')" style="flex:1;min-width:45%;padding:6px 10px;background:#f59e0b18;color:#f59e0b;border:1px solid #f59e0b33;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">⭐ Оценить</button>':''}
+    </div>
+    ${p.qaScore?'<div style="padding:8px;background:'+(p.qaScore>=8?'#10b98118':p.qaScore>=5?'#f59e0b18':'#ef444418')+';border-radius:6px;margin-bottom:8px;font-size:12px">QA: <b>'+p.qaScore+'/10</b> — '+(p.qaVerdict||'')+'</div>':''}
+    ${p.ceoScore?'<div style="padding:8px;background:#f59e0b18;border-radius:6px;margin-bottom:8px;font-size:12px">CEO: <b>'+p.ceoScore+'/10</b> ${"⭐".repeat(Math.round(p.ceoScore/2))}</div>':''}
     <div class="action-bar">
       <button class="act-btn" onclick="navigator.clipboard.writeText(document.querySelector('.modal div[style*=pre-wrap]').textContent).then(function(){alert('Скопировано!')})">📋 Копировать</button>
       <button class="act-btn success" onclick="postAction(${p.id},'approve')">✅ ${p.status==='draft'?'Утвердить':'Вернуть в черновик'}</button>
@@ -2682,6 +2691,68 @@ window.quickPostAction=function(id,action){
     addFeed('content','❌ Пост отклонён: '+p.platform);
   }
   renderPosts();updateKPI();
+};
+
+// QA Review a post via quality-review Edge Function
+window.qaReviewPost=async function(postId){
+  if(!SUPABASE_LIVE){showToast('Supabase не подключён','error');return;}
+  showToast('✅ QA проверяет пост...','info');
+  try{
+    var res=await fetch(SUPABASE_URL+'/functions/v1/quality-review',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+      body:JSON.stringify({post_id:postId})
+    });
+    var data=await res.json();
+    if(data.success){
+      var verdict=data.verdict==='approved'?'✅ Одобрен':data.verdict==='needs_work'?'🔄 Нужна доработка':'❌ Отклонён';
+      var msg='QA: '+data.score+'/10 — '+verdict;
+      if(data.issues&&data.issues.length){
+        msg+='\n\nПроблемы:\n'+data.issues.map(function(i){return '• '+i.text;}).join('\n');
+      }
+      if(data.suggestions&&data.suggestions.length){
+        msg+='\n\nРекомендации:\n'+data.suggestions.map(function(s){return '• '+s.text;}).join('\n');
+      }
+      if(data.improved_text){
+        msg+='\n\n📝 Улучшенная версия:\n'+data.improved_text;
+      }
+      alert(msg);
+      // Update local data
+      var p=D.posts.find(function(x){return x.sbId===postId;});
+      if(p){p.qaScore=data.score;p.qaVerdict=verdict;renderPosts();openPostModal(p.sbId);}
+      addFeed('quality_controller','QA: пост оценён '+data.score+'/10 — '+verdict);
+    }else{
+      showToast('QA ошибка: '+(data.error||'unknown'),'error');
+    }
+  }catch(e){showToast('QA ошибка: '+e.message,'error');}
+};
+
+// CEO Score a post
+window.ceoScorePost=async function(postId){
+  var input=prompt('Оцени пост (1-10) и добавь комментарий:\nФормат: 8 Хороший стиль, дерзкий CTA\n\nОценка 8+ = автоизвлечение "что хорошо"\nОценка 1-4 = автоизвлечение "чего избегать"');
+  if(!input||!input.trim())return;
+  var match=input.match(/^(\d+)\s*(.*)/);
+  if(!match){showToast('Формат: число пробел комментарий','error');return;}
+  var score=parseInt(match[1]);
+  var feedback=match[2]||'';
+  if(score<1||score>10){showToast('Оценка от 1 до 10','error');return;}
+  showToast('⭐ Сохраняю оценку...','info');
+  try{
+    var res=await fetch(SUPABASE_URL+'/functions/v1/quality-review',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+      body:JSON.stringify({post_id:postId,ceo_score:score,feedback:feedback})
+    });
+    var data=await res.json();
+    if(data.success){
+      showToast('⭐ Оценка '+score+'/10 сохранена'+(data.auto_learned?' + автообучение!':''),'success');
+      var p=D.posts.find(function(x){return x.sbId===postId;});
+      if(p){p.ceoScore=score;renderPosts();openPostModal(p.sbId);}
+      addFeed('quality_controller','CEO оценил пост: '+score+'/10'+(feedback?' — '+feedback.slice(0,50):''));
+    }else{
+      showToast('Ошибка: '+(data.error||'unknown'),'error');
+    }
+  }catch(e){showToast('Ошибка: '+e.message,'error');}
 };
 
 // Generate AI image for a post via Edge Function
@@ -3271,7 +3342,8 @@ const CHAT_SLUG_MAP={
   coordinator:'coordinator',briefing:'coordinator',market:'analyst',content:'smm',
   social:'community',leads:'bizdev',outreach:'outreach',lead_finder:'bizdev',
   followup:'outreach',processor:'coordinator',watchdog:'coordinator',kpi_updater:'analyst',
-  art_director:'art_director'
+  art_director:'art_director',
+  quality_controller:'quality_controller'
 };
 
 window.agentAIChat=async function(id,presetMsg){
