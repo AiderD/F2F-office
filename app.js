@@ -639,7 +639,7 @@ function renderFinanceUnpaid(unpaid){
 
 // ═══ PAYMENT MODAL — mark as paid + upload screenshot ═══
 window.openPaymentModal=function(entryId){
-  var entry=window._financeLedger.find(function(e){return e.id===entryId;});
+  var entry=(window._financeLedger||[]).find(function(e){return e.id===entryId;});
   if(!entry)return;
   openModal(
     '<h2>💳 Оплата</h2>'+
@@ -700,7 +700,7 @@ window.confirmPayment=async function(entryId){
   await sbPatch('finance_ledger','id=eq.'+entryId, updateData);
 
   // Update local
-  var entry=window._financeLedger.find(function(e){return e.id===entryId;});
+  var entry=(window._financeLedger||[]).find(function(e){return e.id===entryId;});
   if(entry){entry.is_paid=true;entry.paid_at=updateData.paid_at;entry.payment_note=note;if(proofUrl)entry.payment_proof_url=proofUrl;}
 
   modal.classList.remove('open');
@@ -1901,101 +1901,262 @@ window.executeApprovedAction=async function(taskId){
 // ═══ INTEGRATIONS PANEL ═══
 // ═══ LIVE INTEGRATION STATUS ═══
 // Build integration list dynamically from real system state
-function buildLiveIntegrations(){
-  var connected=[];var needed=[];
+// ═══ INTEGRATIONS & API KEY MANAGEMENT ═══
+var INTEGRATIONS=[
+  // Core — always connected via architecture
+  {id:'supabase',name:'Supabase',icon:'🗄',purpose:'Database, Auth, Storage',category:'core',
+    type:'builtin',detail:function(){return SUPABASE_LIVE?'Подключен':'Ожидание...';},
+    status:function(){return SUPABASE_LIVE?'active':'pending';}},
+  {id:'github_pages',name:'GitHub Pages',icon:'🌐',purpose:'Хостинг дашборда',category:'core',
+    type:'builtin',detail:function(){return 'aiderd.github.io';},
+    status:function(){return 'active';}},
+  {id:'edge_functions',name:'Edge Functions',icon:'⚡',purpose:'Бэкенд AI-агентов (9 функций)',category:'core',
+    type:'builtin',detail:function(){
+      var lastCycle=null;
+      if(window._sbMemory&&window._sbMemory.length>0){
+        var times=window._sbMemory.map(function(m){return m.created_at;}).filter(Boolean).sort().reverse();
+        if(times[0])lastCycle=times[0];
+      }
+      if(!lastCycle)return 'Нет данных о циклах';
+      var mins=Math.round((Date.now()-new Date(lastCycle).getTime())/60000);
+      return mins<180?'Активен ('+mins+' мин назад)':'Последний цикл '+mins+' мин назад';
+    },status:function(){
+      if(!window._sbMemory||!window._sbMemory.length)return 'limited';
+      var times=window._sbMemory.map(function(m){return m.created_at;}).filter(Boolean).sort().reverse();
+      if(!times[0])return 'limited';
+      return (Date.now()-new Date(times[0]).getTime())<180*60000?'active':'limited';
+    }},
 
-  // 1. Supabase — check if SUPABASE_LIVE
-  connected.push({name:'Supabase',purpose:'Database & Auth',status:SUPABASE_LIVE?'active':'pending',
-    detail:SUPABASE_LIVE?Object.keys(window._sbAgents||{}).length+' agents synced':'Connecting...'});
+  // API Keys — stored in Supabase directives, used by Edge Functions
+  {id:'anthropic',name:'Anthropic (Claude)',icon:'🧠',purpose:'LLM для всех агентов, чата, QA, генерации',category:'ai',
+    type:'secret',secretKey:'ANTHROPIC_API_KEY',required:true,
+    detail:function(){var c=window._sbCredits;return c&&c.length?'$'+creditsSpent.toFixed(2)+' потрачено':'Нет данных по расходам';},
+    status:function(){return _intgKeyExists('ANTHROPIC_API_KEY')?'active':'not_configured';},
+    docs:'https://console.anthropic.com/settings/keys'},
+  {id:'telegram',name:'Telegram Bot',icon:'📱',purpose:'Публикация постов, уведомления CEO',category:'publishing',
+    type:'secret',secretKey:'TELEGRAM_BOT_TOKEN',extraKeys:['TELEGRAM_CHANNEL_ID'],required:true,
+    detail:function(){
+      var ch=_intgGetKey('TELEGRAM_CHANNEL_ID');
+      return ch?'Канал: '+ch:'Не указан channel ID';
+    },
+    status:function(){return _intgKeyExists('TELEGRAM_BOT_TOKEN')&&_intgKeyExists('TELEGRAM_CHANNEL_ID')?'active':'not_configured';},
+    docs:'https://core.telegram.org/bots#botfather'},
+  {id:'replicate',name:'Replicate (Flux)',icon:'🎨',purpose:'AI-генерация картинок для постов',category:'ai',
+    type:'secret',secretKey:'REPLICATE_API_KEY',required:false,
+    detail:function(){var n=window._sbContent?window._sbContent.filter(function(c){return c.image_url;}).length:0;return n?n+' картинок сгенерировано':'Опционально';},
+    status:function(){return _intgKeyExists('REPLICATE_API_KEY')?'active':'not_configured';},
+    docs:'https://replicate.com/account/api-tokens'},
+  {id:'resend',name:'Resend',icon:'📧',purpose:'Отправка outreach-писем',category:'outreach',
+    type:'secret',secretKey:'RESEND_API_KEY',extraKeys:['FROM_EMAIL'],required:false,
+    detail:function(){var e=_intgGetKey('FROM_EMAIL');return e||'ai-office@f2f.vin (по умолчанию)';},
+    status:function(){return _intgKeyExists('RESEND_API_KEY')?'active':'not_configured';},
+    docs:'https://resend.com/api-keys'},
+  {id:'apollo',name:'Apollo.io',icon:'🔍',purpose:'Поиск и обогащение лидов',category:'outreach',
+    type:'secret',secretKey:'APOLLO_API_KEY',required:false,
+    detail:function(){return 'People & Company search API';},
+    status:function(){return _intgKeyExists('APOLLO_API_KEY')?'active':'not_configured';},
+    docs:'https://app.apollo.io/#/settings/integrations/api'},
+  {id:'brave',name:'Brave Search',icon:'🦁',purpose:'Веб-поиск для агентов',category:'ai',
+    type:'secret',secretKey:'BRAVE_SEARCH_API_KEY',required:false,
+    detail:function(){return '1000 req/мес бесплатно';},
+    status:function(){return _intgKeyExists('BRAVE_SEARCH_API_KEY')?'active':'not_configured';},
+    docs:'https://brave.com/search/api/'},
+  {id:'ahrefs',name:'Ahrefs',icon:'📊',purpose:'SEO-аналитика и ключевые слова',category:'analytics',
+    type:'secret',secretKey:'AHREFS_API_TOKEN',required:false,
+    detail:function(){return 'SERP & Keywords API';},
+    status:function(){return _intgKeyExists('AHREFS_API_TOKEN')?'active':'not_configured';},
+    docs:'https://ahrefs.com/api'},
+  {id:'hunter',name:'Hunter.io',icon:'🎯',purpose:'Верификация email по домену',category:'outreach',
+    type:'secret',secretKey:'HUNTER_API_KEY',required:false,
+    detail:function(){return 'Email verification';},
+    status:function(){return _intgKeyExists('HUNTER_API_KEY')?'active':'not_configured';},
+    docs:'https://hunter.io/api-keys'},
 
-  // 2. Edge Functions — check if agent cycles ran recently
-  var lastCycle=null;
-  if(window._sbMemory&&window._sbMemory.length>0){
-    var times=window._sbMemory.map(function(m){return m.created_at;}).filter(Boolean).sort().reverse();
-    if(times[0])lastCycle=times[0];
-  }
-  var cycleAge=lastCycle?Math.round((Date.now()-new Date(lastCycle).getTime())/60000):9999;
-  connected.push({name:'Edge Functions',purpose:'Agent AI cycles',status:cycleAge<180?'active':'limited',
-    detail:lastCycle?cycleAge+'мин назад':'Нет данных'});
+  // Future / Needed
+  {id:'twitter',name:'Twitter / X',icon:'🐦',purpose:'Публикация постов в X',category:'publishing',
+    type:'secret',secretKey:'TWITTER_API_KEY',extraKeys:['TWITTER_API_SECRET','TWITTER_ACCESS_TOKEN','TWITTER_ACCESS_SECRET'],required:false,
+    detail:function(){return 'Планируется';},
+    status:function(){return _intgKeyExists('TWITTER_API_KEY')?'active':'not_configured';},
+    docs:'https://developer.twitter.com/en/portal/dashboard'},
+  {id:'discord',name:'Discord Bot',icon:'💬',purpose:'Управление комьюнити',category:'community',
+    type:'secret',secretKey:'DISCORD_BOT_TOKEN',extraKeys:['DISCORD_CHANNEL_ID'],required:false,
+    detail:function(){return 'Community engagement';},
+    status:function(){return _intgKeyExists('DISCORD_BOT_TOKEN')?'active':'not_configured';},
+    docs:'https://discord.com/developers/applications'},
+  {id:'youtube',name:'YouTube API',icon:'▶️',purpose:'Аналитика видео-контента',category:'analytics',
+    type:'secret',secretKey:'YOUTUBE_API_KEY',required:false,
+    detail:function(){return 'Content analytics';},
+    status:function(){return _intgKeyExists('YOUTUBE_API_KEY')?'active':'not_configured';},
+    docs:'https://console.cloud.google.com/apis'}
+];
 
-  // 3. pg_cron — infer from regular execution pattern
-  var hasCron=lastCycle&&cycleAge<180;
-  connected.push({name:'pg_cron',purpose:'Auto scheduling',status:hasCron?'active':'limited',
-    detail:hasCron?'11 jobs active':'Check SQL console'});
-
-  // 4. Telegram Bot — check directives for bot token or check if any agent posted to TG
-  var tgActive=false;var tgDetail='Не настроен';
+// Integration key cache (loaded from directives)
+var _intgKeys={};
+function _intgLoadKeys(){
+  _intgKeys={};
   if(window._sbDirectives){
-    var tgDir=window._sbDirectives.find(function(d){return d.key==='telegram_bot_token'||d.key==='tg_bot_token'||d.key==='telegram_chat_id';});
-    if(tgDir){tgActive=true;tgDetail='Webhook active';}
+    window._sbDirectives.forEach(function(d){
+      if(d.key&&d.key.startsWith('intg_')&&d.active!==false){
+        try{
+          var val=typeof d.value_json==='string'?JSON.parse(d.value_json):d.value_json;
+          _intgKeys[d.key.replace('intg_','')]=val;
+        }catch(e){}
+      }
+    });
   }
-  // Also check if content was posted to telegram
-  if(!tgActive&&window._sbContent){
-    var tgPosts=window._sbContent.filter(function(c){return (c.platform||'').toLowerCase()==='telegram';});
-    if(tgPosts.length>0){tgActive=true;tgDetail=tgPosts.length+' постов в TG';}
-  }
-  connected.push({name:'Telegram Bot',purpose:'CEO commands & approvals',status:tgActive?'active':'limited',
-    detail:tgDetail});
-
-  // 5. AI Credits — check if ai_credits data loaded
-  var hasCredits=window._sbCredits&&window._sbCredits.length>0;
-  connected.push({name:'Claude AI (Anthropic)',purpose:'LLM for agents',status:hasCredits?'active':'limited',
-    detail:hasCredits?'$'+creditsSpent.toFixed(2)+' использовано':'Ожидание данных'});
-
-  // 6. GitHub Pages — always active (we're running on it)
-  connected.push({name:'GitHub Pages',purpose:'Dashboard hosting',status:'active',detail:'aiderd.github.io'});
-
-  // 7. Brave Search API — for lead_finder web search
-  connected.push({name:'Brave Search API',purpose:'Web search for leads',status:'active',detail:'1000 req/мес бесплатно'});
-
-  // 8. Hunter.io — email verification
-  connected.push({name:'Hunter.io',purpose:'Email verification',status:'active',detail:'Верификация по домену'});
-
-  // 9. Replicate (Flux) — AI image generation
-  var hasImages=window._sbContent?window._sbContent.filter(function(c){return c.image_url;}).length:0;
-  connected.push({name:'Replicate (Flux)',purpose:'AI image generation',status:'active',detail:hasImages?hasImages+' картинок':'Готов к генерации'});
-
-  // 10. Apollo.io — lead enrichment
-  connected.push({name:'Apollo.io',purpose:'Lead enrichment & search',status:'active',detail:'People & Company search'});
-
-  // Needed integrations — keep curated list but mark any that became connected
-  var neededList=[
-    {name:'Twitter/X API',purpose:'SMM posting',priority:'high'},
-    {name:'LinkedIn API',purpose:'Outreach automation',priority:'high'},
-    {name:'SendGrid/Resend',purpose:'Email delivery',priority:'high'},
-    {name:'YouTube API',purpose:'Content analytics',priority:'medium'},
-    {name:'Discord Bot',purpose:'Community engagement',priority:'medium'},
-    {name:'Twitch API',purpose:'Streaming analytics',priority:'low'},
-    {name:'Reddit API',purpose:'Community monitoring',priority:'low'}
-  ];
-
-  return {connected:connected,needed:neededList};
+}
+function _intgKeyExists(key){return !!_intgKeys[key];}
+function _intgGetKey(key){return _intgKeys[key]||'';}
+function _intgMasked(key){
+  var v=_intgKeys[key];
+  if(!v)return '—';
+  var s=String(v);
+  if(s.length<=8)return '••••••••';
+  return s.slice(0,4)+'••••••'+s.slice(-4);
 }
 
+// Save a key to Supabase directives
+window.intgSaveKey=async function(secretKey,value){
+  if(!SUPABASE_LIVE){showToast('Supabase не подключен','error');return false;}
+  var directiveKey='intg_'+secretKey;
+  try{
+    // Upsert to directives
+    var existing=(window._sbDirectives||[]).find(function(d){return d.key===directiveKey;});
+    if(existing){
+      await sbPatch('directives','key=eq.'+directiveKey,{value_json:JSON.stringify(value),updated_at:new Date().toISOString()});
+    }else{
+      await sbInsert('directives',{key:directiveKey,value_json:JSON.stringify(value),active:true});
+    }
+    // Update local cache
+    _intgKeys[secretKey]=value;
+    // Update _sbDirectives cache
+    if(!window._sbDirectives)window._sbDirectives=[];
+    var idx=window._sbDirectives.findIndex(function(d){return d.key===directiveKey;});
+    if(idx>=0){window._sbDirectives[idx].value_json=JSON.stringify(value);}
+    else{window._sbDirectives.push({key:directiveKey,value_json:JSON.stringify(value),active:true});}
+    return true;
+  }catch(e){
+    showToast('Ошибка сохранения: '+e,'error');return false;
+  }
+};
+
+// Delete a key
+window.intgDeleteKey=async function(secretKey){
+  if(!SUPABASE_LIVE)return;
+  var directiveKey='intg_'+secretKey;
+  try{
+    await sbPatch('directives','key=eq.'+directiveKey,{active:false,updated_at:new Date().toISOString()});
+    delete _intgKeys[secretKey];
+    var idx=(window._sbDirectives||[]).findIndex(function(d){return d.key===directiveKey;});
+    if(idx>=0)window._sbDirectives[idx].active=false;
+  }catch(e){}
+};
+
+// Open edit dialog for an integration
+window.intgEdit=function(intgId){
+  var intg=INTEGRATIONS.find(function(i){return i.id===intgId;});
+  if(!intg||intg.type==='builtin')return;
+  var allKeys=[intg.secretKey].concat(intg.extraKeys||[]);
+  var fields=allKeys.map(function(k){
+    return {id:k,label:k,type:'text',value:_intgGetKey(k)||'',placeholder:'Вставьте ключ...'};
+  });
+  f2fPrompt({title:intg.icon+' '+intg.name,message:intg.purpose+(intg.docs?'\n<a href="'+intg.docs+'" target="_blank" style="color:#00e5ff;font-size:11px">Получить ключ →</a>':''),
+    fields:fields,submitText:'💾 Сохранить'}).then(async function(result){
+    if(result===null)return;
+    // Save each key
+    var keys=typeof result==='string'?{[allKeys[0]]:result}:result;
+    var ok=true;
+    for(var k of allKeys){
+      var val=(keys[k]||'').trim();
+      if(val){
+        var saved=await intgSaveKey(k,val);
+        if(!saved)ok=false;
+      }else if(_intgKeyExists(k)){
+        // Key was cleared — deactivate
+        await intgDeleteKey(k);
+      }
+    }
+    if(ok)showToast('✅ '+intg.name+' сохранён','success');
+    renderIntegrations();
+  });
+};
+
+// Test connection for an integration
+window.intgTest=async function(intgId){
+  var intg=INTEGRATIONS.find(function(i){return i.id===intgId;});
+  if(!intg)return;
+  showToast('🔄 Проверяю '+intg.name+'...','info');
+  // Test via Edge Function proxy
+  try{
+    var res=await fetch(SUPABASE_URL+'/functions/v1/agent-chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+      body:JSON.stringify({agent_id:'coordinator',message:'/test_integration '+intg.id,test_mode:true})
+    });
+    if(res.ok){
+      showToast('✅ '+intg.name+' подключён успешно','success');
+    }else{
+      showToast('⚠️ '+intg.name+': ответ '+res.status,'warning');
+    }
+  }catch(e){
+    showToast('❌ '+intg.name+': '+e,'error');
+  }
+};
+
 function renderIntegrations(){
-  var intg=buildLiveIntegrations();
-  var conn=intg.connected;var need=intg.needed;
-  document.getElementById('intg-count').textContent=conn.length+' подключено, '+need.length+' нужно';
-  var html='<h3 style="font-size:14px;color:var(--green);margin-bottom:12px">✅ Подключено ('+conn.length+')</h3>';
-  html+=conn.map(function(c){
-    return '<div class="intg-row">'+
-      '<div class="intg-dot '+c.status+'"></div>'+
-      '<div class="intg-name">'+c.name+'</div>'+
-      '<div class="intg-purpose">'+c.purpose+'</div>'+
-      '<div style="font-size:10px;color:var(--dim);margin-left:auto;white-space:nowrap">'+c.detail+'</div>'+
-      '<div class="intg-badge '+c.status+'">'+(c.status==='active'?'Active':c.status==='limited'?'Limited':'Pending')+'</div>'+
-    '</div>';
-  }).join('');
-  html+='<h3 style="font-size:14px;color:var(--amber);margin:20px 0 12px">⏳ Нужно подключить ('+need.length+')</h3>';
-  html+=need.map(function(n){
-    return '<div class="intg-row">'+
-      '<div class="intg-dot needed"></div>'+
-      '<div class="intg-name">'+n.name+'</div>'+
-      '<div class="intg-purpose">'+n.purpose+'</div>'+
-      '<div class="intg-badge needed">'+n.priority+'</div>'+
-    '</div>';
-  }).join('');
-  document.getElementById('intgContent').innerHTML=html;
+  _intgLoadKeys();
+  var el=document.getElementById('intgContent');
+  if(!el)return;
+  var categories={core:'🏗 Инфраструктура',ai:'🧠 AI & Поиск',publishing:'📢 Публикация',outreach:'📧 Outreach & Лиды',analytics:'📊 Аналитика',community:'💬 Комьюнити'};
+  var byCategory={};
+  INTEGRATIONS.forEach(function(intg){
+    var cat=intg.category||'other';
+    if(!byCategory[cat])byCategory[cat]=[];
+    byCategory[cat].push(intg);
+  });
+
+  var activeCount=0;var totalConfigurable=0;
+  INTEGRATIONS.forEach(function(i){
+    if(i.type==='secret')totalConfigurable++;
+    var s=i.status();if(s==='active')activeCount++;
+  });
+  document.getElementById('intg-count').textContent=activeCount+' активно / '+INTEGRATIONS.length+' сервисов';
+
+  var html='';
+  Object.keys(categories).forEach(function(catKey){
+    var items=byCategory[catKey];
+    if(!items||!items.length)return;
+    html+='<div style="margin:16px 0 8px;padding:0 16px"><h3 style="font-size:13px;color:#5a6a7a;margin:0;font-weight:600">'+categories[catKey]+'</h3></div>';
+    items.forEach(function(intg){
+      var st=intg.status();
+      var det=intg.detail();
+      var stClass=st==='active'?'active':st==='limited'?'limited':st==='pending'?'pending':'needed';
+      var stLabel=st==='active'?'Active':st==='limited'?'Limited':st==='pending'?'Pending':'Не настроен';
+      var isSecret=intg.type==='secret';
+      var masked=isSecret?_intgMasked(intg.secretKey):'';
+
+      html+='<div class="intg-row" style="cursor:'+(isSecret?'pointer':'default')+'" '+(isSecret?'onclick="intgEdit(\''+intg.id+'\')"':'')+'>';
+      html+='<div class="intg-dot '+stClass+'"></div>';
+      html+='<div style="flex:1;min-width:0">';
+      html+='<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px">'+intg.icon+'</span><span class="intg-name">'+intg.name+'</span>';
+      if(intg.required)html+='<span style="font-size:9px;color:#ff2d78;border:1px solid #ff2d7833;border-radius:3px;padding:0 4px">required</span>';
+      html+='</div>';
+      html+='<div class="intg-purpose">'+intg.purpose+'</div>';
+      if(isSecret&&masked!=='—')html+='<div style="font-size:10px;color:#384858;font-family:monospace;margin-top:2px">'+masked+'</div>';
+      html+='</div>';
+      html+='<div style="text-align:right;flex-shrink:0">';
+      html+='<div style="font-size:10px;color:#5a6a7a;margin-bottom:4px;white-space:nowrap">'+det+'</div>';
+      html+='<div class="intg-badge '+stClass+'">'+stLabel+'</div>';
+      html+='</div>';
+      if(isSecret){
+        html+='<div style="display:flex;flex-direction:column;gap:2px;margin-left:8px;flex-shrink:0">';
+        html+='<button onclick="event.stopPropagation();intgEdit(\''+intg.id+'\')" class="ctrl-btn" style="padding:3px 8px;font-size:10px" title="Настроить">⚙️</button>';
+        html+='</div>';
+      }
+      html+='</div>';
+    });
+  });
+  el.innerHTML=html;
 }
 renderIntegrations();
 
@@ -4617,7 +4778,7 @@ function getRealAgentStatus(agentId){
   if(window._sbEvents){
     var evts=window._sbEvents.filter(function(e){
       if(!e.metadata_json)return false;
-      var m=typeof e.metadata_json==='string'?JSON.parse(e.metadata_json):e.metadata_json;
+      var m;try{m=typeof e.metadata_json==='string'?JSON.parse(e.metadata_json):e.metadata_json;}catch(err){return false;}
       return m.agent_dash_id===agentId;
     });
     if(evts.length>0){

@@ -309,21 +309,23 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
 .agent-detail-card .agent-toggle.off::after{left:2px}
 .agent-sources{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
 .agent-sources span{font-size:9px;padding:2px 6px;background:var(--bg);border-radius:4px;color:var(--dim);border:1px solid var(--border)}
-.intg-row{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg);border-radius:8px;margin-bottom:6px;
-  border:1px solid var(--border);font-size:12px}
+.intg-row{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border-radius:8px;margin:0 12px 6px;
+  border:1px solid var(--border);font-size:12px;transition:border-color .2s,background .2s}
+.intg-row:hover{border-color:#1e3a50;background:#0a141d}
 .intg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .intg-dot.active{background:var(--green);box-shadow:0 0 6px var(--green)}
 .intg-dot.limited{background:var(--amber);box-shadow:0 0 6px var(--amber)}
 .intg-dot.pending{background:var(--hot);animation:blink 1.5s infinite}
-.intg-dot.needed{background:var(--dim)}
+.intg-dot.needed{background:#384858}
+.intg-dot.not_configured{background:#384858;border:1px dashed #5a6a7a}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
-.intg-name{font-weight:600;flex:1}
-.intg-purpose{color:var(--dim);font-size:11px}
-.intg-badge{font-size:9px;padding:2px 8px;border-radius:4px;font-weight:700;text-transform:uppercase}
+.intg-name{font-weight:600;font-size:13px}
+.intg-purpose{color:var(--dim);font-size:11px;margin-top:1px}
+.intg-badge{font-size:9px;padding:2px 8px;border-radius:4px;font-weight:700;text-transform:uppercase;white-space:nowrap}
 .intg-badge.active{background:#00ff8822;color:var(--green);border:1px solid #00ff8844}
 .intg-badge.limited{background:#ffaa0022;color:var(--amber);border:1px solid #ffaa0044}
 .intg-badge.pending{background:#ff444422;color:var(--hot);border:1px solid #ff444444}
-.intg-badge.needed{background:#ffffff08;color:var(--dim);border:1px solid var(--border)}
+.intg-badge.needed,.intg-badge.not_configured{background:#ffffff08;color:#5a6a7a;border:1px solid #1e293b}
 /* ═══ TEAM CHAT ═══ */
 .chat-panel{flex-direction:column;height:100%;padding:0!important;overflow:hidden}
 .chat-container{display:flex;flex:1;overflow:hidden}
@@ -536,9 +538,9 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
   .chat-input-bar button{padding:8px 14px;font-size:11px}
 
   /* ─── INTEGRATIONS ─── */
-  .intg-row{flex-wrap:wrap;gap:6px;padding:8px 10px}
-  .intg-name{width:100%;font-size:12px}
-  .intg-purpose{width:100%;font-size:10px}
+  .intg-row{flex-wrap:wrap;gap:6px;padding:8px 10px;margin:0 8px 6px}
+  .intg-name{font-size:12px}
+  .intg-purpose{font-size:10px}
 
   /* ─── ANTHEM ─── */
   .anthem-text{font-size:18px}
