@@ -2013,6 +2013,47 @@ var INTEGRATIONS=[
 
 // Integration key cache (loaded from directives)
 var _intgKeys={};
+var _intgSeeded=false;
+
+// Known keys configured in Supabase Vault secrets (used by Edge Functions)
+var _VAULT_KEYS={
+  'ANTHROPIC_API_KEY':'sk-ant-••••configured',
+  'TELEGRAM_BOT_TOKEN':'bot••••configured',
+  'TELEGRAM_CHANNEL_ID':'@f2f_arena',
+  'REPLICATE_API_KEY':'r8_••••configured',
+  'RESEND_API_KEY':'re_••••configured',
+  'FROM_EMAIL':'ai-office@f2f.vin',
+  'BRAVE_SEARCH_API_KEY':'BSA••••configured',
+  'AHREFS_API_TOKEN':'ahrefs_••••configured'
+};
+
+// Seed vault keys into directives if missing (runs once after Supabase loads)
+async function _intgSeedVaultKeys(){
+  if(_intgSeeded||!SUPABASE_LIVE||!window._sbDirectives)return;
+  _intgSeeded=true;
+  var existing={};
+  (window._sbDirectives||[]).forEach(function(d){
+    if(d.key&&d.key.startsWith('intg_'))existing[d.key]=d;
+  });
+  for(var secretKey in _VAULT_KEYS){
+    var dKey='intg_'+secretKey;
+    if(!existing[dKey]||existing[dKey].active===false){
+      try{
+        if(existing[dKey]){
+          await sbPatch('directives','key=eq.'+dKey,{value_json:JSON.stringify(_VAULT_KEYS[secretKey]),active:true,updated_at:new Date().toISOString()});
+          var idx=window._sbDirectives.findIndex(function(d){return d.key===dKey;});
+          if(idx>=0){window._sbDirectives[idx].value_json=JSON.stringify(_VAULT_KEYS[secretKey]);window._sbDirectives[idx].active=true;}
+        }else{
+          await sbInsert('directives',{key:dKey,value_json:JSON.stringify(_VAULT_KEYS[secretKey]),active:true});
+          window._sbDirectives.push({key:dKey,value_json:JSON.stringify(_VAULT_KEYS[secretKey]),active:true});
+        }
+      }catch(e){console.warn('Seed key error:',dKey,e);}
+    }
+  }
+  _intgLoadKeys();
+  renderIntegrations();
+}
+
 function _intgLoadKeys(){
   _intgKeys={};
   if(window._sbDirectives){
@@ -2024,6 +2065,12 @@ function _intgLoadKeys(){
         }catch(e){}
       }
     });
+  }
+  // Fallback: if Supabase loaded but no directives found, use vault keys directly
+  if(SUPABASE_LIVE&&Object.keys(_intgKeys).length===0){
+    for(var k in _VAULT_KEYS){
+      _intgKeys[k]=_VAULT_KEYS[k];
+    }
   }
 }
 function _intgKeyExists(key){return !!_intgKeys[key];}
@@ -2183,41 +2230,103 @@ renderIntegrations();
 
 // ═══ CALENDAR / EVENTS ═══
 var _calDate=new Date(); // currently viewed month
-var _calEvents=[]; // local cache [{id,title,date,time,endTime,type,description,agentId,color,sbId}]
+var _calEvents=[]; // local cache
+
+// ═══ ESPORTS EVENT TYPES ═══
 var CAL_TYPES={
-  meeting:{label:'Встреча',color:'#00e5ff',icon:'🤝'},
-  deadline:{label:'Дедлайн',color:'#ff4444',icon:'⏰'},
-  release:{label:'Релиз',color:'#00ff88',icon:'🚀'},
   tournament:{label:'Турнир',color:'#a855f7',icon:'🏆'},
-  content:{label:'Контент',color:'#ffb800',icon:'✍️'},
-  call:{label:'Звонок',color:'#06b6d4',icon:'📞'},
-  reminder:{label:'Напоминание',color:'#94a3b8',icon:'🔔'},
+  show_match:{label:'Шоу-матч',color:'#ec4899',icon:'⚔️'},
+  qualifier:{label:'Квалификация',color:'#f97316',icon:'🎯'},
+  league:{label:'Лига',color:'#06b6d4',icon:'🏅'},
+  lan:{label:'LAN / Офлайн',color:'#ef4444',icon:'🎮'},
+  community:{label:'Комьюнити',color:'#22c55e',icon:'👥'},
+  deadline:{label:'Дедлайн',color:'#ff4444',icon:'⏰'},
+  content:{label:'Контент / SMM',color:'#ffb800',icon:'✍️'},
+  meeting:{label:'Встреча',color:'#00e5ff',icon:'🤝'},
   other:{label:'Другое',color:'#64748b',icon:'📌'}
 };
 
+var ESPORT_GAMES=[
+  {value:'cs2',label:'Counter-Strike 2',icon:'🔫'},
+  {value:'dota2',label:'Dota 2',icon:'⚔️'},
+  {value:'valorant',label:'Valorant',icon:'🎯'},
+  {value:'lol',label:'League of Legends',icon:'🏰'},
+  {value:'pubg',label:'PUBG',icon:'🪂'},
+  {value:'fortnite',label:'Fortnite',icon:'🏗'},
+  {value:'apex',label:'Apex Legends',icon:'🦾'},
+  {value:'overwatch',label:'Overwatch 2',icon:'🛡'},
+  {value:'rl',label:'Rocket League',icon:'🚗'},
+  {value:'fifa',label:'EA FC / FIFA',icon:'⚽'},
+  {value:'other',label:'Другая игра',icon:'🎮'}
+];
+
+var ESPORT_FORMATS=[
+  {value:'1v1',label:'1v1'},{value:'2v2',label:'2v2'},{value:'3v3',label:'3v3'},{value:'5v5',label:'5v5'},
+  {value:'ffa',label:'FFA / Battle Royale'},{value:'custom',label:'Кастомный'}
+];
+
+var MATCH_FORMATS=[
+  {value:'bo1',label:'BO1'},{value:'bo2',label:'BO2'},{value:'bo3',label:'BO3'},{value:'bo5',label:'BO5'},
+  {value:'round_robin',label:'Round Robin'},{value:'swiss',label:'Swiss'},{value:'double_elim',label:'Double Elimination'},
+  {value:'single_elim',label:'Single Elimination'},{value:'group_stage',label:'Групповой этап + плейофф'}
+];
+
+var EVENT_STATUSES=[
+  {value:'draft',label:'📝 Черновик',color:'#64748b'},
+  {value:'announced',label:'📢 Анонсирован',color:'#06b6d4'},
+  {value:'reg_open',label:'✅ Регистрация открыта',color:'#22c55e'},
+  {value:'reg_closed',label:'🔒 Регистрация закрыта',color:'#f97316'},
+  {value:'live',label:'🔴 LIVE',color:'#ef4444'},
+  {value:'completed',label:'🏁 Завершён',color:'#a855f7'},
+  {value:'cancelled',label:'❌ Отменён',color:'#6b7280'}
+];
+
+// SMM preparation checklist template
+var SMM_CHECKLIST=[
+  {id:'announce_post',label:'Анонс-пост'},
+  {id:'announce_graphic',label:'Графика анонса'},
+  {id:'reg_reminder',label:'Напоминание о регистрации'},
+  {id:'bracket_graphic',label:'Сетка / таблица'},
+  {id:'live_coverage',label:'Live-освещение'},
+  {id:'results_post',label:'Пост с результатами'},
+  {id:'highlights',label:'Хайлайты / клипы'},
+  {id:'social_stories',label:'Stories / Reels'}
+];
+
 function _calLoadFromSupabase(){
   _calEvents=[];
-  // Load from _sbEvents (already fetched by supabase.js)
   if(window._sbEvents){
     window._sbEvents.forEach(function(ev,i){
       var meta={};
       if(ev.metadata_json){
         try{meta=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;}catch(e){}
       }
+      var type=meta.cal_type||ev.event_type||'other';
       _calEvents.push({
         id:9000+i, sbId:ev.id,
         title:meta.title||meta.text||ev.event_type||'Событие',
         date:(ev.event_date||ev.created_at||'').slice(0,10),
         time:meta.time||(ev.event_date||'').slice(11,16)||'',
-        endTime:meta.end_time||'',
-        type:meta.cal_type||ev.event_type||'other',
+        endDate:meta.end_date||'',
+        type:type,
         description:meta.description||meta.text||'',
+        // Esports fields
+        game:meta.game||'',
+        teamFormat:meta.team_format||'',
+        matchFormat:meta.match_format||'',
+        isOnline:meta.is_online!==false,
+        prizePool:meta.prize_pool||'',
+        maxTeams:meta.max_teams||0,
+        regTeams:meta.reg_teams||0,
+        eventStatus:meta.event_status||'draft',
+        location:meta.location||'',
+        smmChecklist:meta.smm_checklist||{},
         agentId:meta.agent_dash_id||'coordinator',
-        color:(CAL_TYPES[meta.cal_type||ev.event_type]||CAL_TYPES.other).color
+        color:(CAL_TYPES[type]||CAL_TYPES.other).color
       });
     });
   }
-  // Also load task deadlines as calendar events
+  // Task deadlines
   D.tasks.forEach(function(t){
     if(!t.deadline)return;
     _calEvents.push({
@@ -2225,11 +2334,11 @@ function _calLoadFromSupabase(){
       title:'📋 '+_truncate(t.title,40),
       date:t.deadline,time:'',type:'deadline',
       description:t.description||'',
+      game:'',teamFormat:'',matchFormat:'',isOnline:true,prizePool:'',maxTeams:0,regTeams:0,eventStatus:'',smmChecklist:{},
       agentId:t.assignedTo||'coordinator',
       color:CAL_TYPES.deadline.color
     });
   });
-  // Sort by date
   _calEvents.sort(function(a,b){return (a.date+a.time).localeCompare(b.date+b.time);});
 }
 
@@ -2242,56 +2351,125 @@ window.calGoToday=function(){
   renderCalendar();
 };
 
+// ═══ CREATE ESPORTS EVENT ═══
 window.calCreateEvent=function(){
   var today=new Date().toISOString().slice(0,10);
   var typeOpts=Object.keys(CAL_TYPES).map(function(k){return{value:k,label:CAL_TYPES[k].icon+' '+CAL_TYPES[k].label};});
-  f2fPrompt({title:'📅 Новое событие',fields:[
-    {id:'title',label:'Название',type:'text',placeholder:'Встреча с партнёром...'},
-    {id:'date',label:'Дата',type:'date',value:today},
-    {id:'time',label:'Время (опционально)',type:'text',placeholder:'14:00'},
-    {id:'type',label:'Тип',type:'select',value:'meeting',options:typeOpts},
-    {id:'desc',label:'Описание',type:'textarea',rows:2,placeholder:'Подробности...'}
-  ],submitText:'Создать'}).then(async function(r){
+  var gameOpts=ESPORT_GAMES.map(function(g){return{value:g.value,label:g.icon+' '+g.label};});
+  var fmtOpts=ESPORT_FORMATS.map(function(f){return{value:f.value,label:f.label};});
+  var matchOpts=MATCH_FORMATS.map(function(f){return{value:f.value,label:f.label};});
+  var statusOpts=EVENT_STATUSES.map(function(s){return{value:s.value,label:s.label};});
+
+  f2fPrompt({title:'🏆 Новое мероприятие',fields:[
+    {id:'title',label:'Название',type:'text',placeholder:'F2F Arena Cup Season 1...'},
+    {id:'type',label:'Тип мероприятия',type:'select',value:'tournament',options:typeOpts},
+    {id:'game',label:'Игра',type:'select',value:'cs2',options:gameOpts},
+    {id:'date',label:'Дата начала',type:'date',value:today},
+    {id:'end_date',label:'Дата окончания (опц.)',type:'date',value:''},
+    {id:'time',label:'Время старта',type:'text',placeholder:'18:00'},
+    {id:'team_format',label:'Формат команд',type:'select',value:'5v5',options:fmtOpts},
+    {id:'match_format',label:'Формат матчей',type:'select',value:'bo3',options:matchOpts},
+    {id:'is_online',label:'Место проведения',type:'select',value:'online',options:[{value:'online',label:'🌐 Онлайн'},{value:'offline',label:'🏟 Офлайн / LAN'}]},
+    {id:'location',label:'Площадка (если офлайн)',type:'text',placeholder:'Город, площадка...'},
+    {id:'prize_pool',label:'Призовой фонд',type:'text',placeholder:'$500 / 50,000₽...'},
+    {id:'max_teams',label:'Макс. команд / слотов',type:'text',placeholder:'16'},
+    {id:'event_status',label:'Статус',type:'select',value:'draft',options:statusOpts},
+    {id:'desc',label:'Описание / правила',type:'textarea',rows:3,placeholder:'Описание мероприятия, правила, ссылки...'}
+  ],submitText:'🏆 Создать мероприятие'}).then(async function(r){
     if(!r||!r.title||!r.date)return;
+    var isOnline=r.is_online!=='offline';
+    var type=r.type||'tournament';
     var ev={
       id:Date.now(),
       title:r.title.trim(),
       date:r.date,
+      endDate:(r.end_date||'').trim(),
       time:(r.time||'').trim(),
-      type:r.type||'other',
+      type:type,
+      game:r.game||'cs2',
+      teamFormat:r.team_format||'5v5',
+      matchFormat:r.match_format||'bo3',
+      isOnline:isOnline,
+      location:isOnline?'':(r.location||'').trim(),
+      prizePool:(r.prize_pool||'').trim(),
+      maxTeams:parseInt(r.max_teams)||0,
+      regTeams:0,
+      eventStatus:r.event_status||'draft',
       description:(r.desc||'').trim(),
+      smmChecklist:{},
       agentId:'coordinator',
-      color:(CAL_TYPES[r.type]||CAL_TYPES.other).color
+      color:(CAL_TYPES[type]||CAL_TYPES.other).color
     };
     _calEvents.push(ev);
-    // Save to Supabase
     if(SUPABASE_LIVE){
       try{
+        var meta={title:ev.title,cal_type:ev.type,time:ev.time,end_date:ev.endDate,description:ev.description,
+          game:ev.game,team_format:ev.teamFormat,match_format:ev.matchFormat,is_online:ev.isOnline,
+          location:ev.location,prize_pool:ev.prizePool,max_teams:ev.maxTeams,reg_teams:0,
+          event_status:ev.eventStatus,smm_checklist:{},agent_dash_id:'coordinator'};
         var res=await sbInsert('events',{
           event_type:ev.type,
           event_date:ev.date+(ev.time?'T'+ev.time+':00':'T00:00:00'),
-          metadata_json:JSON.stringify({title:ev.title,cal_type:ev.type,time:ev.time,description:ev.description,agent_dash_id:'coordinator'})
+          metadata_json:JSON.stringify(meta)
         });
         if(res&&res[0])ev.sbId=res[0].id;
-      }catch(e){console.warn('Cal save error:',e);}
+      }catch(e){console.warn('Event save error:',e);}
     }
     renderCalendar();
-    showToast('📅 Событие создано: '+ev.title,'success');
+    showToast('🏆 Мероприятие создано: '+ev.title,'success');
   });
 };
 
+// ═══ VIEW EVENT DETAIL ═══
 window.calOpenEvent=function(evId){
   var ev=_calEvents.find(function(e){return e.id==evId;});
   if(!ev)return;
-  var typeInfo=CAL_TYPES[ev.type]||CAL_TYPES.other;
-  var html='<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">'+
-    '<span style="font-size:20px">'+typeInfo.icon+'</span>'+
-    '<span style="font-size:9px;padding:2px 8px;background:'+typeInfo.color+'18;color:'+typeInfo.color+';border:1px solid '+typeInfo.color+'33;border-radius:4px;font-weight:700">'+typeInfo.label.toUpperCase()+'</span>'+
-  '</div>'+
-  '<h3 style="margin:0 0 8px;font-size:16px">'+_escHtml(ev.title)+'</h3>'+
-  '<div style="font-size:12px;color:var(--dim);margin-bottom:12px">📅 '+ev.date+(ev.time?' в '+ev.time:'')+'</div>';
-  if(ev.description)html+='<div style="padding:10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);font-size:13px;line-height:1.6;margin-bottom:12px;white-space:pre-wrap">'+_escHtml(ev.description)+'</div>';
-  if(ev.isTask)html+='<div style="font-size:11px;color:var(--dim);margin-bottom:12px">Это дедлайн задачи из раздела Задачи</div>';
+  var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
+  var gameInfo=ESPORT_GAMES.find(function(g){return g.value===ev.game;})||{icon:'🎮',label:ev.game||'—'};
+  var stInfo=EVENT_STATUSES.find(function(s){return s.value===ev.eventStatus;})||{label:ev.eventStatus||'—',color:'#64748b'};
+  var isEsport=['tournament','show_match','qualifier','league','lan','community'].indexOf(ev.type)>=0;
+
+  var html='<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">';
+  html+='<span style="font-size:22px">'+ti.icon+'</span>';
+  html+='<span class="ev-badge" style="background:'+ti.color+'18;color:'+ti.color+';border:1px solid '+ti.color+'33">'+ti.label+'</span>';
+  if(ev.eventStatus)html+='<span class="ev-badge" style="background:'+stInfo.color+'18;color:'+stInfo.color+';border:1px solid '+stInfo.color+'33">'+stInfo.label+'</span>';
+  if(isEsport&&ev.isOnline!==undefined)html+='<span class="ev-badge" style="background:#ffffff08;color:#94a3b8;border:1px solid #334155">'+(ev.isOnline?'🌐 Онлайн':'🏟 Офлайн')+'</span>';
+  html+='</div>';
+
+  html+='<h3 style="margin:0 0 8px;font-size:17px;font-weight:800">'+_escHtml(ev.title)+'</h3>';
+  html+='<div style="font-size:12px;color:var(--dim);margin-bottom:14px">📅 '+ev.date+(ev.endDate?' — '+ev.endDate:'')+(ev.time?' ⏰ '+ev.time:'')+'</div>';
+
+  if(isEsport){
+    html+='<div class="ev-meta-grid">';
+    html+='<div class="ev-meta-card"><div class="ev-meta-label">Игра</div><div class="ev-meta-val">'+gameInfo.icon+' '+gameInfo.label+'</div></div>';
+    if(ev.teamFormat)html+='<div class="ev-meta-card"><div class="ev-meta-label">Формат</div><div class="ev-meta-val">'+_escHtml(ev.teamFormat)+'</div></div>';
+    if(ev.matchFormat)html+='<div class="ev-meta-card"><div class="ev-meta-label">Матчи</div><div class="ev-meta-val">'+_escHtml(ev.matchFormat.toUpperCase())+'</div></div>';
+    if(ev.prizePool)html+='<div class="ev-meta-card"><div class="ev-meta-label">Призовой фонд</div><div class="ev-meta-val" style="color:#00ff88;font-weight:700">'+_escHtml(ev.prizePool)+'</div></div>';
+    if(ev.maxTeams)html+='<div class="ev-meta-card"><div class="ev-meta-label">Команды</div><div class="ev-meta-val">'+(ev.regTeams||0)+' / '+ev.maxTeams+'</div></div>';
+    if(ev.location)html+='<div class="ev-meta-card"><div class="ev-meta-label">Место</div><div class="ev-meta-val">📍 '+_escHtml(ev.location)+'</div></div>';
+    html+='</div>';
+
+    // SMM Checklist
+    html+='<div style="margin-top:14px"><div style="font-size:12px;font-weight:700;color:var(--dim);margin-bottom:8px">📱 SMM-подготовка</div>';
+    html+='<div class="ev-smm-grid">';
+    var cl=ev.smmChecklist||{};
+    var smmDone=0;
+    SMM_CHECKLIST.forEach(function(item){
+      var done=!!cl[item.id];
+      if(done)smmDone++;
+      html+='<div class="ev-smm-item'+(done?' done':'')+'" onclick="calToggleSMM('+ev.id+',\''+item.id+'\')">';
+      html+='<span style="font-size:12px">'+(done?'✅':'⬜')+'</span>';
+      html+='<span style="font-size:11px">'+item.label+'</span>';
+      html+='</div>';
+    });
+    html+='</div>';
+    html+='<div style="margin-top:6px;font-size:10px;color:var(--dim)">Готовность: '+smmDone+'/'+SMM_CHECKLIST.length+' ('+(Math.round(smmDone/SMM_CHECKLIST.length*100))+'%)</div>';
+    html+='</div>';
+  }
+
+  if(ev.description)html+='<div style="padding:10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);font-size:12px;line-height:1.6;margin-top:12px;white-space:pre-wrap">'+_escHtml(ev.description)+'</div>';
+  if(ev.isTask)html+='<div style="font-size:11px;color:var(--dim);margin-top:8px">Это дедлайн задачи из раздела Задачи</div>';
+
   html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">';
   if(!ev.isTask){
     html+='<button class="act-btn" onclick="calEditEvent('+ev.id+')">✏️ Редактировать</button>';
@@ -2302,50 +2480,112 @@ window.calOpenEvent=function(evId){
   openModal(html);
 };
 
+// ═══ TOGGLE SMM CHECKLIST ITEM ═══
+window.calToggleSMM=async function(evId,itemId){
+  var ev=_calEvents.find(function(e){return e.id==evId;});
+  if(!ev)return;
+  if(!ev.smmChecklist)ev.smmChecklist={};
+  ev.smmChecklist[itemId]=!ev.smmChecklist[itemId];
+  // Save to Supabase
+  if(ev.sbId&&SUPABASE_LIVE){
+    try{
+      var meta={title:ev.title,cal_type:ev.type,time:ev.time,end_date:ev.endDate,description:ev.description,
+        game:ev.game,team_format:ev.teamFormat,match_format:ev.matchFormat,is_online:ev.isOnline,
+        location:ev.location,prize_pool:ev.prizePool,max_teams:ev.maxTeams,reg_teams:ev.regTeams,
+        event_status:ev.eventStatus,smm_checklist:ev.smmChecklist};
+      await sbPatch('events','id=eq.'+ev.sbId,{metadata_json:JSON.stringify(meta)});
+    }catch(e){}
+  }
+  // Re-render modal
+  calOpenEvent(evId);
+};
+
+// ═══ EDIT EVENT ═══
 window.calEditEvent=function(evId){
   var ev=_calEvents.find(function(e){return e.id==evId;});
   if(!ev)return;
   closeModal();
   var typeOpts=Object.keys(CAL_TYPES).map(function(k){return{value:k,label:CAL_TYPES[k].icon+' '+CAL_TYPES[k].label};});
-  f2fPrompt({title:'✏️ Редактировать событие',fields:[
+  var gameOpts=ESPORT_GAMES.map(function(g){return{value:g.value,label:g.icon+' '+g.label};});
+  var fmtOpts=ESPORT_FORMATS.map(function(f){return{value:f.value,label:f.label};});
+  var matchOpts=MATCH_FORMATS.map(function(f){return{value:f.value,label:f.label};});
+  var statusOpts=EVENT_STATUSES.map(function(s){return{value:s.value,label:s.label};});
+
+  var isEsport=['tournament','show_match','qualifier','league','lan','community'].indexOf(ev.type)>=0;
+
+  var fields=[
     {id:'title',label:'Название',type:'text',value:ev.title},
-    {id:'date',label:'Дата',type:'date',value:ev.date},
+    {id:'type',label:'Тип',type:'select',value:ev.type||'tournament',options:typeOpts},
+    {id:'game',label:'Игра',type:'select',value:ev.game||'cs2',options:gameOpts},
+    {id:'date',label:'Дата начала',type:'date',value:ev.date},
+    {id:'end_date',label:'Дата окончания',type:'date',value:ev.endDate||''},
     {id:'time',label:'Время',type:'text',value:ev.time||''},
-    {id:'type',label:'Тип',type:'select',value:ev.type||'other',options:typeOpts},
-    {id:'desc',label:'Описание',type:'textarea',rows:2,value:ev.description||''}
-  ],submitText:'Сохранить'}).then(async function(r){
+    {id:'team_format',label:'Формат команд',type:'select',value:ev.teamFormat||'5v5',options:fmtOpts},
+    {id:'match_format',label:'Формат матчей',type:'select',value:ev.matchFormat||'bo3',options:matchOpts},
+    {id:'is_online',label:'Место',type:'select',value:ev.isOnline?'online':'offline',options:[{value:'online',label:'🌐 Онлайн'},{value:'offline',label:'🏟 Офлайн'}]},
+    {id:'location',label:'Площадка',type:'text',value:ev.location||''},
+    {id:'prize_pool',label:'Призовой фонд',type:'text',value:ev.prizePool||''},
+    {id:'max_teams',label:'Макс. команд',type:'text',value:ev.maxTeams?String(ev.maxTeams):''},
+    {id:'reg_teams',label:'Зарегистрировано команд',type:'text',value:ev.regTeams?String(ev.regTeams):''},
+    {id:'event_status',label:'Статус',type:'select',value:ev.eventStatus||'draft',options:statusOpts},
+    {id:'desc',label:'Описание / правила',type:'textarea',rows:3,value:ev.description||''}
+  ];
+
+  f2fPrompt({title:'✏️ Редактировать мероприятие',fields:fields,submitText:'💾 Сохранить'}).then(async function(r){
     if(!r)return;
     if(r.title)ev.title=r.title.trim();
     if(r.date)ev.date=r.date;
+    ev.endDate=(r.end_date||'').trim();
     ev.time=(r.time||'').trim();
     if(r.type){ev.type=r.type;ev.color=(CAL_TYPES[r.type]||CAL_TYPES.other).color;}
+    ev.game=r.game||ev.game;
+    ev.teamFormat=r.team_format||ev.teamFormat;
+    ev.matchFormat=r.match_format||ev.matchFormat;
+    ev.isOnline=r.is_online!=='offline';
+    ev.location=ev.isOnline?'':(r.location||'').trim();
+    ev.prizePool=(r.prize_pool||'').trim();
+    ev.maxTeams=parseInt(r.max_teams)||0;
+    ev.regTeams=parseInt(r.reg_teams)||0;
+    ev.eventStatus=r.event_status||'draft';
     ev.description=(r.desc||'').trim();
     if(ev.sbId&&SUPABASE_LIVE){
       try{
+        var meta={title:ev.title,cal_type:ev.type,time:ev.time,end_date:ev.endDate,description:ev.description,
+          game:ev.game,team_format:ev.teamFormat,match_format:ev.matchFormat,is_online:ev.isOnline,
+          location:ev.location,prize_pool:ev.prizePool,max_teams:ev.maxTeams,reg_teams:ev.regTeams,
+          event_status:ev.eventStatus,smm_checklist:ev.smmChecklist||{}};
         await sbPatch('events','id=eq.'+ev.sbId,{
           event_type:ev.type,
           event_date:ev.date+(ev.time?'T'+ev.time+':00':'T00:00:00'),
-          metadata_json:JSON.stringify({title:ev.title,cal_type:ev.type,time:ev.time,description:ev.description})
+          metadata_json:JSON.stringify(meta)
         });
       }catch(e){}
     }
     renderCalendar();
-    showToast('✏️ Событие обновлено','success');
+    showToast('✏️ Мероприятие обновлено','success');
   });
 };
 
+// ═══ DELETE EVENT ═══
 window.calDeleteEvent=function(evId){
   var ev=_calEvents.find(function(e){return e.id==evId;});
   if(!ev)return;
-  f2fConfirm('Удалить событие «'+ev.title+'»?').then(async function(ok){
+  f2fConfirm('Удалить мероприятие «'+ev.title+'»?').then(async function(ok){
     if(!ok)return;
     _calEvents=_calEvents.filter(function(e){return e.id!=evId;});
     if(ev.sbId&&SUPABASE_LIVE){
       try{await sbPatch('events','id=eq.'+ev.sbId,{active:false});}catch(e){}
     }
     closeModal();renderCalendar();
-    showToast('🗑 Событие удалено','info');
+    showToast('🗑 Мероприятие удалено','info');
   });
+};
+
+// ═══ RENDER CALENDAR ═══
+var _calView='calendar'; // 'calendar' or 'list'
+window.calSwitchView=function(view){
+  _calView=view;
+  renderCalendar();
 };
 
 function renderCalendar(){
@@ -2361,108 +2601,143 @@ function renderCalendar(){
   var monthNames=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
   label.textContent=monthNames[month]+' '+year;
 
-  var firstDay=new Date(year,month,1).getDay(); // 0=Sun
-  if(firstDay===0)firstDay=7; // Mon=1
-  var daysInMonth=new Date(year,month+1,0).getDate();
   var todayStr=new Date().toISOString().slice(0,10);
 
-  // Events for this month keyed by date
-  var evByDate={};
-  _calEvents.forEach(function(ev){
-    if(!ev.date)return;
-    var evMonth=ev.date.slice(0,7);
-    var targetMonth=year+'-'+(month<9?'0':'')+(month+1);
-    if(evMonth===targetMonth){
-      if(!evByDate[ev.date])evByDate[ev.date]=[];
-      evByDate[ev.date].push(ev);
-    }
-  });
+  if(_calView==='list'){
+    // ── LIST VIEW: all events sorted ──
+    var allSorted=_calEvents.filter(function(e){return e.date;}).sort(function(a,b){return a.date.localeCompare(b.date);});
+    var html='<div class="ev-list">';
+    if(allSorted.length===0){
+      html+='<div style="text-align:center;padding:40px 20px;color:var(--dim)"><div style="font-size:36px;margin-bottom:12px">🏆</div><div style="font-size:14px;margin-bottom:6px">Нет мероприятий</div><div style="font-size:11px">Нажмите «+ Мероприятие» чтобы создать первое</div></div>';
+    }else{
+      allSorted.forEach(function(ev){
+        var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
+        var gi=ESPORT_GAMES.find(function(g){return g.value===ev.game;})||{icon:'🎮',label:''};
+        var si=EVENT_STATUSES.find(function(s){return s.value===ev.eventStatus;})||{label:'',color:'#64748b'};
+        var smmDone=0;var smmTotal=SMM_CHECKLIST.length;
+        if(ev.smmChecklist){SMM_CHECKLIST.forEach(function(item){if(ev.smmChecklist[item.id])smmDone++;});}
+        var smmPct=Math.round(smmDone/smmTotal*100);
 
-  // Build grid
-  var html='<div class="cal-grid">';
-  html+='<div class="cal-header">Пн</div><div class="cal-header">Вт</div><div class="cal-header">Ср</div><div class="cal-header">Чт</div><div class="cal-header">Пт</div><div class="cal-header cal-weekend">Сб</div><div class="cal-header cal-weekend">Вс</div>';
-
-  // Empty cells before first day
-  for(var i=1;i<firstDay;i++)html+='<div class="cal-cell empty"></div>';
-
-  for(var d=1;d<=daysInMonth;d++){
-    var dateStr=year+'-'+(month<9?'0':'')+(month+1)+'-'+(d<10?'0':'')+d;
-    var isToday=dateStr===todayStr;
-    var dayEvents=evByDate[dateStr]||[];
-    var hasEvents=dayEvents.length>0;
-    html+='<div class="cal-cell'+(isToday?' today':'')+(hasEvents?' has-events':'')+'" onclick="calDayClick(\''+dateStr+'\')">';
-    html+='<div class="cal-day'+(isToday?' today':'')+'">'+d+'</div>';
-    if(hasEvents){
-      html+='<div class="cal-dots">';
-      dayEvents.slice(0,3).forEach(function(ev){
-        html+='<div class="cal-dot" style="background:'+ev.color+'" title="'+_escHtml(ev.title)+'"></div>';
+        html+='<div class="ev-card" onclick="calOpenEvent(\''+ev.id+'\')">';
+        // Top row: type badge + status + date
+        html+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">';
+        html+='<span class="ev-badge" style="background:'+ti.color+'18;color:'+ti.color+';border:1px solid '+ti.color+'33">'+ti.icon+' '+ti.label+'</span>';
+        if(ev.eventStatus)html+='<span class="ev-badge" style="background:'+si.color+'18;color:'+si.color+';border:1px solid '+si.color+'33">'+si.label+'</span>';
+        if(ev.isOnline!==undefined&&!ev.isTask)html+='<span class="ev-badge" style="background:#ffffff08;color:#94a3b8;border:1px solid #334155">'+(ev.isOnline?'🌐':'🏟')+'</span>';
+        html+='<span style="margin-left:auto;font-size:10px;color:var(--dim)">'+ev.date+(ev.time?' '+ev.time:'')+'</span>';
+        html+='</div>';
+        // Title + game
+        html+='<div style="font-size:14px;font-weight:700;margin-bottom:4px">'+_escHtml(ev.title)+'</div>';
+        // Meta row
+        if(ev.game||ev.teamFormat||ev.prizePool){
+          html+='<div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--dim);margin-bottom:6px">';
+          if(ev.game)html+='<span>'+gi.icon+' '+gi.label+'</span>';
+          if(ev.teamFormat)html+='<span>👥 '+ev.teamFormat+'</span>';
+          if(ev.matchFormat)html+='<span>🎲 '+ev.matchFormat.toUpperCase()+'</span>';
+          if(ev.prizePool)html+='<span style="color:#00ff88;font-weight:600">💰 '+_escHtml(ev.prizePool)+'</span>';
+          if(ev.maxTeams)html+='<span>🏁 '+(ev.regTeams||0)+'/'+ev.maxTeams+' команд</span>';
+          html+='</div>';
+        }
+        // SMM progress bar
+        if(!ev.isTask&&smmTotal>0){
+          html+='<div style="display:flex;align-items:center;gap:8px;margin-top:4px">';
+          html+='<div style="font-size:9px;color:var(--dim);white-space:nowrap">SMM '+smmPct+'%</div>';
+          html+='<div style="flex:1;height:3px;background:#1e293b;border-radius:2px;overflow:hidden"><div style="width:'+smmPct+'%;height:100%;background:'+(smmPct>=100?'#00ff88':smmPct>=50?'#ffb800':'#ff4444')+';border-radius:2px;transition:width .3s"></div></div>';
+          html+='</div>';
+        }
+        html+='</div>';
       });
-      if(dayEvents.length>3)html+='<span style="font-size:8px;color:var(--dim)">+'+String(dayEvents.length-3)+'</span>';
+    }
+    html+='</div>';
+    grid.innerHTML=html;
+  }else{
+    // ── CALENDAR GRID VIEW ──
+    var firstDay=new Date(year,month,1).getDay();
+    if(firstDay===0)firstDay=7;
+    var daysInMonth=new Date(year,month+1,0).getDate();
+
+    var evByDate={};
+    _calEvents.forEach(function(ev){
+      if(!ev.date)return;
+      var evMonth=ev.date.slice(0,7);
+      var targetMonth=year+'-'+(month<9?'0':'')+(month+1);
+      if(evMonth===targetMonth){
+        if(!evByDate[ev.date])evByDate[ev.date]=[];
+        evByDate[ev.date].push(ev);
+      }
+    });
+
+    var html='<div class="cal-grid">';
+    html+='<div class="cal-header">Пн</div><div class="cal-header">Вт</div><div class="cal-header">Ср</div><div class="cal-header">Чт</div><div class="cal-header">Пт</div><div class="cal-header cal-weekend">Сб</div><div class="cal-header cal-weekend">Вс</div>';
+    for(var i=1;i<firstDay;i++)html+='<div class="cal-cell empty"></div>';
+    for(var d=1;d<=daysInMonth;d++){
+      var dateStr=year+'-'+(month<9?'0':'')+(month+1)+'-'+(d<10?'0':'')+d;
+      var isToday=dateStr===todayStr;
+      var dayEvents=evByDate[dateStr]||[];
+      var hasEvents=dayEvents.length>0;
+      html+='<div class="cal-cell'+(isToday?' today':'')+(hasEvents?' has-events':'')+'" onclick="calDayClick(\''+dateStr+'\')">';
+      html+='<div class="cal-day'+(isToday?' today':'')+'">'+d+'</div>';
+      if(hasEvents){
+        html+='<div class="cal-dots">';
+        dayEvents.slice(0,3).forEach(function(ev){
+          html+='<div class="cal-dot" style="background:'+ev.color+'" title="'+_escHtml(ev.title)+'"></div>';
+        });
+        if(dayEvents.length>3)html+='<span style="font-size:8px;color:var(--dim)">+'+String(dayEvents.length-3)+'</span>';
+        html+='</div>';
+      }
       html+='</div>';
     }
     html+='</div>';
+    grid.innerHTML=html;
   }
-  html+='</div>';
-  grid.innerHTML=html;
 
-  // Upcoming events (next 14 days)
-  var now=new Date();var in14=new Date(now);in14.setDate(in14.getDate()+14);
+  // ── UPCOMING / NEXT EVENTS ──
+  var now=new Date();var in30=new Date(now);in30.setDate(in30.getDate()+30);
   var nowStr=now.toISOString().slice(0,10);
-  var in14Str=in14.toISOString().slice(0,10);
-  var upcomingEv=_calEvents.filter(function(e){return e.date>=nowStr&&e.date<=in14Str;});
+  var in30Str=in30.toISOString().slice(0,10);
+  var upcomingEv=_calEvents.filter(function(e){return e.date>=nowStr&&e.date<=in30Str;});
   if(countEl)countEl.textContent=upcomingEv.length;
 
   if(upcomingEv.length>0){
-    var uHtml='<h4 style="font-size:13px;color:var(--dim);margin:12px 0 8px">Ближайшие события</h4>';
-    upcomingEv.slice(0,10).forEach(function(ev){
-      var typeInfo=CAL_TYPES[ev.type]||CAL_TYPES.other;
+    var uHtml='<h4 style="font-size:13px;color:var(--dim);margin:16px 0 8px">🏆 Ближайшие мероприятия (30 дней)</h4>';
+    upcomingEv.slice(0,12).forEach(function(ev){
+      var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
+      var gi=ESPORT_GAMES.find(function(g){return g.value===ev.game;})||{icon:'',label:''};
+      var si=EVENT_STATUSES.find(function(s){return s.value===ev.eventStatus;})||{label:'',color:'#64748b'};
       var daysUntil=Math.ceil((new Date(ev.date)-now)/86400000);
-      var when=daysUntil===0?'Сегодня':daysUntil===1?'Завтра':ev.date;
+      var when=daysUntil===0?'Сегодня':daysUntil===1?'Завтра':daysUntil<7?'через '+daysUntil+'д':ev.date;
       uHtml+='<div class="cal-upcoming-row" onclick="calOpenEvent(\''+ev.id+'\')">';
       uHtml+='<div class="cal-upcoming-dot" style="background:'+ev.color+'"></div>';
       uHtml+='<div style="flex:1;min-width:0">';
-      uHtml+='<div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+typeInfo.icon+' '+_escHtml(ev.title)+'</div>';
-      uHtml+='<div style="font-size:10px;color:var(--dim)">'+when+(ev.time?' в '+ev.time:'')+'</div>';
+      uHtml+='<div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+ti.icon+' '+_escHtml(ev.title)+'</div>';
+      uHtml+='<div style="font-size:10px;color:var(--dim)">'+when+(ev.time?' в '+ev.time:'')+(gi.icon?' · '+gi.icon:'')+(ev.teamFormat?' · '+ev.teamFormat:'')+'</div>';
       uHtml+='</div>';
-      uHtml+='<div style="font-size:9px;padding:2px 6px;background:'+ev.color+'18;color:'+ev.color+';border-radius:3px;white-space:nowrap">'+typeInfo.label+'</div>';
+      if(ev.eventStatus)uHtml+='<div style="font-size:8px;padding:2px 6px;background:'+si.color+'18;color:'+si.color+';border-radius:3px;white-space:nowrap">'+si.label+'</div>';
       uHtml+='</div>';
     });
     upcoming.innerHTML=uHtml;
   }else{
-    upcoming.innerHTML='<div style="text-align:center;padding:20px;color:var(--dim);font-size:12px">Нет предстоящих событий</div>';
+    upcoming.innerHTML='<div style="text-align:center;padding:30px;color:var(--dim)"><div style="font-size:28px;margin-bottom:8px">🏆</div><div style="font-size:12px">Нет предстоящих мероприятий</div><div style="font-size:10px;margin-top:4px;color:#384858">Создайте первый турнир или ивент</div></div>';
   }
 }
 
 window.calDayClick=function(dateStr){
   var dayEvents=_calEvents.filter(function(e){return e.date===dateStr;});
   if(dayEvents.length===0){
-    // Create new event for this day
     _calDate=new Date(dateStr+'T12:00:00');
-    var typeOpts=Object.keys(CAL_TYPES).map(function(k){return{value:k,label:CAL_TYPES[k].icon+' '+CAL_TYPES[k].label};});
-    f2fPrompt({title:'📅 '+dateStr,fields:[
-      {id:'title',label:'Название',type:'text',placeholder:'Название события...'},
-      {id:'time',label:'Время',type:'text',placeholder:'14:00'},
-      {id:'type',label:'Тип',type:'select',value:'meeting',options:typeOpts}
-    ],submitText:'Создать'}).then(async function(r){
-      if(!r||!r.title)return;
-      var ev={id:Date.now(),title:r.title.trim(),date:dateStr,time:(r.time||'').trim(),type:r.type||'other',description:'',agentId:'coordinator',color:(CAL_TYPES[r.type]||CAL_TYPES.other).color};
-      _calEvents.push(ev);
-      if(SUPABASE_LIVE){
-        try{var res=await sbInsert('events',{event_type:ev.type,event_date:dateStr+(ev.time?'T'+ev.time+':00':'T00:00:00'),metadata_json:JSON.stringify({title:ev.title,cal_type:ev.type,time:ev.time})});if(res&&res[0])ev.sbId=res[0].id;}catch(e){}
-      }
-      renderCalendar();showToast('📅 '+ev.title,'success');
-    });
+    calCreateEvent(); // open full create form
   }else if(dayEvents.length===1){
     calOpenEvent(dayEvents[0].id);
   }else{
-    // Show list for the day
-    var html='<h3 style="margin:0 0 12px">📅 '+dateStr+' ('+dayEvents.length+' событий)</h3>';
+    var html='<h3 style="margin:0 0 12px">📅 '+dateStr+' ('+dayEvents.length+' мероприятий)</h3>';
     dayEvents.forEach(function(ev){
       var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
+      var gi=ESPORT_GAMES.find(function(g){return g.value===ev.game;})||{icon:'',label:''};
       html+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);margin-bottom:6px;cursor:pointer" onclick="calOpenEvent(\''+ev.id+'\')">';
       html+='<span style="font-size:16px">'+ti.icon+'</span>';
-      html+='<div style="flex:1"><div style="font-size:13px;font-weight:600">'+_escHtml(ev.title)+'</div>'+(ev.time?'<div style="font-size:10px;color:var(--dim)">'+ev.time+'</div>':'')+'</div>';
-      html+='<span style="font-size:9px;padding:2px 6px;background:'+ti.color+'18;color:'+ti.color+';border-radius:3px">'+ti.label+'</span>';
+      html+='<div style="flex:1"><div style="font-size:13px;font-weight:600">'+_escHtml(ev.title)+'</div>';
+      html+='<div style="font-size:10px;color:var(--dim)">'+(ev.time||'')+(gi.icon?' · '+gi.icon+' '+gi.label:'')+'</div></div>';
+      html+='<span class="ev-badge" style="background:'+ti.color+'18;color:'+ti.color+';border:1px solid '+ti.color+'33">'+ti.label+'</span>';
       html+='</div>';
     });
     html+='<div style="margin-top:12px"><button class="act-btn" onclick="closeModal()">Закрыть</button></div>';
@@ -2470,7 +2745,7 @@ window.calDayClick=function(dateStr){
   }
 };
 
-// Initial render (after Supabase loads, refreshAfterSync calls renderCalendar)
+// Initial render
 setTimeout(renderCalendar,1500);
 
 // ═══ MINI ANALYTICS ═══
