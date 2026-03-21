@@ -318,7 +318,7 @@ function refreshAfterSync(){
       window._sbFeedLoaded=true;
       window._sbEvents.forEach(function(ev){
         if(!ev.metadata_json)return;
-        var meta=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;
+        var meta;try{meta=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;}catch(e){return;}
         if(!meta.text)return;
         var agId=meta.agent_dash_id||'coordinator';
         var ag=AGENTS[agId]||{color:'#64748b'};
@@ -384,7 +384,7 @@ function refreshAfterSync(){
     // 4. Tasks/Actions summary
     if(window._sbActions&&window._sbActions.length>0){
       var pendingActions=window._sbActions.filter(a=>{
-        var p=typeof a.payload_json==='string'?JSON.parse(a.payload_json):a.payload_json;
+        var p;try{p=typeof a.payload_json==='string'?JSON.parse(a.payload_json):a.payload_json;}catch(e){p={};}
         return p&&p.status!=='executed';
       }).length;
       if(pendingActions>0) addFeed('coordinator','📌 '+pendingActions+' действий ожидают выполнения');
@@ -406,20 +406,27 @@ function refreshAfterSync(){
   const liveCount=window._sbMemory?window._sbMemory.filter(m=>m.state==='working').length:0;
   const contentCount=window._sbContent?window._sbContent.length:0;
   const partnerCount=window._sbPartners?window._sbPartners.length:0;
-  document.getElementById('syncBadge').textContent='● LIVE ('+partnerCount+' leads, '+contentCount+' posts)';
-  document.getElementById('syncBadge').style.color='#00ff88';
+  var _syncB=document.getElementById('syncBadge');
+  if(_syncB){_syncB.textContent='● LIVE ('+partnerCount+' leads, '+contentCount+' posts)';_syncB.style.color='#00ff88';}
 }
 
 async function initSupabase(){
-  const ok=await syncSupabaseData();
-  if(ok){
-    SUPABASE_LIVE=true;
-    console.log('✅ Supabase LIVE — agents: '+Object.keys(window._sbAgents).join(', '));
-    refreshAfterSync();
-  }else{
-    console.warn('⚠️ Supabase not reachable or empty — using f2f_data.js fallback');
-    document.getElementById('syncBadge').textContent='● LOCAL DATA';
-    document.getElementById('syncBadge').style.color='#ffb800';
+  var _sb=document.getElementById('syncBadge');
+  try{
+    const ok=await syncSupabaseData();
+    if(ok){
+      SUPABASE_LIVE=true;
+      console.log('✅ Supabase LIVE — agents: '+Object.keys(window._sbAgents).join(', '));
+      refreshAfterSync();
+    }else{
+      console.warn('⚠️ Supabase not reachable or empty — using f2f_data.js fallback');
+      if(_sb){_sb.textContent='● LOCAL DATA';_sb.style.color='#ffb800';}
+      if(typeof showToast==='function')showToast('Supabase недоступен — работаем с локальными данными','warning');
+    }
+  }catch(e){
+    console.warn('initSupabase error:',e);
+    if(_sb){_sb.textContent='● ОШИБКА';_sb.style.color='#ff4444';}
+    if(typeof showToast==='function')showToast('Ошибка подключения к Supabase','error');
   }
 }
 
@@ -430,19 +437,21 @@ function isAuthenticated(){
   return !!(s&&s.token);
 }
 window.addEventListener('load',()=>{
+  var _sb2=document.getElementById('syncBadge');
   if(isAuthenticated()){
     setTimeout(initSupabase,500);
   } else {
     console.log('🔒 Not authenticated — skipping Supabase init');
-    document.getElementById('syncBadge').textContent='● OFFLINE';
-    document.getElementById('syncBadge').style.color='#666';
+    if(_sb2){_sb2.textContent='● OFFLINE';_sb2.style.color='#666';}
   }
+  var _syncing=false;
   setInterval(async()=>{
-    if(!SUPABASE_LIVE||!isAuthenticated())return;
+    if(!SUPABASE_LIVE||!isAuthenticated()||_syncing)return;
+    _syncing=true;
     try{
       await syncSupabaseData();
       refreshAfterSync();
-      console.log('🔄 Supabase auto-refresh OK — '+new Date().toLocaleTimeString('ru'));
     }catch(e){console.warn('Auto-refresh error:',e);}
+    finally{_syncing=false;}
   },30000);
 });

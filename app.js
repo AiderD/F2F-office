@@ -1009,6 +1009,7 @@ function renderTeamDeptTabs(){
 }
 
 function renderTeam(){
+  if(!D.team||!Array.isArray(D.team)){D.team=[];}
   const active=D.team.filter(t=>t.status==='active');
   const dismissed=D.dismissed||[];
   renderTeamDeptTabs();
@@ -1017,7 +1018,7 @@ function renderTeam(){
     document.getElementById('team-count').textContent=dismissed.length+' уволенных';
     document.getElementById('teamContent').innerHTML='<div class="team-grid">'+dismissed.map(t=>
       '<div class="team-card dismissed">'+
-        '<div class="t-top"><span class="t-name">'+t.name+'</span><span class="t-role">'+t.reason+'</span></div>'+
+        '<div class="t-top"><span class="t-name">'+t.name+'</span><span class="t-role">'+(t.reason||'—')+'</span></div>'+
         '<div class="t-dept">Уволен: '+t.dismissDate+' | Был: '+(CDepts.find(d=>d.id===t.dept)?.name||'—')+'</div>'+
       '</div>').join('')+'</div>';
     return;
@@ -1285,8 +1286,8 @@ function renderAgentsPanel(){
       // Truncate LIVE OUTPUT to 200 chars
       var liveOutput='';
       if(SUPABASE_LIVE&&sbMem&&sbMem.last_output){
-        var truncated=sbMem.last_output.length>200?sbMem.last_output.slice(0,200)+'...':sbMem.last_output;
-        liveOutput='<div style="font-size:11px;line-height:1.5;margin:8px 0;padding:8px 10px;background:#00ff8808;border:1px solid #00ff8822;border-radius:6px;max-height:80px;overflow-y:auto">'+
+        var truncated=_escHtml(sbMem.last_output.length>200?sbMem.last_output.slice(0,200)+'…':sbMem.last_output);
+        liveOutput='<div style="font-size:11px;line-height:1.5;margin:8px 0;padding:8px 10px;background:#00ff8808;border:1px solid #00ff8822;border-radius:6px;max-height:80px;overflow-y:auto;scrollbar-width:thin" title="Кликни на агента для полного вида">'+
           '<b style="color:#00ff88;font-size:9px;text-transform:uppercase">📡 Live Output:</b><br>'+truncated+
         '</div>';
       }
@@ -1312,8 +1313,8 @@ function renderAgentsPanel(){
             '</div>'+
           '</div>'+
         '</div>'+
-        '<div style="font-size:12px;line-height:1.6;margin-bottom:6px;color:#cbd5e1;padding:6px 8px;background:var(--bg);border-radius:6px">'+
-          '<b style="color:var(--cyan)">Роль:</b> '+(desc.purpose||m.purpose||AGENT_PROMPTS[id]||'Нет описания')+'</div>'+
+        '<div style="font-size:12px;line-height:1.6;margin-bottom:6px;color:#cbd5e1;padding:6px 8px;background:var(--bg);border-radius:6px;max-height:60px;overflow:hidden;position:relative" title="'+_escHtml(desc.purpose||m.purpose||'')+'">'+
+          '<b style="color:var(--cyan)">Роль:</b> '+_escHtml(_truncate(desc.purpose||m.purpose||AGENT_PROMPTS[id]||'Нет описания',150))+'</div>'+
         '<div style="font-size:11px;color:var(--amber);margin-bottom:4px">'+
           '<b>Заменяет:</b> '+(desc.replaces||m.replaces||'—')+'</div>'+
         liveOutput+
@@ -1504,7 +1505,7 @@ function renderChat(){
 const CHAT_EDGE_URL=SUPABASE_URL+'/functions/v1/agent-chat';
 let f2fApiKey=localStorage.getItem('f2f_api_key')||'';
 
-function closeModal(){var overlay=document.getElementById('modal');if(overlay)overlay.classList.remove('open');var m=document.querySelector('.modal');if(m){m.style.transform='';m.style.transition='';}}
+function closeModal(){var overlay=document.getElementById('modal');if(overlay){overlay.classList.remove('open');var mc=document.getElementById('modalContent');if(mc)setTimeout(function(){if(!overlay.classList.contains('open'))mc.innerHTML='';},300);}var m=document.querySelector('.modal');if(m){m.style.transform='';m.style.transition='';}}
 function openApiKeyModal(){
   var html='<h2 style="margin-bottom:16px">🔑 Anthropic API Key</h2>'+
     '<p style="color:var(--dim);margin-bottom:12px;font-size:13px">Для AI-ответов агентов нужен ключ Claude API. Он хранится только локально в вашем браузере.</p>'+
@@ -4583,13 +4584,15 @@ function showAgentDetail(id){
       (sbMem&&sbMem.cycle_number?'<div style="font-size:10px;color:var(--dim);margin-top:2px">Цикл #'+sbMem.cycle_number+' • '+sbMem.tasks_done+' задач</div>':'')+
     '</div></div>';
 
-  // Supabase live data block
+  // Supabase live data block — scrollable section
   if(SUPABASE_LIVE&&sbMem){
-    html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px">'+
+    var _lo=sbMem.last_output?_escHtml(sbMem.last_output.length>400?sbMem.last_output.slice(0,400)+'…':sbMem.last_output):'';
+    var _ins=sbMem.insights?_escHtml(typeof sbMem.insights==='string'?sbMem.insights:JSON.stringify(sbMem.insights)):'';
+    html+='<div class="modal-section" style="padding:12px;background:var(--bg)">'+
       '<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:8px">📡 Live данные из Supabase</div>'+
-      (sbMem.last_output?'<div style="font-size:12px;line-height:1.5;margin-bottom:8px"><b style="color:var(--cyan)">Последний результат:</b> '+sbMem.last_output+'</div>':'')+
-      (sbMem.insights?'<div style="font-size:12px;line-height:1.5;margin-bottom:8px"><b style="color:var(--purple)">Инсайты:</b> '+sbMem.insights+'</div>':'')+
-      (sbMem.next_action?'<div style="font-size:12px;line-height:1.5"><b style="color:var(--green)">Следующее действие:</b> '+sbMem.next_action+'</div>':'')+
+      (_lo?'<div style="font-size:12px;line-height:1.5;margin-bottom:8px"><b style="color:var(--cyan)">Последний результат:</b> '+_lo+'</div>':'')+
+      (_ins?'<div style="font-size:12px;line-height:1.5;margin-bottom:8px"><b style="color:var(--purple)">Инсайты:</b> '+_ins+'</div>':'')+
+      (sbMem.next_action?'<div style="font-size:12px;line-height:1.5"><b style="color:var(--green)">Следующее действие:</b> '+_escHtml(sbMem.next_action)+'</div>':'')+
       (sbMem.updated_at?'<div style="font-size:10px;color:var(--dim);margin-top:8px;text-align:right">Обновлено: '+new Date(sbMem.updated_at).toLocaleString('ru')+'</div>':'')+
     '</div>';
   }
@@ -4622,17 +4625,23 @@ function showAgentDetail(id){
       '<button onclick="agentAIChat(\''+id+'\')">Отправить</button>'+
     '</div></div>';
 
-  // Tasks
+  // Tasks — scrollable list with pending-first sort
   html+='<h3>Задачи ('+agentTasks.length+')</h3>';
   if(agentTasks.length){
-    html+=agentTasks.map(function(t){
-      var icon=t.status==='done'?'✅':t.status==='cancelled'?'❌':t.status==='postponed'?'⏸':'⏳';
+    var sortedTasks=agentTasks.slice().sort(function(a,b){
+      var ord={pending:0,in_progress:1,rework:2,planned:3,backlog:4,done:5,cancelled:6,postponed:7};
+      return (ord[a.status]||9)-(ord[b.status]||9);
+    });
+    html+='<div class="modal-task-list">';
+    html+=sortedTasks.map(function(t){
+      var icon=t.status==='done'?'✅':t.status==='cancelled'?'❌':t.status==='postponed'?'⏸':t.status==='in_progress'?'🔧':'⏳';
       return '<div style="padding:8px;background:var(--bg);border-radius:6px;margin-bottom:6px;border:1px solid var(--border);display:flex;align-items:center;gap:8px">'+
-        '<span>'+icon+'</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+t.title+'</div>'+
-        (t.result?'<div style="font-size:11px;color:var(--green);margin-top:4px">'+t.result+'</div>':'')+'</div>'+
+        '<span>'+icon+'</span><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escHtml(t.title)+'</div>'+
+        (t.result?'<div style="font-size:11px;color:var(--green);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escHtml(t.result)+'</div>':'')+'</div>'+
         (t.status==='pending'?'<button class="task-act" onclick="taskAction('+t.id+',\'done\');showAgentDetail(\''+id+'\')" title="Готово">✅</button>'+
           '<button class="task-act" onclick="taskAction('+t.id+',\'postponed\');showAgentDetail(\''+id+'\')" title="Отложить">⏸</button>':'')+'</div>';
     }).join('');
+    html+='</div>';
   }else{html+='<p style="color:var(--dim)">Задач пока нет</p>';}
 
   // Reports
