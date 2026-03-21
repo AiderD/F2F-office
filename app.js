@@ -3,8 +3,19 @@ function isMob(){return window.innerWidth<768}
 function mobGrid(){return isMob()?'1fr':'1fr 1fr'}
 
 // ═══ TOKEN AUTH SYSTEM ═══
-let _currentSession = JSON.parse(sessionStorage.getItem('f2f_session')||'null');
+let _currentSession = JSON.parse(localStorage.getItem('f2f_session')||'null');
 // { token_id, token, employee_name, login_name, role, matched_team_id }
+
+// Pre-fill login form from saved credentials
+(function(){
+  var saved=JSON.parse(localStorage.getItem('f2f_login_creds')||'null');
+  if(saved){
+    var ni=document.getElementById('loginName');
+    var ti=document.getElementById('loginToken');
+    if(ni&&saved.name)ni.value=saved.name;
+    if(ti&&saved.token)ti.value=saved.token;
+  }
+})();
 
 // Try auto-login from saved session (runs immediately — DOM already parsed since script at end of body)
 if(_currentSession){
@@ -61,7 +72,9 @@ async function loginWithToken(){
       role: tkn.role,
       matched_team_id: matchedTeamId
     };
-    sessionStorage.setItem('f2f_session', JSON.stringify(_currentSession));
+    localStorage.setItem('f2f_session', JSON.stringify(_currentSession));
+    // Remember credentials for next login
+    localStorage.setItem('f2f_login_creds', JSON.stringify({name:name,token:token}));
 
     // Update last_used_at
     fetch(SB_URL+'/rest/v1/auth_tokens?id=eq.'+tkn.id, {
@@ -93,7 +106,7 @@ async function loginWithToken(){
 function logoutUser(){
   if(_currentSession) auditLog('logout','auth','Выход: '+_currentSession.login_name);
   _currentSession=null;
-  sessionStorage.removeItem('f2f_session');
+  localStorage.removeItem('f2f_session');
   // SECURITY: Clear all Supabase data on logout
   SUPABASE_LIVE=false;
   window._sbTeam=null;window._sbPartners=null;window._sbContent=null;
@@ -270,7 +283,7 @@ async function createToken(){
   const role = document.getElementById('newTokenRole').value;
   const token = document.getElementById('newTokenValue').value;
   const note = document.getElementById('newTokenNote').value.trim();
-  if(!name){ alert('Укажите имя сотрудника'); return; }
+  if(!name){ showToast('Укажите имя сотрудника','error'); return; }
 
   const result = await sbInsert('auth_tokens',{
     token: token,
@@ -286,7 +299,8 @@ async function createToken(){
 }
 
 async function revokeToken(id){
-  if(!confirm('Отозвать токен? Сотрудник потеряет доступ.')) return;
+  var ok=await f2fConfirm('Отозвать токен? Сотрудник потеряет доступ.');
+  if(!ok)return;
   await sbPatch('auth_tokens','id=eq.'+id,{is_active:false});
   auditLog('update','tokens','Токен отозван: '+id);
   renderAdmin();
@@ -391,7 +405,7 @@ document.getElementById('stratSaveBtn').addEventListener('click',async function(
     },3000);
     addFeed('coordinator','🎯 Стратегия обновлена — все цели пересчитаны');
   }else{
-    alert('Ошибка сохранения. Проверь соединение с Supabase.');
+    showToast('Ошибка сохранения. Проверь соединение с Supabase.','error');
   }
 });
 
@@ -785,17 +799,17 @@ window.submitFinanceEntry=async function(){
   var type=document.getElementById('feType').value;
   var period=document.getElementById('fePeriod').value;
   var description=document.getElementById('feDescription').value;
-  if(!description){alert('Укажите описание');return;}
+  if(!description){showToast('Укажите описание','error');return;}
 
   var entry={period:period,type:type,description:description,is_paid:false,created_by:getCurrentUser()};
 
   if(type==='salary'){
     var empId=parseInt(document.getElementById('feEmployee').value);
     var emp=D.team.find(function(t){return t.id===empId;});
-    if(!empId||!emp){alert('Выберите сотрудника');return;}
+    if(!empId||!emp){showToast('Выберите сотрудника','error');return;}
     var workDays=parseInt(document.getElementById('feWorkDays').value)||22;
     var daysWorked=parseInt(document.getElementById('feDaysWorked').value)||workDays;
-    if(!emp.salary_usdt){alert('У сотрудника не указана ЗП. Укажите её в разделе Команда.');return;}
+    if(!emp.salary_usdt){showToast('У сотрудника не указана ЗП. Укажите её в разделе Команда.','error');return;}
     var dailyRate=parseFloat(emp.salary_usdt)/workDays;
     var amount=dailyRate*daysWorked;
     var dailyRub=parseFloat(emp.salary_rub||0)/workDays;
@@ -818,7 +832,7 @@ window.submitFinanceEntry=async function(){
     addFeed('coordinator','💾 Финансовая запись: '+description+' — $'+entry.amount_usdt);
     auditLog('create','finance','Добавлена запись: '+description+' $'+entry.amount_usdt);
   }else{
-    alert('Ошибка сохранения. Проверь соединение.');
+    showToast('Ошибка сохранения. Проверь соединение.','error');
   }
 };
 
@@ -826,17 +840,26 @@ window.submitFinanceEntry=async function(){
 window.generatePayroll=function(){
   var activeTeam=D.team.filter(function(t){return t.status==='active'&&t.salary_usdt>0;});
   if(!activeTeam.length){
-    alert('Нет сотрудников с указанной ЗП. Сначала укажите зарплаты в разделе Команда.');
+    showToast('Нет сотрудников с указанной ЗП. Сначала укажите зарплаты в разделе Команда.','error');
     return;
   }
   // Check if payroll already exists for this period
   var existingSalaries=window._financeLedger.filter(function(e){return e.period===financePeriod&&e.type==='salary';});
-  if(existingSalaries.length>0){
-    if(!confirm('За '+financePeriod+' уже есть '+existingSalaries.length+' записей по ЗП. Записи неизменяемы — добавить ещё раз?'))return;
+  function _askWorkDays(){
+    f2fPrompt({title:'📋 Рабочие дни',fields:[{id:'days',label:'Рабочих дней в '+financePeriod,type:'number',value:financeWorkDays,min:1,max:31}],submitText:'Далее'}).then(function(val){
+      var workDays=parseInt(val);
+      if(!workDays||workDays<1)return;
+      financeWorkDays=workDays;
+      _generatePayrollContinue(workDays,activeTeam);
+    });
   }
-  var workDays=parseInt(prompt('Рабочих дней в '+financePeriod+':',financeWorkDays));
-  if(!workDays||workDays<1)return;
-  financeWorkDays=workDays;
+  if(existingSalaries.length>0){
+    f2fConfirm('За '+financePeriod+' уже есть '+existingSalaries.length+' записей по ЗП. Записи неизменяемы — добавить ещё раз?').then(function(ok){if(ok)_askWorkDays();});
+  }else{
+    _askWorkDays();
+  }
+};
+function _generatePayrollContinue(workDays,activeTeam){
 
   openModal(
     '<h2>📋 Расчёт ЗП — '+financePeriod+'</h2>'+
@@ -894,7 +917,7 @@ window.submitPayroll=async function(workDays){
       is_paid:false, created_by:getCurrentUser()
     });
   });
-  if(!entries.length){alert('Нет записей для создания');return;}
+  if(!entries.length){showToast('Нет записей для создания','error');return;}
   var result=await sbInsert('finance_ledger',entries);
   if(result){
     window._financeLedger=result.concat(window._financeLedger);
@@ -903,14 +926,14 @@ window.submitPayroll=async function(workDays){
     addFeed('coordinator','📋 Расчёт ЗП за '+financePeriod+': '+entries.length+' записей создано');
     auditLog('generate','finance','Расчёт ЗП за '+financePeriod+': '+entries.length+' записей, $'+entries.reduce(function(s,e){return s+e.amount_usdt;},0).toFixed(2));
   }else{
-    alert('Ошибка сохранения');
+    showToast('Ошибка сохранения','error');
   }
 };
 
 // ═══ EXCEL EXPORT ═══
 window.exportFinanceExcel=function(){
   var ledger=window._financeLedger.filter(function(e){return e.period===financePeriod;});
-  if(!ledger.length){alert('Нет данных за '+financePeriod);return;}
+  if(!ledger.length){showToast('Нет данных за '+financePeriod,'info');return;}
   // Build CSV (opens in Excel)
   var csv='\uFEFF'; // BOM for Excel UTF-8
   csv+='Дата,Тип,Описание,USDT,RUB,Раб.дней в мес,Отработано дней,Базовая ЗП,Оплачено,Дата оплаты,Комментарий\n';
@@ -1078,7 +1101,7 @@ window.openTeamMemberModal=function(id){
 
 // Save salary data for employee
 window.teamSaveSalary=async function(id){
-  if(!canEditSalary()){alert('Нет прав для изменения ЗП');return;}
+  if(!canEditSalary()){showToast('Нет прав для изменения ЗП','error');return;}
   var t=D.team.find(function(x){return x.id===id;});if(!t)return;
   var rawUSDT=document.getElementById('empSalaryUSDT').value;
   var rawRUB=document.getElementById('empSalaryRUB').value;
@@ -1143,20 +1166,21 @@ window.teamToggleHead=function(id){
 
 window.teamEditRole=function(id){
   var t=D.team.find(function(x){return x.id===id;});if(!t)return;
-  var newRole=prompt('Новая роль для '+t.name+':',t.role);
-  if(newRole&&newRole.trim()){
-    t.role=newRole.trim();
-    if(SUPABASE_LIVE){sbPatch('team','id=eq.'+id,{role:newRole.trim(),updated_at:new Date().toISOString()});}
-    renderTeam();openTeamMemberModal(id);
-    addFeed('coordinator','✏️ Роль '+t.name+' → '+newRole.trim());
-  }
+  f2fPrompt({title:'✏️ Роль сотрудника',fields:[{id:'role',label:'Новая роль для '+t.name,type:'text',value:t.role}],submitText:'Сохранить'}).then(function(newRole){
+    if(newRole&&newRole.trim()){
+      t.role=newRole.trim();
+      if(SUPABASE_LIVE){sbPatch('team','id=eq.'+id,{role:newRole.trim(),updated_at:new Date().toISOString()});}
+      renderTeam();openTeamMemberModal(id);
+      addFeed('coordinator','✏️ Роль '+t.name+' → '+newRole.trim());
+    }
+  });
 };
 
 window.teamDismiss=function(id,reason){
   var t=D.team.find(function(x){return x.id===id;});if(!t)return;
   var reasonText=reason==='fired'?'Увольнение':'Уход по собственному';
-  if(!confirm(reasonText+': '+t.name+'?\n\nЭто действие переместит сотрудника в список уволенных.')){return;}
-  var comment=prompt('Комментарий (опционально):','');
+  f2fPrompt({title:'⚠️ '+reasonText,message:reasonText+': '+t.name+'?\nЭто действие переместит сотрудника в список уволенных.',fields:[{id:'comment',label:'Комментарий (опционально)',type:'text',placeholder:'Причина...'}],submitText:'Подтвердить',cancelText:'Отмена'}).then(function(comment){
+  if(comment===null)return;
   t.status='dismissed';
   if(!D.dismissed)D.dismissed=[];
   D.dismissed.push({
@@ -1172,6 +1196,7 @@ window.teamDismiss=function(id,reason){
   modal.classList.remove('open');
   renderTeam();updateKPI();
   addFeed('talent_scout','🚪 '+reasonText+': '+t.name+(comment?' ('+comment+')':''));
+  });
 };
 
 document.getElementById('teamDeptTabs').addEventListener('click',function(e){
@@ -1367,7 +1392,7 @@ window.sendAgentDirective=function(agentId){
         .then(function(){
           addFeed(agentId,'🎯 Новая задача: '+text.slice(0,60)+'...');
           closeModal();
-          alert('Задача отправлена! '+AGENTS[agentId].name+' получит её на следующем цикле.');
+          showToast('Задача отправлена! '+AGENTS[agentId].name+' получит её на следующем цикле.','info');
         });
     } else {
       addFeed(agentId,'🎯 Задача (локально): '+text.slice(0,60)+'...');
@@ -1761,21 +1786,28 @@ window.executeApprovedAction=async function(taskId){
   // ─── email_template_created → Send Email ───
   if(type.includes('email_template')||t._actionType==='email_template_created'){
     var emailData=payload;
-    if(!emailData.to&&!emailData.email){
-      var email=prompt('📧 Email получателя:');
-      if(!email||!email.includes('@'))return alert('Нужен валидный email');
-      emailData.to=email;
+    var existingBody=payload.body||payload.template||payload.content||payload.text||'';
+    var fields=[];
+    if(!emailData.to&&!emailData.email)fields.push({id:'to',label:'Email получателя',type:'text',placeholder:'email@company.com'});
+    if(!emailData.subject)fields.push({id:'subject',label:'Тема письма',type:'text',value:payload.subject||'Партнёрство с F2F.vin'});
+    if(!existingBody)fields.push({id:'body',label:'Текст письма',type:'textarea',rows:4,placeholder:'Текст (или оставьте пустым для стандартного)'});
+    if(fields.length>0){
+      var result=await f2fPrompt({title:'📧 Отправка email',fields:fields,submitText:'Отправить'});
+      if(result===null)return;
+      if(typeof result==='object'){
+        if(result.to){if(!result.to.includes('@'))return showToast('Нужен валидный email','error');emailData.to=result.to;}
+        if(result.subject)emailData.subject=result.subject||'Партнёрство с F2F.vin';
+        if(result.body!==undefined)existingBody=result.body;
+      }else if(fields.length===1){
+        if(fields[0].id==='to'){if(!result.includes('@'))return showToast('Нужен валидный email','error');emailData.to=result;}
+        else if(fields[0].id==='subject')emailData.subject=result||'Партнёрство с F2F.vin';
+        else existingBody=result;
+      }
     }
-    if(!emailData.subject){
-      emailData.subject=prompt('📝 Тема письма:',payload.subject||'Партнёрство с F2F.vin')||'Партнёрство с F2F.vin';
-    }
-    var body=payload.body||payload.template||payload.content||payload.text||'';
-    if(!body){
-      body=prompt('Текст письма (или Enter для стандартного):');
-      if(!body)body='Здравствуйте! Предлагаем обсудить партнёрство с F2F.vin — CS2 соревновательная платформа. С уважением, Айдер Джанбаев, CEO F2F.';
-    }
+    var body=existingBody||'Здравствуйте! Предлагаем обсудить партнёрство с F2F.vin — CS2 соревновательная платформа. С уважением, Айдер Джанбаев, CEO F2F.';
     // Confirm before sending
-    if(!confirm('📧 Отправить email?\n\nКому: '+(emailData.to||emailData.email)+'\nТема: '+emailData.subject+'\n\nТекст: '+body.slice(0,200)+'...'))return;
+    var ok=await f2fConfirm('📧 Отправить email?\n\nКому: '+(emailData.to||emailData.email)+'\nТема: '+emailData.subject+'\n\nТекст: '+body.slice(0,200)+'...');
+    if(!ok)return;
     // Call send-email Edge Function
     try{
       var resp=await fetch(SUPABASE_URL+'/functions/v1/send-email',{
@@ -1795,12 +1827,12 @@ window.executeApprovedAction=async function(taskId){
         t.result='✅ Email отправлен: '+(emailData.to||emailData.email);
         renderTasks();updateKPI();
         addFeed('outreach','📧 Email отправлен → '+(emailData.to||emailData.email));
-        alert('✅ Email отправлен!');
+        showToast('✅ Email отправлен!','success');
       }else{
-        alert('❌ Ошибка отправки: '+(data.error||JSON.stringify(data))+'\n\nПодсказка: Убедитесь что RESEND_API_KEY настроен в Supabase secrets.');
+        showToast('❌ Ошибка отправки: '+(data.error||JSON.stringify(data,'error'))+'\n\nПодсказка: Убедитесь что RESEND_API_KEY настроен в Supabase secrets.');
       }
     }catch(e){
-      alert('❌ Ошибка: '+e+'\n\nEdge Function send-email может быть не задеплоена.');
+      showToast('❌ Ошибка: '+e+'\n\nEdge Function send-email может быть не задеплоена.','error');
     }
     return;
   }
@@ -1808,8 +1840,10 @@ window.executeApprovedAction=async function(taskId){
   // ─── lead_suggested → Add to Pipeline ───
   if(type.includes('lead_suggested')||t._actionType==='lead_suggested'){
     var leadName=payload.name||payload.company||payload.lead||t.title.replace('lead_suggested','').trim();
-    if(!leadName)leadName=prompt('Имя/компания лида:');
-    if(!leadName)return;
+    if(!leadName){
+      leadName=await f2fPrompt({title:'👤 Новый лид',fields:[{id:'name',label:'Имя/компания лида',type:'text'}],submitText:'Добавить'});
+      if(!leadName)return;
+    }
     // Save to partner_pipeline
     if(SUPABASE_LIVE){
       var res=await sbInsert('partner_pipeline',{
@@ -1836,10 +1870,10 @@ window.executeApprovedAction=async function(taskId){
         t.result='✅ Добавлен в Pipeline: '+leadName;
         renderLeads();renderTasks();updateKPI();
         addFeed('leads','🆕 Лид добавлен из AI → '+leadName);
-        alert('✅ Лид добавлен в Pipeline!');
+        showToast('✅ Лид добавлен в Pipeline!','success');
       }
     }else{
-      alert('Supabase не подключён');
+      showToast('Supabase не подключён','error');
     }
     return;
   }
@@ -1852,7 +1886,7 @@ window.executeApprovedAction=async function(taskId){
       t.result='✅ Пост одобрен, будет опубликован по расписанию';
       renderTasks();
       addFeed('content','✅ Пост одобрен к публикации');
-      alert('✅ Пост одобрен! Будет опубликован по расписанию.');
+      showToast('✅ Пост одобрен! Будет опубликован по расписанию.','success');
     }
     return;
   }
@@ -2031,6 +2065,78 @@ function showToast(message,type){
     setTimeout(function(){el.remove();},350);
   },3500);
 }
+
+// ═══ F2F INLINE PROMPT (replaces native prompt/alert/confirm) ═══
+window.f2fPrompt=function(opts){
+  // opts: {title, fields:[{id,label,type,value,placeholder,options}], onSubmit, onCancel, submitText, cancelText}
+  return new Promise(function(resolve){
+    var overlay=document.createElement('div');
+    overlay.className='f2f-prompt-overlay';
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10001;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var box=document.createElement('div');
+    box.style.cssText='background:#0d1820;border:1px solid #1e293b;border-radius:12px;padding:20px 24px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);color:#e8edf2';
+    var html='<div style="font-size:15px;font-weight:700;margin-bottom:14px">'+(opts.title||'')+'</div>';
+    var fields=opts.fields||[];
+    if(opts.message)html+='<div style="font-size:13px;color:#94a3b8;margin-bottom:12px;line-height:1.5">'+opts.message+'</div>';
+    fields.forEach(function(f){
+      html+='<div style="margin-bottom:10px">';
+      if(f.label)html+='<label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px">'+f.label+'</label>';
+      if(f.type==='select'){
+        html+='<select id="fp-'+f.id+'" style="width:100%;padding:8px 10px;background:#050a0e;border:1px solid #1e293b;border-radius:6px;color:#e8edf2;font-size:13px">';
+        (f.options||[]).forEach(function(o){
+          var val=typeof o==='string'?o:o.value;var label=typeof o==='string'?o:o.label;
+          html+='<option value="'+val+'"'+(val===f.value?' selected':'')+'>'+label+'</option>';
+        });
+        html+='</select>';
+      }else if(f.type==='textarea'){
+        html+='<textarea id="fp-'+f.id+'" rows="'+(f.rows||3)+'" placeholder="'+(f.placeholder||'')+'" style="width:100%;padding:8px 10px;background:#050a0e;border:1px solid #1e293b;border-radius:6px;color:#e8edf2;font-size:13px;resize:vertical;box-sizing:border-box">'+(f.value||'')+'</textarea>';
+      }else{
+        html+='<input id="fp-'+f.id+'" type="'+(f.type||'text')+'" value="'+(f.value||'').toString().replace(/"/g,'&quot;')+'" placeholder="'+(f.placeholder||'')+'" style="width:100%;padding:8px 10px;background:#050a0e;border:1px solid #1e293b;border-radius:6px;color:#e8edf2;font-size:13px;box-sizing:border-box"'+(f.min?' min="'+f.min+'"':'')+(f.max?' max="'+f.max+'"':'')+'>';
+      }
+      html+='</div>';
+    });
+    html+='<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">';
+    if(opts.cancelText!==false)html+='<button id="fp-cancel" style="padding:6px 16px;background:transparent;border:1px solid #1e293b;border-radius:6px;color:#94a3b8;cursor:pointer;font-size:12px">'+(opts.cancelText||'Отмена')+'</button>';
+    html+='<button id="fp-submit" style="padding:6px 16px;background:#00e5ff22;border:1px solid #00e5ff44;border-radius:6px;color:#00e5ff;cursor:pointer;font-size:12px;font-weight:600">'+(opts.submitText||'OK')+'</button>';
+    html+='</div>';
+    box.innerHTML=html;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    // Focus first input
+    var firstInput=box.querySelector('input,textarea,select');
+    if(firstInput)setTimeout(function(){firstInput.focus();},50);
+    // Gather values
+    function getValues(){
+      var result={};
+      fields.forEach(function(f){
+        var el=document.getElementById('fp-'+f.id);
+        result[f.id]=el?el.value:'';
+      });
+      return fields.length===1?result[fields[0].id]:result;
+    }
+    // Submit
+    box.querySelector('#fp-submit').onclick=function(){
+      var val=getValues();
+      overlay.remove();
+      resolve(val);
+      if(opts.onSubmit)opts.onSubmit(val);
+    };
+    // Cancel
+    var cancelBtn=box.querySelector('#fp-cancel');
+    if(cancelBtn)cancelBtn.onclick=function(){overlay.remove();resolve(null);if(opts.onCancel)opts.onCancel();};
+    // Enter to submit on single-field
+    if(fields.length===1&&fields[0].type!=='textarea'){
+      var inp=box.querySelector('input,select');
+      if(inp)inp.onkeydown=function(e){if(e.key==='Enter')box.querySelector('#fp-submit').click();};
+    }
+    // Click overlay to cancel
+    overlay.onclick=function(e){if(e.target===overlay){overlay.remove();resolve(null);}};
+  });
+};
+// Shortcut: simple confirm
+window.f2fConfirm=function(msg){
+  return f2fPrompt({title:'Подтверждение',message:msg,fields:[],submitText:'Да',cancelText:'Нет'}).then(function(v){return v!==null;});
+};
 
 // ═══ PIPELINE FUNNEL VIEW ═══
 var leadViewMode='pipeline'; // 'grid' or 'pipeline' — pipeline by default
@@ -2330,22 +2436,24 @@ window.leadAction=function(id,action){
   if(action==='outreach'){
     createSyncedTask('Написать outreach письмо для '+l.name+' ('+l.company+')','outreach','high');
     addFeed('outreach','📧 Outreach задача: '+l.name);
-    alert('Задача создана: написать письмо для '+l.name);
+    showToast('Задача создана: написать письмо для '+l.name,'info');
   }
   if(action==='task'){
-    var task=prompt('Задача по лиду '+l.name+':');
-    if(task&&task.trim()){
-      createSyncedTask(task.trim()+' ['+l.name+']','leads','normal');
-      addFeed('leads','📋 Задача: '+task.trim());
-    }
+    f2fPrompt({title:'📋 Задача по лиду',fields:[{id:'task',label:'Задача по '+l.name,type:'text',placeholder:'Описание задачи...'}],submitText:'Создать'}).then(function(task){
+      if(task&&task.trim()){
+        createSyncedTask(task.trim()+' ['+l.name+']','leads','normal');
+        addFeed('leads','📋 Задача: '+task.trim());
+      }
+    });
   }
   if(action==='remove'){
-    if(confirm('Удалить лид '+l.name+'?')){
+    f2fConfirm('Удалить лид '+l.name+'?').then(function(ok){
+      if(!ok)return;
       if(l.sbId&&SUPABASE_LIVE)sbPatch('partner_pipeline','id=eq.'+l.sbId,{stage:'closed_lost'});
       D.leads=D.leads.filter(function(x){return x.id!==id;});
       renderLeads();updateKPI();modal.classList.remove('open');
       addFeed('leads','🗑 Лид удалён: '+l.name);
-    }
+    });
   }
 };
 
@@ -2476,17 +2584,17 @@ window.saveNewLead=async function(){
 // CRM: Edit lead field inline
 window.editLeadField=function(id,field,label){
   var l=D.leads.find(function(x){return x.id===id;});if(!l)return;
-  var val=prompt(label+':',l[field]||'');
-  if(val===null)return;
-  l[field]=val.trim();
-  // Map frontend fields → Supabase columns
-  var sbMap={name:'contact_name',company:'company_name',email:'contact_email',phone:'phone',
-    linkedin:'linkedin',website:'website',location:'notes',title:'segment'};
-  if(l.sbId&&SUPABASE_LIVE&&sbMap[field]){
-    var upd={};upd[sbMap[field]]=val.trim();
-    sbPatch('partner_pipeline','id=eq.'+l.sbId,upd);
-  }
-  openLeadModal(id);
+  f2fPrompt({title:'✏️ '+label,fields:[{id:'val',label:label,type:'text',value:l[field]||''}],submitText:'Сохранить'}).then(function(val){
+    if(val===null)return;
+    l[field]=val.trim();
+    var sbMap={name:'contact_name',company:'company_name',email:'contact_email',phone:'phone',
+      linkedin:'linkedin',website:'website',location:'notes',title:'segment'};
+    if(l.sbId&&SUPABASE_LIVE&&sbMap[field]){
+      var upd={};upd[sbMap[field]]=val.trim();
+      sbPatch('partner_pipeline','id=eq.'+l.sbId,upd);
+    }
+    openLeadModal(id);
+  });
 };
 
 renderLeads();
@@ -2589,7 +2697,7 @@ window.openPostModal=function(id){
     ${p.qaScore?'<div style="padding:8px;background:'+(p.qaScore>=8?'#10b98118':p.qaScore>=5?'#f59e0b18':'#ef444418')+';border-radius:6px;margin-bottom:8px;font-size:12px">QA: <b>'+p.qaScore+'/10</b> — '+(p.qaVerdict||'')+'</div>':''}
     ${p.ceoScore?'<div style="padding:8px;background:#f59e0b18;border-radius:6px;margin-bottom:8px;font-size:12px">CEO: <b>'+p.ceoScore+'/10</b> ${"⭐".repeat(Math.round(p.ceoScore/2))}</div>':''}
     <div class="action-bar">
-      <button class="act-btn" onclick="navigator.clipboard.writeText(document.querySelector('.modal div[style*=pre-wrap]').textContent).then(function(){alert('Скопировано!')})">📋 Копировать</button>
+      <button class="act-btn" onclick="navigator.clipboard.writeText(document.querySelector('.modal div[style*=pre-wrap]').textContent).then(function(){showToast('Скопировано!','info')})">📋 Копировать</button>
       <button class="act-btn success" onclick="postAction(${p.id},'approve')">✅ ${p.status==='draft'?'Утвердить':'Вернуть в черновик'}</button>
       <button class="act-btn warn" onclick="postAction(${p.id},'rework')" style="background:#ff980022;color:#ff9800;border-color:#ff980044">🔄 На переработку</button>
       <button class="act-btn" onclick="postAction(${p.id},'edit')">✏️ Редактировать</button>
@@ -2617,16 +2725,16 @@ window.postAction=function(id,action){
     addFeed('content',(p.status==='ready'?'✅ Утверждён':'📝 Возврат в черновик')+': '+p.platform+' пост');
   }
   if(action==='reschedule'){
-    var newDate=prompt('Новая дата (YYYY-MM-DD):',p.date);
+    f2fPrompt({title:'📅 Перенести публикацию',fields:[{id:'date',label:'Новая дата',type:'date',value:p.date}],submitText:'Перенести'}).then(function(newDate){
     if(newDate&&newDate.trim()){
       p.date=newDate.trim();
       if(SUPABASE_LIVE&&p.sbId){sbPatch('content_queue','id=eq.'+p.sbId,{scheduled_at:newDate.trim()+'T12:00:00Z'});}
       renderPosts();openPostModal(id);
       addFeed('content','📅 Перенос: '+p.platform+' → '+newDate.trim());
-    }
+    }});
   }
   if(action==='rework'){
-    var feedback=prompt('Укажи что переделать (стиль, тон, тема, длина и т.д.):');
+    f2fPrompt({title:'🔄 На переработку',fields:[{id:'fb',label:'Что переделать?',type:'textarea',placeholder:'Стиль, тон, тема, длина и т.д.',rows:3}],submitText:'Отправить'}).then(function(feedback){
     if(feedback&&feedback.trim()){
       var origText=p.text;
       p.status='draft';p.sbStatus='rework';
@@ -2656,16 +2764,16 @@ window.postAction=function(id,action){
       }
       renderPosts();modal.classList.remove('open');
       addFeed('content','🔄 Пост отправлен на переработку: '+feedback.trim().slice(0,50));
-    }
+    }});
   }
   if(action==='edit'){
-    var newText=prompt('Редактировать текст:',p.text);
+    f2fPrompt({title:'✏️ Редактировать пост',fields:[{id:'text',label:'Текст поста',type:'textarea',value:p.text,rows:5}],submitText:'Сохранить'}).then(function(newText){
     if(newText&&newText.trim()){
       p.text=newText.trim();
       if(SUPABASE_LIVE&&p.sbId){sbPatch('content_queue','id=eq.'+p.sbId,{content_text:newText.trim()});}
       renderPosts();openPostModal(id);
       addFeed('content','✏️ Пост отредактирован: '+p.platform);
-    }
+    }});
   }
   if(action==='duplicate'){
     var dup=JSON.parse(JSON.stringify(p));
@@ -2682,12 +2790,13 @@ window.postAction=function(id,action){
     addFeed('content','📑 Дубликат создан: '+p.platform+' пост');
   }
   if(action==='delete'){
-    if(confirm('Удалить пост?')){
+    f2fConfirm('Удалить пост?').then(function(ok){
+      if(!ok)return;
       if(SUPABASE_LIVE&&p.sbId){sbPatch('content_queue','id=eq.'+p.sbId,{status:'rejected'});}
       D.posts=D.posts.filter(function(x){return x.id!==id&&x.sbId!==id;});
       renderPosts();updateKPI();modal.classList.remove('open');
       addFeed('content','🗑 Пост удалён');
-    }
+    });
   }
 };
 // Quick approve/reject from card (no modal needed)
@@ -2730,19 +2839,37 @@ window.qaReviewPost=async function(postId){
     var data=await res.json();
     if(data.success&&typeof data.score==='number'){
       var verdict=data.verdict==='approved'?'✅ Одобрен':data.verdict==='needs_work'?'🔄 Нужна доработка':'❌ Отклонён';
-      var msg='QA: '+data.score+'/10 — '+verdict;
+      var p=D.posts.find(function(x){return x.sbId===postId;});
+      if(p){p.qaScore=data.score;p.qaVerdict=verdict;renderPosts();}
+      // Show QA result inline in modal instead of blocking alert
+      var scoreColor=data.score>=8?'#10b981':data.score>=5?'#f59e0b':'#ef4444';
+      var qaHtml='<div style="padding:16px;background:var(--bg);border:1px solid '+scoreColor+'44;border-radius:8px;margin-bottom:12px">'+
+        '<h3 style="margin:0 0 8px 0;color:'+scoreColor+'">QA: '+data.score+'/10 — '+verdict+'</h3>';
       if(data.issues&&data.issues.length){
-        msg+='\n\nПроблемы:\n'+data.issues.map(function(i){return '• '+(i.text||i);}).join('\n');
+        qaHtml+='<div style="margin:8px 0;font-size:12px"><b style="color:var(--dim)">Проблемы:</b><ul style="margin:4px 0;padding-left:20px">';
+        data.issues.forEach(function(i){qaHtml+='<li>'+(i.text||i)+'</li>';});
+        qaHtml+='</ul></div>';
       }
       if(data.suggestions&&data.suggestions.length){
-        msg+='\n\nРекомендации:\n'+data.suggestions.map(function(s){return '• '+(s.text||s);}).join('\n');
+        qaHtml+='<div style="margin:8px 0;font-size:12px"><b style="color:var(--dim)">Рекомендации:</b><ul style="margin:4px 0;padding-left:20px">';
+        data.suggestions.forEach(function(s){qaHtml+='<li>'+(s.text||s)+'</li>';});
+        qaHtml+='</ul></div>';
       }
       if(data.improved_text){
-        msg+='\n\n📝 Улучшенная версия:\n'+data.improved_text;
+        qaHtml+='<div style="margin:8px 0;font-size:12px"><b style="color:#10b981">📝 Улучшенная версия:</b>'+
+          '<div style="margin-top:4px;padding:8px;background:var(--panel);border-radius:6px;white-space:pre-wrap;line-height:1.5">'+data.improved_text+'</div>'+
+          '<button onclick="applyQaImprovement(\''+postId+'\',this.parentElement.querySelector(\'div\').textContent)" style="margin-top:6px;padding:4px 12px;background:#10b98122;color:#10b981;border:1px solid #10b98133;border-radius:4px;cursor:pointer;font-size:11px">✅ Применить улучшенную версию</button></div>';
       }
-      alert(msg);
-      var p=D.posts.find(function(x){return x.sbId===postId;});
-      if(p){p.qaScore=data.score;p.qaVerdict=verdict;renderPosts();openPostModal(p.sbId);}
+      qaHtml+='</div>';
+      // Inject QA result into current modal
+      var mc=document.getElementById('modalContent');
+      if(mc){
+        var existing=mc.querySelector('.qa-inline-result');
+        if(existing)existing.remove();
+        var div=document.createElement('div');div.className='qa-inline-result';div.innerHTML=qaHtml;
+        mc.insertBefore(div,mc.firstChild);
+      }
+      showToast('QA: '+data.score+'/10 — '+verdict,'info');
       addFeed('quality_controller','QA: пост оценён '+data.score+'/10 — '+verdict);
     }else{
       showToast('QA ошибка: '+(data.error||'Edge Function вернула некорректный ответ. Проверь деплой quality-review.'),'error');
@@ -2750,15 +2877,32 @@ window.qaReviewPost=async function(postId){
   }catch(e){showToast('QA ошибка: '+e.message+'. Проверь деплой quality-review Edge Function.','error');}
 };
 
+// Apply QA-improved text to a post
+window.applyQaImprovement=function(postId,newText){
+  if(!newText||!newText.trim())return;
+  var p=D.posts.find(function(x){return x.sbId===postId;});
+  if(!p){showToast('Пост не найден','error');return;}
+  p.text=newText.trim();
+  p.sbStatus='pending_approval';
+  if(SUPABASE_LIVE&&p.sbId){
+    sbPatch('content_queue','id=eq.'+p.sbId,{content_text:newText.trim(),status:'pending_approval'});
+  }
+  renderPosts();openPostModal(p.sbId);
+  showToast('✅ Улучшенная версия применена!','success');
+  addFeed('quality_controller','📝 Применена QA-улучшенная версия поста');
+};
+
 // CEO Score a post
 window.ceoScorePost=async function(postId){
-  var input=prompt('Оцени пост (1-10) и добавь комментарий:\nФормат: 8 Хороший стиль, дерзкий CTA\n\nОценка 8+ = автоизвлечение "что хорошо"\nОценка 1-4 = автоизвлечение "чего избегать"');
-  if(!input||!input.trim())return;
-  var match=input.match(/^(\d+)\s*(.*)/);
-  if(!match){showToast('Формат: число пробел комментарий','error');return;}
-  var score=parseInt(match[1]);
-  var feedback=match[2]||'';
-  if(score<1||score>10){showToast('Оценка от 1 до 10','error');return;}
+  var vals=await f2fPrompt({title:'⭐ Оценить пост',message:'Оценка 8+ → автоизвлечение "что хорошо"\nОценка 1-4 → автоизвлечение "чего избегать"',
+    fields:[
+      {id:'score',label:'Оценка (1-10)',type:'number',value:'7',min:'1',max:'10'},
+      {id:'feedback',label:'Комментарий (опционально)',type:'text',placeholder:'Хороший стиль, дерзкий CTA...'}
+    ],submitText:'Сохранить оценку'});
+  if(!vals)return;
+  var score=parseInt(vals.score);
+  var feedback=vals.feedback||'';
+  if(!score||score<1||score>10){showToast('Оценка от 1 до 10','error');return;}
   showToast('⭐ Сохраняю оценку...','info');
   try{
     var res=await fetch(SUPABASE_URL+'/functions/v1/quality-review',{
@@ -2899,7 +3043,7 @@ window.reportCreateTask=async function(reportId,itemIdx){
   var agent=r.agentId||'coordinator';
   await createTaskSynced(item,agent,'normal');
   addFeed(agent,'📋 Задача из отчёта: '+item.slice(0,50));
-  alert('Задача создана: '+item);
+  showToast('Задача создана: '+item,'info');
 };
 window.reportAction=function(id,action){
   var r=D.reports.find(function(x){return x.id===id;});if(!r)return;
@@ -2911,20 +3055,20 @@ window.reportAction=function(id,action){
     if(r.sbId&&SUPABASE_LIVE){sbPatch('reports','id=eq.'+r.sbId,{approved_by_ceo:r.reviewed});}
   }
   if(action==='allTasks'){
-    if(!r.actionItems||!r.actionItems.length){alert('Нет action items');return;}
+    if(!r.actionItems||!r.actionItems.length){showToast('Нет action items','warning');return;}
     var agent=r.agentId||'coordinator';
     var count=r.actionItems.length;
     r.actionItems.forEach(function(item){createTaskSynced(item,agent,'normal');});
     addFeed(agent,'📋 Создано '+count+' задач из отчёта');
-    alert('Создано '+count+' задач из action items!');
+    showToast('Создано '+count+' задач из action items!','success');
   }
   if(action==='copy'){
-    navigator.clipboard.writeText(r.title+'\n\n'+r.content+'\n\nAction Items:\n'+(r.actionItems||[]).join('\n')).then(function(){alert('Отчёт скопирован!');});
+    navigator.clipboard.writeText(r.title+'\n\n'+r.content+'\n\nAction Items:\n'+(r.actionItems||[]).join('\n')).then(function(){showToast('Отчёт скопирован!','success');});
   }
   if(action==='refresh'){
     createTaskSynced('Обновить отчёт: '+r.title,r.agentId||'coordinator','high');
     addFeed(r.agentId||'coordinator','🔄 Запрос обновления: '+r.title.slice(0,40));
-    alert('Задача на обновление создана!');
+    showToast('Задача на обновление создана!','info');
   }
 };
 renderReports();
@@ -2948,7 +3092,7 @@ async function reloadAfterAgentRun(){
 }
 
 window.triggerBriefing=async function(btnEl){
-  if(!SUPABASE_LIVE){alert('Supabase не подключён');return;}
+  if(!SUPABASE_LIVE){showToast('Supabase не подключён','error');return;}
   var btn=btnEl||this;
   var origText=btn.textContent;
   btn.disabled=true;btn.textContent='⏳ Генерирую...';btn.style.opacity='0.6';btn.style.animation='pulse 1.5s infinite';
@@ -2963,7 +3107,7 @@ window.triggerBriefing=async function(btnEl){
     if(!r.ok){
       var errText=await r.text();
       addFeed('coordinator','❌ Ошибка брифинга: HTTP '+r.status);
-      alert('Ошибка HTTP '+r.status+': '+errText.slice(0,200));
+      showToast('Ошибка HTTP '+r.status+': '+errText.slice(0,200,'error'));
       btn.disabled=false;btn.textContent=origText;return;
     }
     var data=await r.json();
@@ -2974,21 +3118,21 @@ window.triggerBriefing=async function(btnEl){
       showToast('Брифинг готов! Смотри вкладку Отчёты','success');
     }else if(data.error){
       addFeed('coordinator','❌ '+data.error.slice(0,80));
-      alert('Ошибка: '+data.error);
+      showToast('Ошибка: '+data.error,'error');
     }else{
       addFeed('coordinator','⚠️ Неожиданный ответ от брифинга');
-      alert('Неожиданный ответ: '+JSON.stringify(data).slice(0,300));
+      showToast('Неожиданный ответ: '+JSON.stringify(data,'info').slice(0,300));
     }
   }catch(e){
     addFeed('coordinator','❌ Сеть: '+String(e).slice(0,60));
-    alert('Ошибка сети: '+e);
+    showToast('Ошибка сети: '+e,'error');
   }
   btn.disabled=false;btn.textContent=origText;btn.style.opacity='';btn.style.animation='';
 };
 
 // Run all agents or a single agent by slug
 window.triggerAgentCycles=async function(btnEl, singleAgentSlug){
-  if(!SUPABASE_LIVE){alert('Supabase не подключён');return;}
+  if(!SUPABASE_LIVE){showToast('Supabase не подключён','error');return;}
   var btn=btnEl||this;
   var origText=btn.textContent;
   var isSingle=!!singleAgentSlug;
@@ -3006,7 +3150,7 @@ window.triggerAgentCycles=async function(btnEl, singleAgentSlug){
     if(!r.ok){
       var errText=await r.text();
       addFeed('coordinator','❌ Ошибка циклов: HTTP '+r.status);
-      alert('Ошибка HTTP '+r.status+': '+errText.slice(0,200));
+      showToast('Ошибка HTTP '+r.status+': '+errText.slice(0,200,'error'));
       btn.disabled=false;btn.textContent=origText;return;
     }
     var data=await r.json();
@@ -3028,11 +3172,11 @@ window.triggerAgentCycles=async function(btnEl, singleAgentSlug){
       showToast('Циклы завершены: '+ok.length+' ✅, '+fail.length+' ❌',fail.length>0?'warning':'success');
     }else{
       addFeed('coordinator','❌ '+(data.error||'Неизвестная ошибка').slice(0,80));
-      alert('Ошибка: '+(data.error||JSON.stringify(data)));
+      showToast('Ошибка: '+(data.error||JSON.stringify(data,'error')));
     }
   }catch(e){
     addFeed('coordinator','❌ Сеть: '+String(e).slice(0,60));
-    alert('Ошибка сети: '+e);
+    showToast('Ошибка сети: '+e,'error');
   }
   btn.disabled=false;btn.textContent=origText;btn.style.opacity='';btn.style.animation='';
 };
@@ -3381,9 +3525,9 @@ window.toggleSubtask=function(taskId,idx){
   // Check if all subtasks done → auto-suggest move to done
   var allDone=t.subtasks.every(function(s){return s.done;});
   if(allDone&&mapToKanban(t.kanbanStatus||t.status)==='in_progress'){
-    if(confirm('Все подзадачи выполнены! Перевести задачу в "Выполнено"?')){
-      moveTask(taskId,'done');
-    }
+    f2fConfirm('Все подзадачи выполнены! Перевести задачу в "Выполнено"?').then(function(ok){
+      if(ok)moveTask(taskId,'done');
+    });
   }
   renderTasks();
 };
@@ -3391,29 +3535,34 @@ window.toggleSubtask=function(taskId,idx){
 // ═══ EDIT TASK FIELDS ═══
 window.editTaskField=function(id,field){
   var t=D.tasks.find(function(x){return x.id===id;});if(!t)return;
+  var cfg={};
   if(field==='priority'){
-    var val=prompt('Приоритет (critical / high / normal / low):',t.priority||'normal');
-    if(val&&['critical','high','normal','low'].includes(val.trim().toLowerCase())){
-      t.priority=val.trim().toLowerCase();
-    }
+    cfg={title:'🎯 Приоритет',fields:[{id:'val',label:'Приоритет',type:'select',value:t.priority||'normal',options:[
+      {value:'critical',label:'🔴 Critical'},{value:'high',label:'🟠 High'},{value:'normal',label:'🟢 Normal'},{value:'low',label:'⚪ Low'}
+    ]}],submitText:'Сохранить'};
   }else if(field==='deadline'){
-    var val=prompt('Дедлайн (YYYY-MM-DD):',t.deadline||new Date().toISOString().slice(0,10));
-    if(val&&val.trim())t.deadline=val.trim();
+    cfg={title:'📅 Дедлайн',fields:[{id:'val',label:'Дедлайн',type:'date',value:t.deadline||new Date().toISOString().slice(0,10)}],submitText:'Сохранить'};
   }else if(field==='estimate'){
-    var val=prompt('Оценка времени (напр: 2h, 1d, 30m):',t.estimate||'');
-    if(val&&val.trim())t.estimate=val.trim();
+    cfg={title:'⏱ Оценка времени',fields:[{id:'val',label:'Оценка (2h, 1d, 30m)',type:'text',value:t.estimate||'',placeholder:'2h, 1d, 30m'}],submitText:'Сохранить'};
   }else if(field==='description'){
-    var val=prompt('Описание задачи:',t.description||'');
-    if(val!==null)t.description=val.trim();
+    cfg={title:'📝 Описание',fields:[{id:'val',label:'Описание задачи',type:'textarea',value:t.description||'',rows:4}],submitText:'Сохранить'};
   }else if(field==='tags'){
-    var val=prompt('Теги через запятую:',t.tags?t.tags.join(', '):'');
-    if(val!==null)t.tags=val.split(',').map(function(s){return s.trim();}).filter(Boolean);
+    cfg={title:'🏷 Теги',fields:[{id:'val',label:'Теги через запятую',type:'text',value:t.tags?t.tags.join(', '):'',placeholder:'smm, urgent, design'}],submitText:'Сохранить'};
   }else if(field==='assignee'){
-    var opts=Object.keys(AGENTS).map(function(k){return k+' ('+AGENTS[k].name+')';}).join(', ');
-    var val=prompt('Агент (ID):\n'+opts,t.assignedTo||'');
-    if(val&&AGENTS[val.trim()])t.assignedTo=val.trim();
-  }
-  renderTasks();openTaskDetail(id);
+    var agentOpts=Object.keys(AGENTS).map(function(k){return{value:k,label:AGENTS[k].emoji+' '+AGENTS[k].name};});
+    agentOpts.unshift({value:'',label:'— Не назначен —'});
+    cfg={title:'👤 Исполнитель',fields:[{id:'val',label:'Агент',type:'select',value:t.assignedTo||'',options:agentOpts}],submitText:'Сохранить'};
+  }else return;
+  f2fPrompt(cfg).then(function(val){
+    if(val===null)return;
+    if(field==='priority'&&['critical','high','normal','low'].includes(val))t.priority=val;
+    else if(field==='deadline'&&val.trim())t.deadline=val.trim();
+    else if(field==='estimate')t.estimate=val.trim();
+    else if(field==='description')t.description=val.trim();
+    else if(field==='tags')t.tags=val.split(',').map(function(s){return s.trim();}).filter(Boolean);
+    else if(field==='assignee'){if(!val||AGENTS[val])t.assignedTo=val||'';}
+    renderTasks();openTaskDetail(id);
+  });
 };
 
 // ═══ CREATE TASK MODAL ═══
@@ -3814,7 +3963,7 @@ window.saveReplyAsPost=async function(agentId,replyElId,platform){
   var el=document.getElementById(replyElId);
   if(!el)return;
   var text=el.textContent||el.innerText;
-  if(!text.trim()){alert('Пустой текст');return;}
+  if(!text.trim()){showToast('Пустой текст','error');return;}
   try{
     var resp=await fetch(SUPABASE_URL+'/rest/v1/content_queue',{
       method:'POST',
@@ -3828,9 +3977,9 @@ window.saveReplyAsPost=async function(agentId,replyElId,platform){
       window._sbContentMerged=false;
       if(typeof initSupabase==='function')setTimeout(initSupabase,500);
     }else{
-      alert('Ошибка сохранения: '+resp.status);
+      showToast('Ошибка сохранения: '+resp.status,'error');
     }
-  }catch(e){alert('Ошибка: '+e.message);}
+  }catch(e){showToast('Ошибка: '+e.message,'error');}
 };
 
 // ═══ SMM Auto-Generate via Edge Function ═══
@@ -3868,8 +4017,9 @@ window.agentQuickAction=function(id,action){
     ideas:'Есть идеи или предложения?',dept:'Как дела в отделе?',
     task:'Какую задачу поставить?' };
   if(action==='task'){
-    const input=prompt(AGENTS[id].emoji+' '+AGENTS[id].name+': Какую задачу поставить?');
-    if(input&&input.trim())agentAIChat(id,'Вот задача для тебя: '+input.trim());
+    f2fPrompt({title:AGENTS[id].emoji+' Задача для '+AGENTS[id].name,fields:[{id:'task',label:'Какую задачу поставить?',type:'text',placeholder:'Описание задачи...'}],submitText:'Поставить'}).then(function(input){
+      if(input&&input.trim())agentAIChat(id,'Вот задача для тебя: '+input.trim());
+    });
     return;
   }
   agentAIChat(id,msgs[action]||'Привет!');
@@ -3880,38 +4030,42 @@ window.agentSendMsg=function(id){agentAIChat(id);};
 window.chatCmdPromptEdit=function(id){
   var a=AGENTS[id];
   var current=AGENT_PROMPTS[id]||'';
-  var newPrompt=prompt(a.emoji+' '+a.name+': Введите новый промпт (или отредактируйте текущий)',current);
-  if(newPrompt&&newPrompt.trim()&&newPrompt!==current){
-    agentAIChat(id,'/prompt '+newPrompt.trim());
-  }
+  f2fPrompt({title:a.emoji+' Промпт '+a.name,fields:[{id:'p',label:'Системный промпт',type:'textarea',value:current,rows:5}],submitText:'Сохранить'}).then(function(newPrompt){
+    if(newPrompt&&newPrompt.trim()&&newPrompt!==current){
+      agentAIChat(id,'/prompt '+newPrompt.trim());
+    }
+  });
 };
 
 // Quick image rating
 window.chatCmdRate=function(id){
-  var rating=prompt('Оцените последнюю картинку (1-5) и добавьте комментарий:\nПример: 5 Отличный стиль, зелёный неон идеален');
-  if(rating&&rating.trim()){
-    agentAIChat(id,'/rate '+rating.trim());
-  }
+  f2fPrompt({title:'⭐ Оценка картинки',fields:[
+    {id:'score',label:'Оценка (1-5)',type:'number',value:'5',min:1,max:5},
+    {id:'comment',label:'Комментарий',type:'text',placeholder:'Отличный стиль, зелёный неон идеален'}
+  ],submitText:'Оценить'}).then(function(r){
+    if(r&&r.score)agentAIChat(id,'/rate '+r.score+' '+r.comment);
+  });
 };
 
 // Learn — teach THIS agent
 window.chatCmdLearn=function(id){
   var a=AGENTS[id];
-  var cats='Категории: product, audience, style, competitor, process, general\n';
-  var input=prompt(a.emoji+' Научить '+a.name+':\n'+cats+'Формат: категория: текст знания\nНапример: competitor: CyberShoke убрал платные серверы');
-  if(input&&input.trim()){
-    agentAIChat(id,'/learn '+input.trim());
-  }
+  f2fPrompt({title:a.emoji+' Научить '+a.name,fields:[
+    {id:'cat',label:'Категория',type:'select',value:'general',options:['product','audience','style','competitor','process','general']},
+    {id:'text',label:'Знание',type:'textarea',rows:3,placeholder:'CyberShoke убрал платные серверы'}
+  ],submitText:'Запомнить'}).then(function(r){
+    if(r&&r.text&&r.text.trim())agentAIChat(id,'/learn '+r.cat+': '+r.text.trim());
+  });
 };
 
 // Learn Global — teach ALL agents
 window.chatCmdLearnGlobal=function(){
-  var cats='Категории: product, audience, style, competitor, process, general\n';
-  var input=prompt('🌍 Научить ВСЕХ агентов:\n'+cats+'Формат: категория: текст знания\nНапример: product: Dominion запуск перенесён на Q3');
-  if(input&&input.trim()){
-    // Send via coordinator but with /learn_global command
-    agentAIChat('coordinator','/learn_global '+input.trim());
-  }
+  f2fPrompt({title:'🌍 Научить ВСЕХ агентов',fields:[
+    {id:'cat',label:'Категория',type:'select',value:'general',options:['product','audience','style','competitor','process','general']},
+    {id:'text',label:'Знание для всех',type:'textarea',rows:3,placeholder:'Dominion запуск перенесён на Q3'}
+  ],submitText:'Запомнить'}).then(function(r){
+    if(r&&r.text&&r.text.trim())agentAIChat('coordinator','/learn_global '+r.cat+': '+r.text.trim());
+  });
 };
 
 // Upload reference image for Art Director
@@ -3922,11 +4076,17 @@ window.uploadReferenceImage=function(){
   input.onchange=async function(){
     var file=input.files[0];
     if(!file)return;
-    var category=prompt('Категория картинки:\nnews, tournament, match, meme, educational, promo, entertainment','news');
-    if(!category)return;
-    var desc=prompt('Опиши стиль этой картинки (что именно тебе нравится):','');
-    var rating=prompt('Оценка (1-5), если хочешь сразу оценить:','5');
-    var tags=prompt('Теги через запятую (опционально):\nНапример: neon, dark, arena','');
+    var result=await f2fPrompt({title:'🖼 Референс-картинка',fields:[
+      {id:'category',label:'Категория',type:'select',value:'news',options:['news','tournament','match','meme','educational','promo','entertainment']},
+      {id:'desc',label:'Опиши стиль (что нравится)',type:'textarea',rows:2,placeholder:'Тёмный стиль, зелёный неон, минимализм'},
+      {id:'rating',label:'Оценка (1-5)',type:'number',value:'5',min:1,max:5},
+      {id:'tags',label:'Теги через запятую',type:'text',placeholder:'neon, dark, arena'}
+    ],submitText:'Загрузить'});
+    if(!result)return;
+    var category=result.category||'news';
+    var desc=result.desc||'';
+    var rating=result.rating||'5';
+    var tags=result.tags||'';
 
     // Show uploading state in chat
     var log=document.getElementById('agentChatLog');
