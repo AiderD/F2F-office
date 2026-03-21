@@ -2181,6 +2181,298 @@ function renderIntegrations(){
 }
 renderIntegrations();
 
+// ═══ CALENDAR / EVENTS ═══
+var _calDate=new Date(); // currently viewed month
+var _calEvents=[]; // local cache [{id,title,date,time,endTime,type,description,agentId,color,sbId}]
+var CAL_TYPES={
+  meeting:{label:'Встреча',color:'#00e5ff',icon:'🤝'},
+  deadline:{label:'Дедлайн',color:'#ff4444',icon:'⏰'},
+  release:{label:'Релиз',color:'#00ff88',icon:'🚀'},
+  tournament:{label:'Турнир',color:'#a855f7',icon:'🏆'},
+  content:{label:'Контент',color:'#ffb800',icon:'✍️'},
+  call:{label:'Звонок',color:'#06b6d4',icon:'📞'},
+  reminder:{label:'Напоминание',color:'#94a3b8',icon:'🔔'},
+  other:{label:'Другое',color:'#64748b',icon:'📌'}
+};
+
+function _calLoadFromSupabase(){
+  _calEvents=[];
+  // Load from _sbEvents (already fetched by supabase.js)
+  if(window._sbEvents){
+    window._sbEvents.forEach(function(ev,i){
+      var meta={};
+      if(ev.metadata_json){
+        try{meta=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;}catch(e){}
+      }
+      _calEvents.push({
+        id:9000+i, sbId:ev.id,
+        title:meta.title||meta.text||ev.event_type||'Событие',
+        date:(ev.event_date||ev.created_at||'').slice(0,10),
+        time:meta.time||(ev.event_date||'').slice(11,16)||'',
+        endTime:meta.end_time||'',
+        type:meta.cal_type||ev.event_type||'other',
+        description:meta.description||meta.text||'',
+        agentId:meta.agent_dash_id||'coordinator',
+        color:(CAL_TYPES[meta.cal_type||ev.event_type]||CAL_TYPES.other).color
+      });
+    });
+  }
+  // Also load task deadlines as calendar events
+  D.tasks.forEach(function(t){
+    if(!t.deadline)return;
+    _calEvents.push({
+      id:'task-'+t.id, isTask:true,
+      title:'📋 '+_truncate(t.title,40),
+      date:t.deadline,time:'',type:'deadline',
+      description:t.description||'',
+      agentId:t.assignedTo||'coordinator',
+      color:CAL_TYPES.deadline.color
+    });
+  });
+  // Sort by date
+  _calEvents.sort(function(a,b){return (a.date+a.time).localeCompare(b.date+b.time);});
+}
+
+window.calNavigate=function(dir){
+  _calDate.setMonth(_calDate.getMonth()+dir);
+  renderCalendar();
+};
+window.calGoToday=function(){
+  _calDate=new Date();
+  renderCalendar();
+};
+
+window.calCreateEvent=function(){
+  var today=new Date().toISOString().slice(0,10);
+  var typeOpts=Object.keys(CAL_TYPES).map(function(k){return{value:k,label:CAL_TYPES[k].icon+' '+CAL_TYPES[k].label};});
+  f2fPrompt({title:'📅 Новое событие',fields:[
+    {id:'title',label:'Название',type:'text',placeholder:'Встреча с партнёром...'},
+    {id:'date',label:'Дата',type:'date',value:today},
+    {id:'time',label:'Время (опционально)',type:'text',placeholder:'14:00'},
+    {id:'type',label:'Тип',type:'select',value:'meeting',options:typeOpts},
+    {id:'desc',label:'Описание',type:'textarea',rows:2,placeholder:'Подробности...'}
+  ],submitText:'Создать'}).then(async function(r){
+    if(!r||!r.title||!r.date)return;
+    var ev={
+      id:Date.now(),
+      title:r.title.trim(),
+      date:r.date,
+      time:(r.time||'').trim(),
+      type:r.type||'other',
+      description:(r.desc||'').trim(),
+      agentId:'coordinator',
+      color:(CAL_TYPES[r.type]||CAL_TYPES.other).color
+    };
+    _calEvents.push(ev);
+    // Save to Supabase
+    if(SUPABASE_LIVE){
+      try{
+        var res=await sbInsert('events',{
+          event_type:ev.type,
+          event_date:ev.date+(ev.time?'T'+ev.time+':00':'T00:00:00'),
+          metadata_json:JSON.stringify({title:ev.title,cal_type:ev.type,time:ev.time,description:ev.description,agent_dash_id:'coordinator'})
+        });
+        if(res&&res[0])ev.sbId=res[0].id;
+      }catch(e){console.warn('Cal save error:',e);}
+    }
+    renderCalendar();
+    showToast('📅 Событие создано: '+ev.title,'success');
+  });
+};
+
+window.calOpenEvent=function(evId){
+  var ev=_calEvents.find(function(e){return e.id==evId;});
+  if(!ev)return;
+  var typeInfo=CAL_TYPES[ev.type]||CAL_TYPES.other;
+  var html='<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">'+
+    '<span style="font-size:20px">'+typeInfo.icon+'</span>'+
+    '<span style="font-size:9px;padding:2px 8px;background:'+typeInfo.color+'18;color:'+typeInfo.color+';border:1px solid '+typeInfo.color+'33;border-radius:4px;font-weight:700">'+typeInfo.label.toUpperCase()+'</span>'+
+  '</div>'+
+  '<h3 style="margin:0 0 8px;font-size:16px">'+_escHtml(ev.title)+'</h3>'+
+  '<div style="font-size:12px;color:var(--dim);margin-bottom:12px">📅 '+ev.date+(ev.time?' в '+ev.time:'')+'</div>';
+  if(ev.description)html+='<div style="padding:10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);font-size:13px;line-height:1.6;margin-bottom:12px;white-space:pre-wrap">'+_escHtml(ev.description)+'</div>';
+  if(ev.isTask)html+='<div style="font-size:11px;color:var(--dim);margin-bottom:12px">Это дедлайн задачи из раздела Задачи</div>';
+  html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">';
+  if(!ev.isTask){
+    html+='<button class="act-btn" onclick="calEditEvent('+ev.id+')">✏️ Редактировать</button>';
+    html+='<button class="act-btn danger" onclick="calDeleteEvent('+ev.id+')">🗑 Удалить</button>';
+  }
+  html+='<button class="act-btn" onclick="closeModal()">Закрыть</button>';
+  html+='</div>';
+  openModal(html);
+};
+
+window.calEditEvent=function(evId){
+  var ev=_calEvents.find(function(e){return e.id==evId;});
+  if(!ev)return;
+  closeModal();
+  var typeOpts=Object.keys(CAL_TYPES).map(function(k){return{value:k,label:CAL_TYPES[k].icon+' '+CAL_TYPES[k].label};});
+  f2fPrompt({title:'✏️ Редактировать событие',fields:[
+    {id:'title',label:'Название',type:'text',value:ev.title},
+    {id:'date',label:'Дата',type:'date',value:ev.date},
+    {id:'time',label:'Время',type:'text',value:ev.time||''},
+    {id:'type',label:'Тип',type:'select',value:ev.type||'other',options:typeOpts},
+    {id:'desc',label:'Описание',type:'textarea',rows:2,value:ev.description||''}
+  ],submitText:'Сохранить'}).then(async function(r){
+    if(!r)return;
+    if(r.title)ev.title=r.title.trim();
+    if(r.date)ev.date=r.date;
+    ev.time=(r.time||'').trim();
+    if(r.type){ev.type=r.type;ev.color=(CAL_TYPES[r.type]||CAL_TYPES.other).color;}
+    ev.description=(r.desc||'').trim();
+    if(ev.sbId&&SUPABASE_LIVE){
+      try{
+        await sbPatch('events','id=eq.'+ev.sbId,{
+          event_type:ev.type,
+          event_date:ev.date+(ev.time?'T'+ev.time+':00':'T00:00:00'),
+          metadata_json:JSON.stringify({title:ev.title,cal_type:ev.type,time:ev.time,description:ev.description})
+        });
+      }catch(e){}
+    }
+    renderCalendar();
+    showToast('✏️ Событие обновлено','success');
+  });
+};
+
+window.calDeleteEvent=function(evId){
+  var ev=_calEvents.find(function(e){return e.id==evId;});
+  if(!ev)return;
+  f2fConfirm('Удалить событие «'+ev.title+'»?').then(async function(ok){
+    if(!ok)return;
+    _calEvents=_calEvents.filter(function(e){return e.id!=evId;});
+    if(ev.sbId&&SUPABASE_LIVE){
+      try{await sbPatch('events','id=eq.'+ev.sbId,{active:false});}catch(e){}
+    }
+    closeModal();renderCalendar();
+    showToast('🗑 Событие удалено','info');
+  });
+};
+
+function renderCalendar(){
+  _calLoadFromSupabase();
+  var grid=document.getElementById('calGrid');
+  var upcoming=document.getElementById('calUpcoming');
+  var label=document.getElementById('calMonthLabel');
+  var countEl=document.getElementById('tab-calendar-count');
+  if(!grid)return;
+
+  var year=_calDate.getFullYear();
+  var month=_calDate.getMonth();
+  var monthNames=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  label.textContent=monthNames[month]+' '+year;
+
+  var firstDay=new Date(year,month,1).getDay(); // 0=Sun
+  if(firstDay===0)firstDay=7; // Mon=1
+  var daysInMonth=new Date(year,month+1,0).getDate();
+  var todayStr=new Date().toISOString().slice(0,10);
+
+  // Events for this month keyed by date
+  var evByDate={};
+  _calEvents.forEach(function(ev){
+    if(!ev.date)return;
+    var evMonth=ev.date.slice(0,7);
+    var targetMonth=year+'-'+(month<9?'0':'')+(month+1);
+    if(evMonth===targetMonth){
+      if(!evByDate[ev.date])evByDate[ev.date]=[];
+      evByDate[ev.date].push(ev);
+    }
+  });
+
+  // Build grid
+  var html='<div class="cal-grid">';
+  html+='<div class="cal-header">Пн</div><div class="cal-header">Вт</div><div class="cal-header">Ср</div><div class="cal-header">Чт</div><div class="cal-header">Пт</div><div class="cal-header cal-weekend">Сб</div><div class="cal-header cal-weekend">Вс</div>';
+
+  // Empty cells before first day
+  for(var i=1;i<firstDay;i++)html+='<div class="cal-cell empty"></div>';
+
+  for(var d=1;d<=daysInMonth;d++){
+    var dateStr=year+'-'+(month<9?'0':'')+(month+1)+'-'+(d<10?'0':'')+d;
+    var isToday=dateStr===todayStr;
+    var dayEvents=evByDate[dateStr]||[];
+    var hasEvents=dayEvents.length>0;
+    html+='<div class="cal-cell'+(isToday?' today':'')+(hasEvents?' has-events':'')+'" onclick="calDayClick(\''+dateStr+'\')">';
+    html+='<div class="cal-day'+(isToday?' today':'')+'">'+d+'</div>';
+    if(hasEvents){
+      html+='<div class="cal-dots">';
+      dayEvents.slice(0,3).forEach(function(ev){
+        html+='<div class="cal-dot" style="background:'+ev.color+'" title="'+_escHtml(ev.title)+'"></div>';
+      });
+      if(dayEvents.length>3)html+='<span style="font-size:8px;color:var(--dim)">+'+String(dayEvents.length-3)+'</span>';
+      html+='</div>';
+    }
+    html+='</div>';
+  }
+  html+='</div>';
+  grid.innerHTML=html;
+
+  // Upcoming events (next 14 days)
+  var now=new Date();var in14=new Date(now);in14.setDate(in14.getDate()+14);
+  var nowStr=now.toISOString().slice(0,10);
+  var in14Str=in14.toISOString().slice(0,10);
+  var upcomingEv=_calEvents.filter(function(e){return e.date>=nowStr&&e.date<=in14Str;});
+  if(countEl)countEl.textContent=upcomingEv.length;
+
+  if(upcomingEv.length>0){
+    var uHtml='<h4 style="font-size:13px;color:var(--dim);margin:12px 0 8px">Ближайшие события</h4>';
+    upcomingEv.slice(0,10).forEach(function(ev){
+      var typeInfo=CAL_TYPES[ev.type]||CAL_TYPES.other;
+      var daysUntil=Math.ceil((new Date(ev.date)-now)/86400000);
+      var when=daysUntil===0?'Сегодня':daysUntil===1?'Завтра':ev.date;
+      uHtml+='<div class="cal-upcoming-row" onclick="calOpenEvent(\''+ev.id+'\')">';
+      uHtml+='<div class="cal-upcoming-dot" style="background:'+ev.color+'"></div>';
+      uHtml+='<div style="flex:1;min-width:0">';
+      uHtml+='<div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+typeInfo.icon+' '+_escHtml(ev.title)+'</div>';
+      uHtml+='<div style="font-size:10px;color:var(--dim)">'+when+(ev.time?' в '+ev.time:'')+'</div>';
+      uHtml+='</div>';
+      uHtml+='<div style="font-size:9px;padding:2px 6px;background:'+ev.color+'18;color:'+ev.color+';border-radius:3px;white-space:nowrap">'+typeInfo.label+'</div>';
+      uHtml+='</div>';
+    });
+    upcoming.innerHTML=uHtml;
+  }else{
+    upcoming.innerHTML='<div style="text-align:center;padding:20px;color:var(--dim);font-size:12px">Нет предстоящих событий</div>';
+  }
+}
+
+window.calDayClick=function(dateStr){
+  var dayEvents=_calEvents.filter(function(e){return e.date===dateStr;});
+  if(dayEvents.length===0){
+    // Create new event for this day
+    _calDate=new Date(dateStr+'T12:00:00');
+    var typeOpts=Object.keys(CAL_TYPES).map(function(k){return{value:k,label:CAL_TYPES[k].icon+' '+CAL_TYPES[k].label};});
+    f2fPrompt({title:'📅 '+dateStr,fields:[
+      {id:'title',label:'Название',type:'text',placeholder:'Название события...'},
+      {id:'time',label:'Время',type:'text',placeholder:'14:00'},
+      {id:'type',label:'Тип',type:'select',value:'meeting',options:typeOpts}
+    ],submitText:'Создать'}).then(async function(r){
+      if(!r||!r.title)return;
+      var ev={id:Date.now(),title:r.title.trim(),date:dateStr,time:(r.time||'').trim(),type:r.type||'other',description:'',agentId:'coordinator',color:(CAL_TYPES[r.type]||CAL_TYPES.other).color};
+      _calEvents.push(ev);
+      if(SUPABASE_LIVE){
+        try{var res=await sbInsert('events',{event_type:ev.type,event_date:dateStr+(ev.time?'T'+ev.time+':00':'T00:00:00'),metadata_json:JSON.stringify({title:ev.title,cal_type:ev.type,time:ev.time})});if(res&&res[0])ev.sbId=res[0].id;}catch(e){}
+      }
+      renderCalendar();showToast('📅 '+ev.title,'success');
+    });
+  }else if(dayEvents.length===1){
+    calOpenEvent(dayEvents[0].id);
+  }else{
+    // Show list for the day
+    var html='<h3 style="margin:0 0 12px">📅 '+dateStr+' ('+dayEvents.length+' событий)</h3>';
+    dayEvents.forEach(function(ev){
+      var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
+      html+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);margin-bottom:6px;cursor:pointer" onclick="calOpenEvent(\''+ev.id+'\')">';
+      html+='<span style="font-size:16px">'+ti.icon+'</span>';
+      html+='<div style="flex:1"><div style="font-size:13px;font-weight:600">'+_escHtml(ev.title)+'</div>'+(ev.time?'<div style="font-size:10px;color:var(--dim)">'+ev.time+'</div>':'')+'</div>';
+      html+='<span style="font-size:9px;padding:2px 6px;background:'+ti.color+'18;color:'+ti.color+';border-radius:3px">'+ti.label+'</span>';
+      html+='</div>';
+    });
+    html+='<div style="margin-top:12px"><button class="act-btn" onclick="closeModal()">Закрыть</button></div>';
+    openModal(html);
+  }
+};
+
+// Initial render (after Supabase loads, refreshAfterSync calls renderCalendar)
+setTimeout(renderCalendar,1500);
+
 // ═══ MINI ANALYTICS ═══
 function renderAnalytics(){
   var now=new Date();

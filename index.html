@@ -84,6 +84,7 @@
   <button class="tab" data-panel="team">👥 Команда <span class="badge" id="tab-team-count">0</span></button>
   <button class="tab" data-panel="agents">🤖 AI Агенты <span class="badge" style="background:var(--cyan)" id="tab-agents-count">0</span></button>
   <button class="tab" data-panel="chat">💬 Чат</button>
+  <button class="tab" data-panel="calendar">📅 Календарь <span class="badge" id="tab-calendar-count" style="background:#a855f7">0</span></button>
   <button class="tab" data-panel="integrations">🔗 Интеграции</button>
   <button class="tab" data-panel="admin" id="tabAdmin" style="display:none">🔐 Админ</button>
 </div>
@@ -239,6 +240,22 @@
       <div class="chat-input-bar"><input id="chatInput" placeholder="Напиши команде..." autocomplete="off"><button id="chatSend">Отправить</button></div>
     </div>
   </div>
+</div>
+
+<!-- CALENDAR PANEL -->
+<div class="panel data-panel" id="panel-calendar">
+  <div class="data-header">
+    <h2>📅 Календарь</h2>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button class="ctrl-btn" id="calPrev" onclick="calNavigate(-1)">◀</button>
+      <span id="calMonthLabel" style="font-size:13px;font-weight:700;min-width:130px;text-align:center">—</span>
+      <button class="ctrl-btn" id="calNext" onclick="calNavigate(1)">▶</button>
+      <button class="ctrl-btn" onclick="calGoToday()" style="margin-left:8px;background:var(--green)22;color:var(--green)">Сегодня</button>
+      <button class="ctrl-btn" onclick="calCreateEvent()" style="background:var(--cyan)22;color:var(--cyan)">+ Событие</button>
+    </div>
+  </div>
+  <div id="calGrid" style="padding:12px"></div>
+  <div id="calUpcoming" style="padding:0 16px 16px"></div>
 </div>
 
 <!-- INTEGRATIONS PANEL -->

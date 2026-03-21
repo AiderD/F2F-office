@@ -345,6 +345,7 @@ function refreshAfterSync(){
   if(typeof updateKPI==='function'){updateKPI();}
   if(typeof renderAgentsPanel==='function'){renderAgentsPanel();}
   if(typeof renderIntegrations==='function'){renderIntegrations();}
+  if(typeof renderCalendar==='function'){renderCalendar();}
   if(typeof renderAnalytics==='function'){renderAnalytics();}
 
   // Add meaningful Supabase events to feed (NOT raw post spam)
