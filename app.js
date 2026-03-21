@@ -3587,7 +3587,7 @@ window.uploadReferenceImage=function(){
     try{
       var res=await fetch(SUPABASE_URL+'/functions/v1/upload-reference',{
         method:'POST',
-        headers:{'Authorization':'Bearer '+SUPABASE_KEY},
+        headers:{'Authorization':'Bearer '+SUPABASE_ANON},
         body:formData
       });
       var data=await res.json();

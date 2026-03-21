@@ -7,7 +7,7 @@ let SUPABASE_LIVE=false;
 const SB_SLUG_TO_DASH={
   'smm':'content','analyst':'market','bizdev':'leads',
   'outreach':'outreach','community':'social','coordinator':'coordinator',
-  'lead_finder':'lead_finder','followup':'followup','art_director':'art_director'
+  'lead_finder':'lead_finder','followup':'followup','art_director':'art_director','quality_controller':'quality_controller'
 };
 const DASH_TO_SB_SLUG={};
 Object.keys(SB_SLUG_TO_DASH).forEach(k=>{DASH_TO_SB_SLUG[SB_SLUG_TO_DASH[k]]=k;});
@@ -343,17 +343,58 @@ function refreshAfterSync(){
   if(typeof renderIntegrations==='function'){renderIntegrations();}
   if(typeof renderAnalytics==='function'){renderAnalytics();}
 
-  // Add Supabase events to feed
-  if(window._sbContent&&SUPABASE_LIVE){
-    window._sbContent.forEach(c=>{
-      if(!c._fedAdded){
-        c._fedAdded=true;
-        const ago=window._sbAgentById&&c.agent_id?window._sbAgentById[c.agent_id]:null;
-        const dashId=ago?SB_SLUG_TO_DASH[ago.slug]:'content';
-        const statusIcon=c.status==='pending_approval'?'⏳':c.status==='approved'?'✅':'📝';
-        if(typeof addFeed==='function')addFeed(dashId,statusIcon+' [LIVE] '+c.platform+': '+(c.content_text||'').slice(0,60)+'...');
-      }
-    });
+  // Add meaningful Supabase events to feed (NOT raw post spam)
+  if(SUPABASE_LIVE&&!window._sbFeedEnriched){
+    window._sbFeedEnriched=true;
+
+    // 1. Summary: how many posts are pending/approved (ONE line, not per-post)
+    if(window._sbContent&&window._sbContent.length>0){
+      var pending=window._sbContent.filter(c=>c.status==='pending_approval').length;
+      var approved=window._sbContent.filter(c=>c.status==='approved').length;
+      var published=window._sbContent.filter(c=>c.status==='published').length;
+      if(pending>0) addFeed('content','⏳ '+pending+' постов ждут одобрения → перейди в "Посты"');
+      if(approved>0) addFeed('content','✅ '+approved+' постов одобрено и готово к публикации');
+      if(published>0) addFeed('content','📢 '+published+' постов опубликовано');
+    }
+
+    // 2. Recent partner activity
+    if(window._sbPartners&&window._sbPartners.length>0){
+      var newLeads=window._sbPartners.filter(p=>p.status==='lead'||p.status==='new').length;
+      var contacted=window._sbPartners.filter(p=>p.status==='contacted').length;
+      if(newLeads>0) addFeed('leads','🆕 '+newLeads+' новых лидов в пайплайне');
+      if(contacted>0) addFeed('outreach','📧 '+contacted+' лидов на стадии контакта');
+    }
+
+    // 3. Recent reports
+    if(window._sbReports&&window._sbReports.length>0){
+      var recent=window._sbReports.slice(0,3);
+      recent.forEach(r=>{
+        var ago=window._sbAgentById&&r.agent_id?window._sbAgentById[r.agent_id]:null;
+        var dashId=ago?SB_SLUG_TO_DASH[ago.slug]:'coordinator';
+        addFeed(dashId,'📋 Отчёт: '+(r.summary||r.type_ab||'').slice(0,80));
+      });
+    }
+
+    // 4. Tasks/Actions summary
+    if(window._sbActions&&window._sbActions.length>0){
+      var pendingActions=window._sbActions.filter(a=>{
+        var p=typeof a.payload_json==='string'?JSON.parse(a.payload_json):a.payload_json;
+        return p&&p.status!=='executed';
+      }).length;
+      if(pendingActions>0) addFeed('coordinator','📌 '+pendingActions+' действий ожидают выполнения');
+    }
+
+    // 5. Agent health: list active agents
+    var activeAgents=Object.keys(window._sbAgents||{}).length;
+    if(activeAgents>0) addFeed('watchdog','🟢 '+activeAgents+' агентов онлайн | Supabase подключён');
+
+    // 6. Metrics highlights
+    if(window._sbMetrics){
+      var m=window._sbMetrics;
+      if(m.dau) addFeed('kpi_updater','📊 DAU: '+m.dau.value+(m.dau.unit?' '+m.dau.unit:''));
+      if(m.registrations) addFeed('kpi_updater','👤 Регистрации: '+m.registrations.value+'/мес');
+      if(m.retention_d7) addFeed('market','📈 Retention D7: '+m.retention_d7.value+'%');
+    }
   }
   // Update sync badge with count
   const liveCount=window._sbMemory?window._sbMemory.filter(m=>m.state==='working').length:0;
