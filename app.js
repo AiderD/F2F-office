@@ -315,7 +315,7 @@ async function reactivateToken(id){
 // ═══ DATA ═══
 // Start with empty data — Supabase will fill in real data. f2f_data.js only used as offline fallback.
 const _offlineFallback = window.F2F_DATA || {leads:[],posts:[],reports:[],tasks:[],companies:[],kpi:{},financeReports:[],hrReports:[],techReports:[]};
-const D = {leads:[],posts:[],reports:[],tasks:[],companies:[],kpi:{},financeReports:[],hrReports:[],techReports:[],team:_offlineFallback.team||[]};
+const D = {leads:[],posts:[],reports:[],tasks:[],companies:[],kpi:{},financeReports:[],hrReports:[],techReports:[],team:_offlineFallback.team||[],companyDepts:_offlineFallback.companyDepts||[],dismissed:_offlineFallback.dismissed||[]};
 // Apply offline fallback after 5s if Supabase hasn't loaded
 setTimeout(function(){
   if(!SUPABASE_LIVE&&_offlineFallback.leads&&_offlineFallback.leads.length>0){
@@ -325,7 +325,9 @@ setTimeout(function(){
     if(_offlineFallback.financeReports)D.reports=D.reports.concat(_offlineFallback.financeReports);
     if(_offlineFallback.hrReports)D.reports=D.reports.concat(_offlineFallback.hrReports);
     if(_offlineFallback.techReports)D.reports=D.reports.concat(_offlineFallback.techReports);
-    renderLeads();renderPosts();renderTasks();updateKPI();
+    if(_offlineFallback.companyDepts&&!D.companyDepts.length)D.companyDepts=_offlineFallback.companyDepts;
+    if(_offlineFallback.dismissed&&!D.dismissed.length)D.dismissed=_offlineFallback.dismissed;
+    renderLeads();renderPosts();renderTasks();updateKPI();if(typeof renderTeam==='function')renderTeam();
     showToast('⚠️ Supabase не подключился — загружены офлайн-данные','warning');
   }
 },5000);
@@ -988,9 +990,12 @@ renderFinance();
 
 // ═══ TEAM MANAGEMENT PANEL ═══
 let teamDeptFilter='all';
-const CDepts=D.companyDepts||[];
+// Dynamic getter — D.companyDepts loads after Supabase/offline fallback
+function getCDepts(){return D.companyDepts||[];}
+var CDepts=getCDepts();
 
 function renderTeamDeptTabs(){
+  CDepts=getCDepts(); // refresh from D
   const active=D.team.filter(t=>t.status==='active');
   let html='<button class="sub-tab '+(teamDeptFilter==='all'?'active':'')+'" data-dept="all">Все ('+active.length+')</button>';
   CDepts.forEach(d=>{
@@ -2301,15 +2306,20 @@ function _calLoadFromSupabase(){
       if(ev.metadata_json){
         try{meta=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;}catch(e){}
       }
-      var type=meta.cal_type||ev.event_type||'other';
+      // ═══ FILTER: only show user-created calendar events, NOT system/agent events ═══
+      // User events have cal_type in metadata (set by our create/edit forms)
+      // System events (agent reports, actions, notifications) do NOT have cal_type
+      if(!meta.cal_type)return;
+
+      var type=meta.cal_type||'other';
       _calEvents.push({
         id:9000+i, sbId:ev.id,
-        title:meta.title||meta.text||ev.event_type||'Событие',
+        title:meta.title||'Мероприятие',
         date:(ev.event_date||ev.created_at||'').slice(0,10),
         time:meta.time||(ev.event_date||'').slice(11,16)||'',
         endDate:meta.end_date||'',
         type:type,
-        description:meta.description||meta.text||'',
+        description:meta.description||'',
         // Esports fields
         game:meta.game||'',
         teamFormat:meta.team_format||'',
@@ -2326,7 +2336,7 @@ function _calLoadFromSupabase(){
       });
     });
   }
-  // Task deadlines
+  // Task deadlines (keep these — useful to see in calendar)
   D.tasks.forEach(function(t){
     if(!t.deadline)return;
     _calEvents.push({
