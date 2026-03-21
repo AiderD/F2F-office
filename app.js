@@ -21,6 +21,8 @@ let _currentSession = JSON.parse(localStorage.getItem('f2f_session')||'null');
 if(_currentSession){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').style.display='';
+  // Init Supabase for auto-login (same as manual login does)
+  if(typeof initSupabase==='function')setTimeout(initSupabase,500);
 }
 
 async function loginWithToken(){
