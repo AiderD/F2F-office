@@ -424,7 +424,7 @@ async function initSupabase(){
 // Run after DOM ready + auto-refresh every 30s
 // SECURITY: Only init Supabase if user is authenticated
 function isAuthenticated(){
-  var s=JSON.parse(sessionStorage.getItem('f2f_session')||'null');
+  var s=JSON.parse(localStorage.getItem('f2f_session')||'null');
   return !!(s&&s.token);
 }
 window.addEventListener('load',()=>{

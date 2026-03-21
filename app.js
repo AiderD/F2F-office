@@ -313,11 +313,22 @@ async function reactivateToken(id){
 }
 
 // ═══ DATA ═══
-const D = window.F2F_DATA || {leads:[],posts:[],reports:[],tasks:[],companies:[],kpi:{},financeReports:[],hrReports:[],techReports:[]};
-// Merge all department reports into one unified reports array
-if(D.financeReports) D.reports = D.reports.concat(D.financeReports);
-if(D.hrReports) D.reports = D.reports.concat(D.hrReports);
-if(D.techReports) D.reports = D.reports.concat(D.techReports);
+// Start with empty data — Supabase will fill in real data. f2f_data.js only used as offline fallback.
+const _offlineFallback = window.F2F_DATA || {leads:[],posts:[],reports:[],tasks:[],companies:[],kpi:{},financeReports:[],hrReports:[],techReports:[]};
+const D = {leads:[],posts:[],reports:[],tasks:[],companies:[],kpi:{},financeReports:[],hrReports:[],techReports:[],team:_offlineFallback.team||[]};
+// Apply offline fallback after 5s if Supabase hasn't loaded
+setTimeout(function(){
+  if(!SUPABASE_LIVE&&_offlineFallback.leads&&_offlineFallback.leads.length>0){
+    if(D.leads.length===0)D.leads=_offlineFallback.leads;
+    if(D.posts.length===0)D.posts=_offlineFallback.posts||[];
+    if(D.companies.length===0)D.companies=_offlineFallback.companies||[];
+    if(_offlineFallback.financeReports)D.reports=D.reports.concat(_offlineFallback.financeReports);
+    if(_offlineFallback.hrReports)D.reports=D.reports.concat(_offlineFallback.hrReports);
+    if(_offlineFallback.techReports)D.reports=D.reports.concat(_offlineFallback.techReports);
+    renderLeads();renderPosts();renderTasks();updateKPI();
+    showToast('⚠️ Supabase не подключился — загружены офлайн-данные','warning');
+  }
+},5000);
 
 const AGENTS = {
   // === РЕАЛЬНЫЕ AI АГЕНТЫ (Make.com) ===
@@ -483,8 +494,18 @@ function loadExchangeRateFromDirectives(){
   if(!window._sbDirectives)return;
   var exDir=window._sbDirectives.find(function(d){return d.key==='exchange_rate';});
   if(exDir&&exDir.value_json){
-    var val=typeof exDir.value_json==='string'?JSON.parse(exDir.value_json):exDir.value_json;
-    if(val.rate)financeExchangeRate=parseFloat(val.rate);
+    try{
+      var val=typeof exDir.value_json==='string'?JSON.parse(exDir.value_json):exDir.value_json;
+      if(val.rate){financeExchangeRate=parseFloat(val.rate);console.log('💱 Курс из directives: '+financeExchangeRate);}
+    }catch(e){console.warn('⚠️ Ошибка разбора exchange_rate:',e);}
+  }
+  // Also check intg_ keys from Integrations panel
+  var intgDir=window._sbDirectives.find(function(d){return d.key==='intg_EXCHANGE_RATE';});
+  if(intgDir&&intgDir.value_json){
+    try{
+      var v=typeof intgDir.value_json==='string'?JSON.parse(intgDir.value_json):intgDir.value_json;
+      if(v)financeExchangeRate=parseFloat(v);
+    }catch(e){}
   }
 }
 
@@ -1476,7 +1497,7 @@ function renderChat(){
 const CHAT_EDGE_URL=SUPABASE_URL+'/functions/v1/agent-chat';
 let f2fApiKey=localStorage.getItem('f2f_api_key')||'';
 
-function closeModal(){modal.classList.remove('open');var m=document.querySelector('.modal');if(m){m.style.transform='';m.style.transition='';}}
+function closeModal(){var overlay=document.getElementById('modal');if(overlay)overlay.classList.remove('open');var m=document.querySelector('.modal');if(m){m.style.transform='';m.style.transition='';}}
 function openApiKeyModal(){
   var html='<h2 style="margin-bottom:16px">🔑 Anthropic API Key</h2>'+
     '<p style="color:var(--dim);margin-bottom:12px;font-size:13px">Для AI-ответов агентов нужен ключ Claude API. Он хранится только локально в вашем браузере.</p>'+
@@ -3349,26 +3370,32 @@ window.triggerSingleAgent=async function(agentSlug, btnEl){
 
 // ═══ TASKS ═══
 // Helper: build human-readable title from payload
-function taskSmartTitle(t){
+function _escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function _cleanTemplate(s){return String(s||'').replace(/\{\{[^}]+\}\}/g,'…').replace(/\s+/g,' ').trim();}
+function _truncate(s,n){s=_cleanTemplate(s);return s.length>n?s.slice(0,n)+'…':s;}
+function taskSmartTitle(t,maxLen){
+  maxLen=maxLen||120;
   var p=t._payload||{};
   var aType=(t._actionType||'').toLowerCase();
   if(aType.includes('email_template')){
-    var to=p.to||p.email||p.recipient||p.contact_email||'';
-    var subj=p.subject||p.email_subject||'';
     var company=p.company||p.partner||'';
-    if(to||company)return '📧 Email'+(company?' → '+company:'')+(to?' ('+to+')':'')+(subj?' — '+subj:'');
-    if(p.template||p.body||p.text)return '📧 Email: '+(p.template||p.body||p.text||'').slice(0,60)+'...';
-    return '📧 Email шаблон (нажми для превью)';
+    var subj=_cleanTemplate(p.subject||p.email_subject||'');
+    if(company)return '📧 Email → '+_truncate(company,30)+(subj?' — '+_truncate(subj,40):'');
+    if(subj)return '📧 '+_truncate(subj,60);
+    return '📧 Email шаблон';
   }
   if(aType.includes('lead_suggested')){
     var name=p.name||p.contact||p.contact_name||'';
     var comp=p.company||p.organization||'';
-    var reason=p.reason||p.description||p.why||'';
-    if(name||comp)return '🆕 Лид: '+(name?name:'')+(comp?' @ '+comp:'')+(reason?' — '+reason.slice(0,40):'');
-    return '🆕 Рекомендация лида (нажми для превью)';
+    if(name||comp)return '🆕 Лид: '+(name?_truncate(name,25):'')+(comp?' @ '+_truncate(comp,25):'');
+    return '🆕 Рекомендация лида';
   }
-  if(aType.includes('task_from_chat')||t.fromChat)return t.title;
-  return t.title;
+  if(aType.includes('followup')){
+    var target=p.contact||p.name||p.company||'';
+    return '🔄 Follow-up'+(target?' → '+_truncate(target,30):'');
+  }
+  if(aType.includes('task_from_chat')||t.fromChat)return _truncate(t.title,maxLen);
+  return _truncate(t.title,maxLen);
 }
 // Helper: build preview card HTML from payload
 function taskPreviewHTML(t){
@@ -3461,7 +3488,7 @@ function renderKanban(){
     el.innerHTML=cols[status].map(function(t){
       var pri=t.priority||'normal';
       var agent=AGENTS[t.assignedTo]||{emoji:'📋',name:'?'};
-      var displayTitle=taskSmartTitle(t);
+      var displayTitle=_escHtml(taskSmartTitle(t,55));
       // Subtasks
       var subtasksHTML='';
       if(t.subtasks&&t.subtasks.length){
@@ -3522,7 +3549,7 @@ function renderTasks(){
     var approveLabel='✅';var approveTitle='Выполнено';
     if((ks==='backlog'||ks==='planned')&&aType.includes('email_template')){approveLabel='📧 Отправить';approveTitle='Одобрить и отправить email';}
     else if((ks==='backlog'||ks==='planned')&&aType.includes('lead_suggested')){approveLabel='➕ В Pipeline';approveTitle='Добавить лид в Pipeline';}
-    var displayTitle=taskSmartTitle(t);
+    var displayTitle=_escHtml(taskSmartTitle(t,80));
     var hasPayload=t._payload&&Object.keys(t._payload).length>2;
     var previewId='task-preview-'+t.id;
     // Rework indicator
@@ -3797,7 +3824,7 @@ window.createTaskFromModal=function(){
   closeModal();renderTasks();updateKPI();
   addFeed(t.assignedTo,'📌 Новая задача: '+title.slice(0,50));
 };
-window.closeModal=function(){document.querySelector('.modal')?.classList.remove('open');};
+// closeModal is already defined above (line ~1500) — do not override
 
 window.taskAction=function(id,newStatus){
   const t=D.tasks.find(x=>x.id===id);if(!t)return;
