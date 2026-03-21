@@ -2591,83 +2591,161 @@ window.calDeleteEvent=function(evId){
   });
 };
 
-// ═══ RENDER CALENDAR ═══
-var _calView='calendar'; // 'calendar' or 'list'
+// ═══ RENDER: EVENTS PANEL ═══
+var _calView='list'; // DEFAULT: list view (cards) — better for esports events (FACEIT/Challengermode pattern)
+
 window.calSwitchView=function(view){
   _calView=view;
+  // Toggle active button
+  var lb=document.getElementById('evViewList');
+  var cb=document.getElementById('evViewCal');
+  var cn=document.getElementById('evCalNav');
+  if(lb)lb.classList.toggle('active',view==='list');
+  if(cb)cb.classList.toggle('active',view==='calendar');
+  if(cn)cn.style.display=view==='calendar'?'flex':'none';
   renderCalendar();
 };
+
+// Populate game filter dropdown from ESPORT_GAMES
+(function(){
+  setTimeout(function(){
+    var sel=document.getElementById('evFilterGame');
+    if(!sel||sel.options.length>1)return;
+    ESPORT_GAMES.forEach(function(g){
+      var opt=document.createElement('option');opt.value=g.value;opt.textContent=g.icon+' '+g.label;sel.appendChild(opt);
+    });
+  },500);
+})();
+
+function _evGetFiltered(){
+  var statusFilter=(document.getElementById('evFilterStatus')||{}).value||'all';
+  var gameFilter=(document.getElementById('evFilterGame')||{}).value||'all';
+  var filtered=_calEvents.filter(function(ev){
+    if(statusFilter!=='all'&&ev.eventStatus!==statusFilter)return false;
+    if(gameFilter!=='all'&&ev.game!==gameFilter)return false;
+    return true;
+  });
+  return filtered;
+}
 
 function renderCalendar(){
   _calLoadFromSupabase();
   var grid=document.getElementById('calGrid');
-  var upcoming=document.getElementById('calUpcoming');
+  var countBar=document.getElementById('evCountBar');
   var label=document.getElementById('calMonthLabel');
   var countEl=document.getElementById('tab-calendar-count');
   if(!grid)return;
 
+  var filtered=_evGetFiltered();
+  var totalEvents=_calEvents.length;
+
+  // Update tab badge
+  if(countEl)countEl.textContent=totalEvents;
+  // Update count bar
+  if(countBar){
+    var live=_calEvents.filter(function(e){return e.eventStatus==='live';}).length;
+    var upcoming=_calEvents.filter(function(e){return e.eventStatus==='reg_open'||e.eventStatus==='announced';}).length;
+    countBar.textContent=totalEvents+' мероприятий'+(filtered.length!==totalEvents?' (показано '+filtered.length+')':'')
+      +(live?' · 🔴 '+live+' LIVE':'')
+      +(upcoming?' · '+upcoming+' предстоящих':'');
+  }
+
   var year=_calDate.getFullYear();
   var month=_calDate.getMonth();
   var monthNames=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
-  label.textContent=monthNames[month]+' '+year;
-
+  if(label)label.textContent=monthNames[month]+' '+year;
   var todayStr=new Date().toISOString().slice(0,10);
 
   if(_calView==='list'){
-    // ── LIST VIEW: all events sorted ──
-    var allSorted=_calEvents.filter(function(e){return e.date;}).sort(function(a,b){return a.date.localeCompare(b.date);});
-    var html='<div class="ev-list">';
-    if(allSorted.length===0){
-      html+='<div style="text-align:center;padding:40px 20px;color:var(--dim)"><div style="font-size:36px;margin-bottom:12px">🏆</div><div style="font-size:14px;margin-bottom:6px">Нет мероприятий</div><div style="font-size:11px">Нажмите «+ Мероприятие» чтобы создать первое</div></div>';
-    }else{
-      allSorted.forEach(function(ev){
-        var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
-        var gi=ESPORT_GAMES.find(function(g){return g.value===ev.game;})||{icon:'🎮',label:''};
-        var si=EVENT_STATUSES.find(function(s){return s.value===ev.eventStatus;})||{label:'',color:'#64748b'};
-        var smmDone=0;var smmTotal=SMM_CHECKLIST.length;
-        if(ev.smmChecklist){SMM_CHECKLIST.forEach(function(item){if(ev.smmChecklist[item.id])smmDone++;});}
-        var smmPct=Math.round(smmDone/smmTotal*100);
+    // ══════════════════════════════════
+    // LIST VIEW — event cards (primary)
+    // ══════════════════════════════════
+    var sorted=filtered.sort(function(a,b){
+      // Live first, then by date
+      var aLive=a.eventStatus==='live'?0:1;var bLive=b.eventStatus==='live'?0:1;
+      if(aLive!==bLive)return aLive-bLive;
+      return (a.date||'').localeCompare(b.date||'');
+    });
 
-        html+='<div class="ev-card" onclick="calOpenEvent(\''+ev.id+'\')">';
-        // Top row: type badge + status + date
-        html+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">';
-        html+='<span class="ev-badge" style="background:'+ti.color+'18;color:'+ti.color+';border:1px solid '+ti.color+'33">'+ti.icon+' '+ti.label+'</span>';
-        if(ev.eventStatus)html+='<span class="ev-badge" style="background:'+si.color+'18;color:'+si.color+';border:1px solid '+si.color+'33">'+si.label+'</span>';
-        if(ev.isOnline!==undefined&&!ev.isTask)html+='<span class="ev-badge" style="background:#ffffff08;color:#94a3b8;border:1px solid #334155">'+(ev.isOnline?'🌐':'🏟')+'</span>';
-        html+='<span style="margin-left:auto;font-size:10px;color:var(--dim)">'+ev.date+(ev.time?' '+ev.time:'')+'</span>';
-        html+='</div>';
-        // Title + game
-        html+='<div style="font-size:14px;font-weight:700;margin-bottom:4px">'+_escHtml(ev.title)+'</div>';
-        // Meta row
-        if(ev.game||ev.teamFormat||ev.prizePool){
-          html+='<div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--dim);margin-bottom:6px">';
-          if(ev.game)html+='<span>'+gi.icon+' '+gi.label+'</span>';
-          if(ev.teamFormat)html+='<span>👥 '+ev.teamFormat+'</span>';
-          if(ev.matchFormat)html+='<span>🎲 '+ev.matchFormat.toUpperCase()+'</span>';
-          if(ev.prizePool)html+='<span style="color:#00ff88;font-weight:600">💰 '+_escHtml(ev.prizePool)+'</span>';
-          if(ev.maxTeams)html+='<span>🏁 '+(ev.regTeams||0)+'/'+ev.maxTeams+' команд</span>';
-          html+='</div>';
-        }
-        // SMM progress bar
-        if(!ev.isTask&&smmTotal>0){
-          html+='<div style="display:flex;align-items:center;gap:8px;margin-top:4px">';
-          html+='<div style="font-size:9px;color:var(--dim);white-space:nowrap">SMM '+smmPct+'%</div>';
-          html+='<div style="flex:1;height:3px;background:#1e293b;border-radius:2px;overflow:hidden"><div style="width:'+smmPct+'%;height:100%;background:'+(smmPct>=100?'#00ff88':smmPct>=50?'#ffb800':'#ff4444')+';border-radius:2px;transition:width .3s"></div></div>';
-          html+='</div>';
-        }
-        html+='</div>';
-      });
+    if(sorted.length===0){
+      // ── Empty state ──
+      grid.innerHTML='<div class="ev-empty">'+
+        '<div class="ev-empty-icon">🏆</div>'+
+        '<div class="ev-empty-title">'+(totalEvents===0?'Создайте первое мероприятие':'Нет мероприятий по фильтру')+'</div>'+
+        '<div class="ev-empty-desc">'+(totalEvents===0?
+          'Турниры, квалификации, шоу-матчи — добавляйте ивенты<br>и отслеживайте SMM-подготовку к каждому':
+          'Попробуйте изменить фильтры или сбросить их')+'</div>'+
+        (totalEvents===0?'<button class="ev-empty-btn" onclick="calCreateEvent()">+ Создать мероприятие</button>':'')+
+      '</div>';
+      return;
     }
+
+    var html='<div class="ev-list">';
+    sorted.forEach(function(ev){
+      var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
+      var gi=ESPORT_GAMES.find(function(g){return g.value===ev.game;})||{icon:'🎮',label:ev.game||''};
+      var si=EVENT_STATUSES.find(function(s){return s.value===ev.eventStatus;})||{label:ev.eventStatus||'',color:'#64748b'};
+      var isLive=ev.eventStatus==='live';
+
+      // SMM progress
+      var smmDone=0;
+      if(ev.smmChecklist){SMM_CHECKLIST.forEach(function(item){if(ev.smmChecklist[item.id])smmDone++;});}
+      var smmPct=Math.round(smmDone/SMM_CHECKLIST.length*100);
+      var smmColor=smmPct>=100?'#00ff88':smmPct>=50?'#ffb800':'#ff4444';
+
+      // Days until event
+      var daysUntil=Math.ceil((new Date(ev.date)-new Date())/86400000);
+      var whenLabel=isLive?'🔴 Идёт сейчас':daysUntil===0?'Сегодня':daysUntil===1?'Завтра':daysUntil>0&&daysUntil<=7?'через '+daysUntil+' дн':ev.date;
+
+      html+='<div class="ev-card'+(isLive?' ev-card-live':'')+'" onclick="calOpenEvent(\''+ev.id+'\')">';
+      html+='<div class="ev-card-accent" style="background:'+ti.color+'"></div>';
+
+      // Row 1: Badges
+      html+='<div class="ev-card-top" style="padding-left:8px">';
+      html+='<span class="ev-badge" style="background:'+ti.color+'18;color:'+ti.color+';border:1px solid '+ti.color+'33">'+ti.icon+' '+ti.label+'</span>';
+      if(ev.eventStatus)html+='<span class="ev-badge'+(isLive?' ev-badge-live':'')+'" style="background:'+si.color+'18;color:'+si.color+';border:1px solid '+si.color+'33">'+si.label+'</span>';
+      if(!ev.isTask)html+='<span class="ev-badge" style="background:#ffffff08;color:#94a3b8;border:1px solid #334155">'+(ev.isOnline?'🌐 Онлайн':'🏟 Офлайн')+'</span>';
+      html+='<span style="margin-left:auto;font-size:10px;color:'+(isLive?'#ef4444':'var(--dim)')+';font-weight:'+(isLive?'700':'400')+'">'+whenLabel+'</span>';
+      html+='</div>';
+
+      // Row 2: Title
+      html+='<div class="ev-card-title" style="padding-left:8px">'+_escHtml(ev.title)+'</div>';
+
+      // Row 3: Meta chips
+      html+='<div class="ev-card-meta" style="padding-left:8px">';
+      if(ev.game)html+='<span>'+gi.icon+' '+gi.label+'</span>';
+      if(ev.teamFormat)html+='<span>👥 '+ev.teamFormat+'</span>';
+      if(ev.matchFormat)html+='<span>🎲 '+ev.matchFormat.toUpperCase()+'</span>';
+      if(ev.time)html+='<span>⏰ '+ev.time+'</span>';
+      if(ev.location)html+='<span>📍 '+_escHtml(ev.location)+'</span>';
+      html+='</div>';
+
+      // Row 4: Prize + Teams + SMM bar
+      html+='<div class="ev-card-bottom" style="padding-left:8px">';
+      if(ev.prizePool)html+='<div class="ev-card-prize">💰 '+_escHtml(ev.prizePool)+'</div>';
+      if(ev.maxTeams)html+='<div class="ev-card-teams">🏁 '+(ev.regTeams||0)+'/'+ev.maxTeams+' команд</div>';
+      if(!ev.isTask){
+        html+='<div class="ev-card-smm"><span style="font-size:9px;color:var(--dim)">SMM</span>';
+        html+='<div class="ev-card-smm-bar"><div class="ev-card-smm-fill" style="width:'+smmPct+'%;background:'+smmColor+'"></div></div>';
+        html+='<span style="font-size:9px;color:'+smmColor+'">'+smmPct+'%</span></div>';
+      }
+      html+='</div>';
+
+      html+='</div>';
+    });
     html+='</div>';
     grid.innerHTML=html;
+
   }else{
-    // ── CALENDAR GRID VIEW ──
+    // ══════════════════════════════════
+    // CALENDAR GRID VIEW (secondary)
+    // ══════════════════════════════════
     var firstDay=new Date(year,month,1).getDay();
     if(firstDay===0)firstDay=7;
     var daysInMonth=new Date(year,month+1,0).getDate();
 
     var evByDate={};
-    _calEvents.forEach(function(ev){
+    filtered.forEach(function(ev){
       if(!ev.date)return;
       var evMonth=ev.date.slice(0,7);
       var targetMonth=year+'-'+(month<9?'0':'')+(month+1);
@@ -2700,62 +2778,33 @@ function renderCalendar(){
     html+='</div>';
     grid.innerHTML=html;
   }
-
-  // ── UPCOMING / NEXT EVENTS ──
-  var now=new Date();var in30=new Date(now);in30.setDate(in30.getDate()+30);
-  var nowStr=now.toISOString().slice(0,10);
-  var in30Str=in30.toISOString().slice(0,10);
-  var upcomingEv=_calEvents.filter(function(e){return e.date>=nowStr&&e.date<=in30Str;});
-  if(countEl)countEl.textContent=upcomingEv.length;
-
-  if(upcomingEv.length>0){
-    var uHtml='<h4 style="font-size:13px;color:var(--dim);margin:16px 0 8px">🏆 Ближайшие мероприятия (30 дней)</h4>';
-    upcomingEv.slice(0,12).forEach(function(ev){
-      var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
-      var gi=ESPORT_GAMES.find(function(g){return g.value===ev.game;})||{icon:'',label:''};
-      var si=EVENT_STATUSES.find(function(s){return s.value===ev.eventStatus;})||{label:'',color:'#64748b'};
-      var daysUntil=Math.ceil((new Date(ev.date)-now)/86400000);
-      var when=daysUntil===0?'Сегодня':daysUntil===1?'Завтра':daysUntil<7?'через '+daysUntil+'д':ev.date;
-      uHtml+='<div class="cal-upcoming-row" onclick="calOpenEvent(\''+ev.id+'\')">';
-      uHtml+='<div class="cal-upcoming-dot" style="background:'+ev.color+'"></div>';
-      uHtml+='<div style="flex:1;min-width:0">';
-      uHtml+='<div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+ti.icon+' '+_escHtml(ev.title)+'</div>';
-      uHtml+='<div style="font-size:10px;color:var(--dim)">'+when+(ev.time?' в '+ev.time:'')+(gi.icon?' · '+gi.icon:'')+(ev.teamFormat?' · '+ev.teamFormat:'')+'</div>';
-      uHtml+='</div>';
-      if(ev.eventStatus)uHtml+='<div style="font-size:8px;padding:2px 6px;background:'+si.color+'18;color:'+si.color+';border-radius:3px;white-space:nowrap">'+si.label+'</div>';
-      uHtml+='</div>';
-    });
-    upcoming.innerHTML=uHtml;
-  }else{
-    upcoming.innerHTML='<div style="text-align:center;padding:30px;color:var(--dim)"><div style="font-size:28px;margin-bottom:8px">🏆</div><div style="font-size:12px">Нет предстоящих мероприятий</div><div style="font-size:10px;margin-top:4px;color:#384858">Создайте первый турнир или ивент</div></div>';
-  }
 }
 
 window.calDayClick=function(dateStr){
   var dayEvents=_calEvents.filter(function(e){return e.date===dateStr;});
   if(dayEvents.length===0){
     _calDate=new Date(dateStr+'T12:00:00');
-    calCreateEvent(); // open full create form
+    calCreateEvent();
   }else if(dayEvents.length===1){
     calOpenEvent(dayEvents[0].id);
   }else{
-    var html='<h3 style="margin:0 0 12px">📅 '+dateStr+' ('+dayEvents.length+' мероприятий)</h3>';
+    var html='<h3 style="margin:0 0 12px">📅 '+dateStr+' — '+dayEvents.length+' мероприятий</h3>';
     dayEvents.forEach(function(ev){
       var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
       var gi=ESPORT_GAMES.find(function(g){return g.value===ev.game;})||{icon:'',label:''};
-      html+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);margin-bottom:6px;cursor:pointer" onclick="calOpenEvent(\''+ev.id+'\')">';
-      html+='<span style="font-size:16px">'+ti.icon+'</span>';
-      html+='<div style="flex:1"><div style="font-size:13px;font-weight:600">'+_escHtml(ev.title)+'</div>';
-      html+='<div style="font-size:10px;color:var(--dim)">'+(ev.time||'')+(gi.icon?' · '+gi.icon+' '+gi.label:'')+'</div></div>';
+      html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);margin-bottom:6px;cursor:pointer;transition:border-color .15s" onmouseover="this.style.borderColor=\'#a855f7\'" onmouseout="this.style.borderColor=\'var(--border)\'" onclick="calOpenEvent(\''+ev.id+'\')">';
+      html+='<span style="font-size:18px">'+ti.icon+'</span>';
+      html+='<div style="flex:1"><div style="font-size:13px;font-weight:700">'+_escHtml(ev.title)+'</div>';
+      html+='<div style="font-size:10px;color:var(--dim)">'+(ev.time||'')+(gi.label?' · '+gi.icon+' '+gi.label:'')+(ev.teamFormat?' · '+ev.teamFormat:'')+'</div></div>';
       html+='<span class="ev-badge" style="background:'+ti.color+'18;color:'+ti.color+';border:1px solid '+ti.color+'33">'+ti.label+'</span>';
       html+='</div>';
     });
-    html+='<div style="margin-top:12px"><button class="act-btn" onclick="closeModal()">Закрыть</button></div>';
+    html+='<div style="margin-top:14px;text-align:center"><button class="act-btn" onclick="closeModal()">Закрыть</button></div>';
     openModal(html);
   }
 };
 
-// Initial render
+// Initial render (list view default, no delay needed for list)
 setTimeout(renderCalendar,1500);
 
 // ═══ MINI ANALYTICS ═══
