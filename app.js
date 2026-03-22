@@ -493,6 +493,8 @@ function updateKPI(){
   // Update KPI header items with progress indicators
   _renderKpiProgress('kpi-leads',window._kpiProgress.leads,monthProgress);
   _renderKpiProgress('kpi-posts',window._kpiProgress.content,monthProgress);
+  // Update Strategy panel progress
+  if(typeof _renderKpiStrategyPanel==='function')_renderKpiStrategyPanel();
 }
 // Render mini progress bar under KPI number
 function _renderKpiProgress(elId,kpiObj,monthPct){
@@ -522,6 +524,44 @@ function _renderKpiProgress(elId,kpiObj,monthPct){
   bar.title=kpiObj.current+' / '+kpiObj.target+' ('+pct+'% цели, '+monthPct+'% месяца)';
 }
 updateKPI();
+
+// ═══ KPI PROGRESS in STRATEGY PANEL ═══
+function _renderKpiStrategyPanel(){
+  var panel=document.getElementById('kpiProgressPanel');
+  if(!panel)return;
+  var p=window._kpiProgress;
+  if(!p){panel.innerHTML='<div style="font-size:11px;color:var(--dim)">Загрузка данных...</div>';return;}
+  var mp=p.monthPct||0;
+  function bar(label,emoji,obj,color){
+    var pct=obj?obj.pct:0;var cur=obj?obj.current:0;var tgt=obj?obj.target:0;
+    var onPace=pct>=mp*0.7;var wayBehind=pct<mp*0.4;
+    var barColor=wayBehind?'#ef4444':onPace?'#10b981':'#f59e0b';
+    var statusIcon=wayBehind?'🔴':onPace?'🟢':'🟡';
+    return '<div style="margin-bottom:10px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
+        '<span style="font-size:11px;color:var(--text)">'+emoji+' '+label+'</span>'+
+        '<span style="font-size:11px;font-weight:700;color:'+barColor+'">'+statusIcon+' '+cur+' / '+tgt+' ('+pct+'%)</span>'+
+      '</div>'+
+      '<div style="height:6px;background:#ffffff08;border-radius:3px;overflow:hidden">'+
+        '<div style="height:100%;width:'+pct+'%;background:'+barColor+';border-radius:3px;transition:width .5s"></div>'+
+      '</div>'+
+    '</div>';
+  }
+  var html='<div style="font-size:11px;font-weight:700;color:var(--amber);margin-bottom:8px">📊 Прогресс KPI ('+mp+'% месяца прошло)</div>';
+  html+=bar('Лиды','📞',p.leads,'#00e5ff');
+  html+=bar('Контент','📝',p.content,'#ff2d78');
+  html+=bar('Партнёры','🤝',p.partners,'#a78bfa');
+  // Deficit summary
+  var deficits=[];
+  if(p.leads&&p.leads.pct<mp-10)deficits.push('Лиды: нужно ещё ~'+Math.max(0,Math.round((p.leads.target*mp/100)-p.leads.current)));
+  if(p.content&&p.content.pct<mp-10)deficits.push('Контент: нужно ещё ~'+Math.max(0,Math.round((p.content.target*mp/100)-p.content.current)));
+  if(deficits.length){
+    html+='<div style="margin-top:6px;padding:6px 8px;background:#ef444412;border:1px solid #ef444433;border-radius:6px;font-size:10px;color:#ef4444">⚠️ '+deficits.join(' | ')+'</div>';
+  }else{
+    html+='<div style="margin-top:6px;padding:6px 8px;background:#10b98112;border:1px solid #10b98133;border-radius:6px;font-size:10px;color:#10b981">✅ Все KPI в темпе</div>';
+  }
+  panel.innerHTML=html;
+}
 
 // ═══ FINANCE PANEL ═══
 // ═══ FINANCE v2 — Immutable Ledger + Payroll ═══

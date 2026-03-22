@@ -273,7 +273,7 @@ function refreshAfterSync(){
         id:stableTaskId, sbId:a.id, title:smartTitle,
         assignedTo:dashId, agentName:agentName, dept:ag?'':AGENTS[dashId]?.dept||'cmd',
         status:p.status||'done', priority:p.priority||'normal',
-        kanbanStatus:p.kanban_status||p.status||'done',
+        kanbanStatus:p.kanban_status||(p.status==='done'||p.status==='executed'||p.status==='completed'?'done':p.status==='cancelled'?'cancelled':p.status==='in_progress'||p.status==='working'?'in_progress':p.status==='rework'?'rework':'done'),
         description:smartDesc, deadline:p.deadline||'', estimate:p.estimate||'',
         tags:p.tags||[], subtasks:p.subtasks||[], reworkCount:p.rework_count||0,
         reworkNotes:p.rework_notes||'',
