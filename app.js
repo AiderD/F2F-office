@@ -3476,32 +3476,73 @@ window.triggerSingleAgent=async function(agentSlug, btnEl){
 
 // ═══ TASKS ═══
 // Helper: build human-readable title from payload
+// Strip template variables {{name}}, [Name] etc from display text
+function stripVars(s){return (s||'').replace(/\{\{[^}]+\}\}/g,'').replace(/\[[A-Z][a-z]+\]/g,'').replace(/\s{2,}/g,' ').trim();}
+// Pretty segment label
+function segmentLabel(seg){
+  if(!seg)return '';
+  return seg.replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
+}
+
 function taskSmartTitle(t){
   var p=t._payload||{};
   var aType=(t._actionType||'').toLowerCase();
+
+  // === FOLLOWUP EMAIL (most specific — check first) ===
+  if(aType==='followup_email'){
+    var partner=esc(p.partner||p.company||'');
+    var contact=esc(p.contact_name||'');
+    var subj=esc(stripVars(p.subject||''));
+    if(partner||contact)return '📨 Follow-up'+(partner?' → '+partner:'')+(contact?' ('+contact+')':'')+(subj?' — '+subj:'');
+    return '📨 Follow-up'+(subj?' — '+subj:'');
+  }
+
+  // === EMAIL TEMPLATE ===
   if(aType.includes('email_template')){
+    var subj=esc(stripVars(p.subject||p.email_subject||''));
+    var segment=segmentLabel(p.target_segment||'');
     var to=esc(p.to||p.email||p.recipient||p.contact_email||'');
-    var subj=esc(p.subject||p.email_subject||'');
     var company=esc(p.company||p.partner||'');
-    if(to||company)return '📧 Email'+(company?' → '+company:'')+(to?' ('+to+')':'')+(subj?' — '+subj:'');
-    if(p.template||p.body||p.text)return '📧 Email: '+esc((p.template||p.body||p.text||'').slice(0,60))+'...';
-    return '📧 Email шаблон (нажми для превью)';
+    // Priority: subject > company > segment > body excerpt
+    if(subj){
+      var ctx=company||segment;
+      return '📧'+(ctx?' ['+ctx+']':'')+' '+subj;
+    }
+    if(company)return '📧 Email → '+company;
+    if(segment)return '📧 Шаблон: '+segment;
+    if(to)return '📧 Email → '+to;
+    // Last resort: first meaningful line from body, stripped of variables
+    if(p.body||p.text){
+      var clean=stripVars((p.body||p.text||'').split('\n').filter(function(l){return l.trim().length>10;}).slice(1,2).join(' '));
+      if(clean)return '📧 '+clean.slice(0,65)+(clean.length>65?'...':'');
+    }
+    return '📧 Email шаблон';
   }
+
+  // === LEAD SUGGESTED ===
   if(aType.includes('lead_suggested')){
-    var name=esc(p.name||p.contact||p.contact_name||'');
     var comp=esc(p.company||p.organization||'');
+    var segment=segmentLabel(p.segment||'');
     var reason=esc(p.reason||p.description||p.why||'');
-    if(name||comp)return '🆕 Лид: '+(name?name:'')+(comp?' @ '+comp:'')+(reason?' — '+reason.slice(0,40):'');
-    return '🆕 Рекомендация лида (нажми для превью)';
+    if(comp){
+      var reasonShort=reason?(' — '+reason.slice(0,45)+(reason.length>45?'...':'')):'';
+      return '🆕 '+comp+(segment?' ('+segment+')':'')+reasonShort;
+    }
+    var name=esc(p.name||p.contact||p.contact_name||'');
+    if(name)return '🆕 Лид: '+name;
+    return '🆕 Рекомендация лида';
   }
+
+  // === META RECOMMENDATIONS ===
   if(aType.includes('meta_recommendation')){
     var src=esc(p.source_agent||'');
     var rec=esc(p.recommendation||'');
-    var pri=p.priority||'';
     var srcLabel=src==='qa'?'🧪 QA':src==='cto'?'🛠 CTO':src==='cpo'?'📦 CPO':src==='ux'?'🎨 UX':src?'🤖 '+src:'🤖 Meta';
     if(rec)return srcLabel+': '+rec.slice(0,70)+(rec.length>70?'...':'');
     return srcLabel+' рекомендация';
   }
+
+  // === AGENT CYCLES ===
   if(aType.includes('cycle_run')||aType.includes('agent_cycle')){
     var agentName=esc(p.agent_name||p.agent_slug||p.agent||'');
     var result=esc(p.result||p.summary||'');
@@ -3509,18 +3550,30 @@ function taskSmartTitle(t){
     if(agentName)return '🔄 Цикл: '+agentName;
     return esc(t.title)||'🔄 Цикл агента';
   }
+
+  // === CHAT TASKS ===
   if(aType.includes('task_from_chat')||t.fromChat)return esc(t.title);
-  // Fallback: try to build meaningful title from payload fields
-  if(!t.title||t.title.length<5){
-    var fallback=esc(p.recommendation||p.description||p.summary||p.text||p.body||'');
-    if(fallback)return fallback.slice(0,70)+(fallback.length>70?'...':'');
-  }
+
+  // === FALLBACK ===
+  var fallback=stripVars(p.recommendation||p.description||p.summary||'');
+  if(fallback&&fallback.length>5)return fallback.slice(0,70)+(fallback.length>70?'...':'');
   return esc(t.title)||'Задача #'+t.id;
 }
-// Helper: get short description from task payload
+
+// Helper: get short description from task payload (for card subtitle)
 function taskDescription(t){
   var p=t._payload||{};
-  return esc(p.recommendation||p.description||p.summary||p.reason||p.body||p.text||'').slice(0,120);
+  var aType=(t._actionType||'').toLowerCase();
+  if(aType.includes('email')){
+    // For emails show subject or first body line
+    var subj=stripVars(p.subject||'');
+    if(subj)return esc(subj);
+    var body=stripVars(p.body||p.text||'');
+    var lines=body.split('\n').filter(function(l){return l.trim().length>5;});
+    return esc((lines[1]||lines[0]||'').slice(0,100));
+  }
+  if(aType.includes('lead_suggested'))return esc(p.reason||p.description||'').slice(0,100);
+  return esc(stripVars(p.recommendation||p.description||p.summary||p.reason||'')).slice(0,100);
 }
 // Helper: build preview card HTML from payload
 function taskPreviewHTML(t){
@@ -3610,6 +3663,7 @@ function renderKanban(){
     var countEl=document.getElementById('kc-'+status);
     if(!el)return;
     if(countEl)countEl.textContent=cols[status].length;
+    if(!cols[status].length){el.innerHTML='<div class="kanban-empty">Нет задач</div>';return;}
     el.innerHTML=cols[status].map(function(t){
       var pri=t.priority||'normal';
       var agent=AGENTS[t.assignedTo]||{emoji:'📋',name:'?'};
