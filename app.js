@@ -406,10 +406,10 @@ async function loadStrategy(){
     if(data&&data[0]&&data[0].value_json){
       var s=typeof data[0].value_json==='string'?JSON.parse(data[0].value_json):data[0].value_json;
       if(s.mission_vision)document.getElementById('strategyText').value=s.mission_vision;
-      if(s.kpi_leads_monthly)document.getElementById('kpi-leads').value=s.kpi_leads_monthly;
-      if(s.kpi_emails_monthly)document.getElementById('kpi-emails').value=s.kpi_emails_monthly;
-      if(s.kpi_content_monthly)document.getElementById('kpi-content').value=s.kpi_content_monthly;
-      if(s.kpi_revenue_target)document.getElementById('kpi-revenue').value=s.kpi_revenue_target;
+      if(s.kpi_leads_monthly)document.getElementById('strat-kpi-leads').value=s.kpi_leads_monthly;
+      if(s.kpi_emails_monthly)document.getElementById('strat-kpi-emails').value=s.kpi_emails_monthly;
+      if(s.kpi_content_monthly)document.getElementById('strat-kpi-content').value=s.kpi_content_monthly;
+      if(s.kpi_revenue_target)document.getElementById('strat-kpi-revenue').value=s.kpi_revenue_target;
     }
   }catch(e){console.warn('Strategy load error:',e);}
   renderStrategyProgress();
@@ -417,28 +417,57 @@ async function loadStrategy(){
 function renderStrategyProgress(){
   var el=document.getElementById('stratProgress');if(!el)return;
   var targets={
-    leads:parseInt(document.getElementById('kpi-leads').value)||45,
-    content:parseInt(document.getElementById('kpi-content').value)||20
+    leads:parseInt(document.getElementById('strat-kpi-leads').value)||45,
+    emails:parseInt(document.getElementById('strat-kpi-emails').value)||200,
+    content:parseInt(document.getElementById('strat-kpi-content').value)||20,
+    revenue:parseInt(document.getElementById('strat-kpi-revenue').value)||15000
   };
-  var actual={
-    leads:window._sbPartners?window._sbPartners.length:D.leads.length,
-    content:window._sbContent?window._sbContent.filter(function(c){return c.status==='published';}).length:D.posts.filter(function(p){return p.sbStatus==='published';}).length
-  };
-  function bar(label,val,target,color){
-    var pct=Math.min(100,Math.round(val/target*100));
-    return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">'+
-      '<span style="color:var(--dim)">'+label+'</span><span style="color:'+color+';font-weight:700">'+val+' / '+target+' ('+pct+'%)</span></div>'+
-      '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">'+
-      '<div style="height:100%;width:'+pct+'%;background:'+color+';border-radius:3px;transition:width .5s"></div></div></div>';
+  // Real data from Supabase
+  var leadsActual=window._sbPartners?window._sbPartners.length:0;
+  var publishedActual=window._sbContent?window._sbContent.filter(function(c){return c.status==='published';}).length:0;
+  var emailsSent=0;
+  if(window._sbActions){
+    emailsSent=window._sbActions.filter(function(a){
+      var p=typeof a.payload_json==='string'?JSON.parse(a.payload_json||'{}'):a.payload_json||{};
+      return a.type==='email_sent'||p.status==='sent';
+    }).length;
   }
-  el.innerHTML=bar('Лиды',actual.leads,targets.leads,'var(--cyan)')+bar('Контент опубликован',actual.content,targets.content,'var(--green)');
+  var actual={leads:leadsActual,emails:emailsSent,content:publishedActual,revenue:0};
+  function kpiCard(icon,label,val,target,color){
+    var pct=target>0?Math.min(100,Math.round(val/target*100)):0;
+    var status=pct>=100?'✅':pct>=60?'🟡':pct>0?'🔴':'⬜';
+    return '<div class="strat-kpi-card">'+
+      '<div class="strat-kpi-label"><span>'+icon+' '+label+'</span><span class="strat-kpi-pct" style="color:'+color+'">'+pct+'%</span></div>'+
+      '<div class="strat-kpi-value" style="color:'+color+'">'+val+' <span style="font-size:12px;color:var(--dim);font-weight:400">/ '+target+'</span></div>'+
+      '<div class="strat-kpi-bar"><div class="strat-kpi-fill" style="width:'+pct+'%;background:'+color+'"></div></div>'+
+      '<div style="font-size:9px;color:var(--dim);text-align:right">'+status+' '+(pct>=100?'Цель достигнута':pct>=60?'На пути':'Нужен прогресс')+'</div>'+
+    '</div>';
+  }
+  el.innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+    kpiCard('📞','Лиды',actual.leads,targets.leads,'#00e5ff')+
+    kpiCard('📝','Контент',actual.content,targets.content,'#00ff88')+
+    kpiCard('📧','Emails',actual.emails,targets.emails,'#ff2d78')+
+    kpiCard('💰','Выручка ($)',actual.revenue,targets.revenue,'#ffb800')+
+  '</div>';
+  // Update decomposition with real numbers
+  var decomEl=document.getElementById('stratDecomposition');
+  if(decomEl){
+    var publishRate=publishedActual>0?Math.round(publishedActual/7*10)/10:0;
+    var leadRate=leadsActual>0?Math.round(leadsActual/7*10)/10:0;
+    decomEl.innerHTML=
+      '<div style="margin-bottom:8px"><b style="color:#00ff88">→ Coordinator</b> <span style="color:var(--text)">разбивает стратегию на недельные цели</span></div>'+
+      '<div style="margin-bottom:8px"><b style="color:#ffb800">→ Lead Scout</b> <span style="color:var(--text)">ищет ~'+Math.ceil(targets.leads/30)+' лидов/день</span> <span style="color:var(--dim)">(сейчас: '+leadRate+'/день)</span></div>'+
+      '<div style="margin-bottom:8px"><b style="color:#ff2d78">→ SMM Agent</b> <span style="color:var(--text)">публикует ~'+Math.ceil(targets.content/4)+' постов/неделю</span> <span style="color:var(--dim)">(сейчас: '+publishRate+'/день)</span></div>'+
+      '<div style="margin-bottom:8px"><b style="color:#00e5ff">→ Outreach</b> <span style="color:var(--text)">отправляет ~'+Math.ceil(targets.emails/30)+' email/день</span> <span style="color:var(--dim)">(отправлено: '+emailsSent+')</span></div>'+
+      '<div><b style="color:#a78bfa">→ Analytics</b> <span style="color:var(--text)">отслеживает прогресс + ROI</span></div>';
+  }
 }
 document.getElementById('stratSaveBtn').addEventListener('click',async function(){
   const strategyText=document.getElementById('strategyText').value;
-  const kpiLeads=parseInt(document.getElementById('kpi-leads').value)||45;
-  const kpiEmails=parseInt(document.getElementById('kpi-emails').value)||200;
-  const kpiContent=parseInt(document.getElementById('kpi-content').value)||20;
-  const kpiRevenue=parseInt(document.getElementById('kpi-revenue').value)||15000;
+  const kpiLeads=parseInt(document.getElementById('strat-kpi-leads').value)||45;
+  const kpiEmails=parseInt(document.getElementById('strat-kpi-emails').value)||200;
+  const kpiContent=parseInt(document.getElementById('strat-kpi-content').value)||20;
+  const kpiRevenue=parseInt(document.getElementById('strat-kpi-revenue').value)||15000;
 
   const strategyData={
     mission_vision:strategyText,
@@ -494,15 +523,14 @@ function getLedgerBurn(){
 
 function updateKPI(){
   var burn=getLedgerBurn();
-  // Demo mode indicator — only show when not logged in at all
-  var demoTag=_currentSession?'':' <span style="font-size:8px;color:#ffb800;vertical-align:super">demo</span>';
-  // Leads: prefer live count from D.leads (already replaced by SB data in refreshAfterSync)
-  var leadsCount=SUPABASE_LIVE&&window._sbPartners?window._sbPartners.length:D.leads.length;
-  document.getElementById('kpi-leads').innerHTML=leadsCount+demoTag;
-  // Posts: prefer live count
-  var postsCount=SUPABASE_LIVE&&window._sbContent?window._sbContent.length:D.posts.length;
-  document.getElementById('kpi-posts').innerHTML=postsCount+demoTag;
-  document.getElementById('kpi-reports').innerHTML=D.reports.length+demoTag;
+  // Show real data ONLY when Supabase is live — never show demo data counts
+  var loading='<span class="kpi-loading">—</span>';
+  var leadsCount=SUPABASE_LIVE&&window._sbPartners?window._sbPartners.length:null;
+  document.getElementById('kpi-leads').innerHTML=leadsCount!==null?leadsCount:loading;
+  var postsCount=SUPABASE_LIVE&&window._sbContent?window._sbContent.length:null;
+  document.getElementById('kpi-posts').innerHTML=postsCount!==null?postsCount:loading;
+  var reportsCount=SUPABASE_LIVE&&window._sbReports?window._sbReports.length:null;
+  document.getElementById('kpi-reports').innerHTML=reportsCount!==null?reportsCount:loading;
   // Partnerships: from metrics or fallback 0
   var partnerships=0;
   if(window._sbMetrics){
@@ -2006,8 +2034,10 @@ function buildLiveIntegrations(){
 
   // 5. AI Credits — check if ai_credits data loaded
   var hasCredits=window._sbCredits&&window._sbCredits.length>0;
+  var weeklyBudget=50;// $50/week budget
   connected.push({name:'Claude AI (Anthropic)',purpose:'LLM for agents',status:hasCredits?'active':'limited',
-    detail:hasCredits?'$'+creditsSpent.toFixed(2)+' использовано':'Ожидание данных'});
+    detail:hasCredits?'$'+creditsSpent.toFixed(2)+' использовано':'Ожидание данных',
+    usage:hasCredits?Math.round(creditsSpent*100)/100:0,limit:weeklyBudget});
 
   // 6. GitHub Pages — always active (we're running on it)
   connected.push({name:'GitHub Pages',purpose:'Dashboard hosting',status:'active',detail:'aiderd.github.io'});
@@ -2042,24 +2072,44 @@ function buildLiveIntegrations(){
 function renderIntegrations(){
   var intg=buildLiveIntegrations();
   var conn=intg.connected;var need=intg.needed;
-  document.getElementById('intg-count').textContent=conn.length+' подключено, '+need.length+' нужно';
-  var html='<h3 style="font-size:14px;color:var(--green);margin-bottom:12px">✅ Подключено ('+conn.length+')</h3>';
+  var activeCount=conn.filter(function(c){return c.status==='active';}).length;
+  document.getElementById('intg-count').textContent=activeCount+'/'+conn.length+' активны, '+need.length+' нужно';
+  // Health overview bar
+  var healthPct=conn.length>0?Math.round(activeCount/conn.length*100):0;
+  var healthColor=healthPct>=80?'var(--green)':healthPct>=50?'var(--amber)':'var(--hot)';
+  var html='<div style="display:flex;gap:16px;align-items:center;margin-bottom:16px;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:8px">'+
+    '<div style="font-size:28px;font-weight:700;color:'+healthColor+';font-family:monospace">'+healthPct+'%</div>'+
+    '<div style="flex:1"><div style="font-size:12px;color:var(--text);font-weight:600;margin-bottom:4px">Здоровье интеграций</div>'+
+    '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+healthPct+'%;background:'+healthColor+';border-radius:3px;transition:width .5s"></div></div>'+
+    '<div style="font-size:10px;color:var(--dim);margin-top:4px">'+activeCount+' работают нормально, '+(conn.length-activeCount)+' требуют внимания</div></div></div>';
+  // Connected integrations
+  html+='<h3 style="font-size:14px;color:var(--green);margin-bottom:12px">✅ Подключено ('+conn.length+')</h3>';
   html+=conn.map(function(c){
+    var statusLabel=c.status==='active'?'Active':c.status==='limited'?'Limited':'Pending';
+    var usageBar='';
+    if(c.usage!==undefined&&c.limit){
+      var usePct=Math.min(100,Math.round(c.usage/c.limit*100));
+      var useColor=usePct>=90?'var(--hot)':usePct>=60?'var(--amber)':'var(--green)';
+      usageBar='<div style="display:flex;align-items:center;gap:6px;min-width:120px">'+
+        '<div class="intg-progress" style="flex:1"><div class="intg-progress-fill" style="width:'+usePct+'%;background:'+useColor+'"></div></div>'+
+        '<span style="font-size:9px;color:var(--dim);font-family:monospace;white-space:nowrap">'+c.usage+'/'+c.limit+'</span></div>';
+    }
     return '<div class="intg-row">'+
       '<div class="intg-dot '+c.status+'"></div>'+
-      '<div class="intg-name">'+c.name+'</div>'+
-      '<div class="intg-purpose">'+c.purpose+'</div>'+
-      '<div style="font-size:10px;color:var(--dim);margin-left:auto;white-space:nowrap">'+c.detail+'</div>'+
-      '<div class="intg-badge '+c.status+'">'+(c.status==='active'?'Active':c.status==='limited'?'Limited':'Pending')+'</div>'+
+      '<div style="flex:1;min-width:0"><div class="intg-name" style="margin-bottom:1px">'+c.name+'</div><div style="font-size:10px;color:var(--dim)">'+c.purpose+'</div></div>'+
+      (usageBar||'<div style="font-size:10px;color:var(--dim);white-space:nowrap">'+c.detail+'</div>')+
+      '<div class="intg-badge '+c.status+'">'+statusLabel+'</div>'+
     '</div>';
   }).join('');
+  // Needed integrations with priority colors
   html+='<h3 style="font-size:14px;color:var(--amber);margin:20px 0 12px">⏳ Нужно подключить ('+need.length+')</h3>';
   html+=need.map(function(n){
+    var priColor=n.priority==='high'?'var(--hot)':n.priority==='medium'?'var(--amber)':'var(--dim)';
+    var priLabel=n.priority==='high'?'ВЫСОКИЙ':n.priority==='medium'?'СРЕДНИЙ':'НИЗКИЙ';
     return '<div class="intg-row">'+
       '<div class="intg-dot needed"></div>'+
-      '<div class="intg-name">'+n.name+'</div>'+
-      '<div class="intg-purpose">'+n.purpose+'</div>'+
-      '<div class="intg-badge needed">'+n.priority+'</div>'+
+      '<div style="flex:1;min-width:0"><div class="intg-name" style="margin-bottom:1px">'+n.name+'</div><div style="font-size:10px;color:var(--dim)">'+n.purpose+'</div></div>'+
+      '<div class="intg-badge needed" style="color:'+priColor+';border-color:'+priColor+'44">'+priLabel+'</div>'+
     '</div>';
   }).join('');
   document.getElementById('intgContent').innerHTML=html;
@@ -3444,8 +3494,33 @@ function taskSmartTitle(t){
     if(name||comp)return '🆕 Лид: '+(name?name:'')+(comp?' @ '+comp:'')+(reason?' — '+reason.slice(0,40):'');
     return '🆕 Рекомендация лида (нажми для превью)';
   }
+  if(aType.includes('meta_recommendation')){
+    var src=esc(p.source_agent||'');
+    var rec=esc(p.recommendation||'');
+    var pri=p.priority||'';
+    var srcLabel=src==='qa'?'🧪 QA':src==='cto'?'🛠 CTO':src==='cpo'?'📦 CPO':src==='ux'?'🎨 UX':src?'🤖 '+src:'🤖 Meta';
+    if(rec)return srcLabel+': '+rec.slice(0,70)+(rec.length>70?'...':'');
+    return srcLabel+' рекомендация';
+  }
+  if(aType.includes('cycle_run')||aType.includes('agent_cycle')){
+    var agentName=esc(p.agent_name||p.agent_slug||p.agent||'');
+    var result=esc(p.result||p.summary||'');
+    if(agentName&&result)return '🔄 '+agentName+': '+result.slice(0,50);
+    if(agentName)return '🔄 Цикл: '+agentName;
+    return esc(t.title)||'🔄 Цикл агента';
+  }
   if(aType.includes('task_from_chat')||t.fromChat)return esc(t.title);
-  return esc(t.title);
+  // Fallback: try to build meaningful title from payload fields
+  if(!t.title||t.title.length<5){
+    var fallback=esc(p.recommendation||p.description||p.summary||p.text||p.body||'');
+    if(fallback)return fallback.slice(0,70)+(fallback.length>70?'...':'');
+  }
+  return esc(t.title)||'Задача #'+t.id;
+}
+// Helper: get short description from task payload
+function taskDescription(t){
+  var p=t._payload||{};
+  return esc(p.recommendation||p.description||p.summary||p.reason||p.body||p.text||'').slice(0,120);
 }
 // Helper: build preview card HTML from payload
 function taskPreviewHTML(t){
@@ -3563,9 +3638,20 @@ function renderKanban(){
       if(t.tags&&t.tags.length){
         tagsHTML='<div class="kc-tags">'+t.tags.map(function(tag){return '<span class="kc-tag">'+tag+'</span>';}).join('')+'</div>';
       }
+      // Type badge for kanban
+      var aType=(t._actionType||'').toLowerCase();
+      var typeBadge='';
+      if(aType.includes('email_template'))typeBadge='<span class="kc-type-badge" style="background:#00e5ff15;color:#00e5ff;border:1px solid #00e5ff33">EMAIL</span>';
+      else if(aType.includes('lead_suggested'))typeBadge='<span class="kc-type-badge" style="background:#00ff8815;color:#00ff88;border:1px solid #00ff8833">LEAD</span>';
+      else if(aType.includes('meta_recommendation'))typeBadge='<span class="kc-type-badge" style="background:#a855f715;color:#a855f7;border:1px solid #a855f733">META</span>';
+      // Short description for context
+      var desc=taskDescription(t);
+      var descHTML=desc&&desc!==displayTitle?'<div class="kc-desc">'+desc+'</div>':'';
       return '<div class="kanban-card" onclick="openTaskDetail('+t.id+')">'+
         '<div class="kc-priority '+pri+'"></div>'+
+        typeBadge+
         '<div class="kc-title">'+displayTitle+'</div>'+
+        descHTML+
         '<div class="kc-meta">'+agent.emoji+' '+(agent.name||'').split(' ')[0]+' '+estimateHTML+' '+deadlineHTML+'</div>'+
         subtasksHTML+reworkHTML+tagsHTML+
       '</div>';

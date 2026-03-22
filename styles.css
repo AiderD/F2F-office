@@ -91,9 +91,9 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
 .data-count{font-size:12px;color:var(--dim);background:var(--panel);padding:4px 12px;border-radius:8px}
 .filter-bar{display:flex;gap:8px}
 .filter-btn{padding:5px 14px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--dim);
-  font-size:11px;cursor:pointer;transition:all .2s}
-.filter-btn.active{border-color:var(--cyan);color:var(--cyan);background:var(--cyan)11;box-shadow:0 0 8px var(--cyan)22}
-.filter-btn:hover:not(.active){border-color:var(--dim);color:var(--text)}
+  font-size:11px;cursor:pointer;transition:all .2s ease;position:relative}
+.filter-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(0,229,255,0.12);box-shadow:0 0 10px rgba(0,229,255,0.2),inset 0 0 12px rgba(0,229,255,0.06);font-weight:700;transform:translateY(-1px)}
+.filter-btn:hover:not(.active){border-color:var(--dim);color:var(--text);background:rgba(255,255,255,0.04)}
 .data-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
 .lead-card{background:linear-gradient(145deg,var(--panel),#0a1420);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;
   box-shadow:0 2px 12px rgba(0,0,0,0.3);transition:all .25s ease;
@@ -249,6 +249,34 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
   border:1px solid #f9731633;margin-top:3px;display:inline-block}
 .kanban-card .kc-deadline{font-size:9px;color:#ff4444}
 .kanban-card .kc-estimate{font-size:9px;padding:1px 4px;background:#06b6d418;color:#06b6d4;border-radius:3px}
+.kanban-card .kc-desc{font-size:10px;color:var(--dim);line-height:1.4;margin:4px 0;max-height:40px;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.kanban-card .kc-type-badge{font-size:8px;padding:1px 5px;border-radius:3px;font-weight:700;text-transform:uppercase;
+  letter-spacing:0.5px;display:inline-block;margin-bottom:4px}
+
+/* ═══ INTEGRATION PROGRESS ═══ */
+.intg-progress{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:4px;width:80px}
+.intg-progress-fill{height:100%;border-radius:2px;transition:width .5s}
+.intg-last-active{font-size:9px;color:var(--dim);font-family:monospace}
+.intg-actions{display:flex;gap:4px;margin-left:auto}
+.intg-action-btn{padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:none;color:var(--dim);
+  font-size:9px;cursor:pointer;transition:all .2s}
+.intg-action-btn:hover{border-color:var(--cyan);color:var(--cyan)}
+
+/* ═══ STRATEGY PROGRESS BARS ═══ */
+.strat-kpi-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;
+  display:flex;flex-direction:column;gap:6px}
+.strat-kpi-label{font-size:11px;color:var(--dim);display:flex;justify-content:space-between}
+.strat-kpi-value{font-size:20px;font-weight:700;font-family:monospace}
+.strat-kpi-bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.strat-kpi-fill{height:100%;border-radius:3px;transition:width .5s ease}
+.strat-kpi-pct{font-size:10px;font-weight:700;text-align:right}
+
+/* ═══ LOADING SKELETON ═══ */
+.kpi-loading{animation:pulse 1.5s ease-in-out infinite;color:var(--dim)!important}
+@keyframes shimmer{0%{background-position:-200px 0}100%{background-position:200px 0}}
+.skeleton{background:linear-gradient(90deg,var(--panel) 25%,var(--border) 50%,var(--panel) 75%);
+  background-size:400px 100%;animation:shimmer 1.5s infinite;border-radius:4px}
 
 /* ═══ AGENT CHAT ═══ */
 .agent-chat{margin-top:16px;background:var(--bg);border-radius:8px;border:1px solid var(--border);overflow:hidden}

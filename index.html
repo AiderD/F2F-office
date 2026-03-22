@@ -344,18 +344,14 @@
     <div>
       <h3 style="margin-top:0;color:var(--amber);font-size:14px;margin-bottom:12px">KPI Цели (на месяц)</h3>
       <div style="display:flex;flex-direction:column;gap:14px">
-        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📞 Лиды/месяц:</label><input id="kpi-leads" type="number" value="45" min="0" max="10000" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
-        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📧 Email/месяц:</label><input id="kpi-emails" type="number" value="200" min="0" max="100000" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
-        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📝 Контент/месяц:</label><input id="kpi-content" type="number" value="20" min="0" max="10000" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
-        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">💰 Выручка/месяц:</label><input id="kpi-revenue" type="number" value="15000" min="0" max="100000000" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:100px"></div>
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📞 Лиды/месяц:</label><input id="strat-kpi-leads" type="number" value="45" min="0" max="10000" onchange="renderStrategyProgress()" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📧 Email/месяц:</label><input id="strat-kpi-emails" type="number" value="200" min="0" max="100000" onchange="renderStrategyProgress()" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📝 Контент/месяц:</label><input id="strat-kpi-content" type="number" value="20" min="0" max="10000" onchange="renderStrategyProgress()" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">💰 Выручка/месяц:</label><input id="strat-kpi-revenue" type="number" value="15000" min="0" max="100000000" onchange="renderStrategyProgress()" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:100px"></div>
       </div>
-      <h3 style="margin-top:20px;color:#4aff00;font-size:14px;margin-bottom:12px">Декомпозиция стратегии</h3>
-      <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;color:var(--dim);line-height:1.6;max-height:180px;overflow-y:auto">
-        <p style="margin:0 0 8px 0"><b style="color:#00ff88">→ Coordinator</b> разбивает стратегию на неделю</p>
-        <p style="margin:0 0 8px 0"><b style="color:#ffb800">→ Lead Scout</b> ищет N лидов/день</p>
-        <p style="margin:0 0 8px 0"><b style="color:#ff2d78">→ SMM</b> публикует N постов/неделю</p>
-        <p style="margin:0 0 8px 0"><b style="color:#00e5ff">→ Analytics</b> отслеживает прогресс KPI</p>
-        <p style="margin:0"><b style="color:#a78bfa">→ System</b> скрипты для автоматизации</p>
+      <h3 style="margin-top:20px;color:#4aff00;font-size:14px;margin-bottom:12px">Декомпозиция стратегии <span style="font-size:10px;color:var(--dim);font-weight:400">(авто-расчёт из KPI)</span></h3>
+      <div id="stratDecomposition" style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;color:var(--dim);line-height:1.6;max-height:200px;overflow-y:auto">
+        <div style="text-align:center;padding:12px;color:var(--dim)"><span class="spinner"></span> Загрузка данных...</div>
       </div>
     </div>
   </div>
