@@ -3796,7 +3796,7 @@ window.createTaskFromModal=function(){
   closeModal();renderTasks();updateKPI();
   addFeed(t.assignedTo,'📌 Новая задача: '+title.slice(0,50));
 };
-window.closeModal=function(){document.querySelector('.modal')?.classList.remove('open');};
+// closeModal already defined at line ~1479 with getElementById fix — do not override
 
 window.taskAction=function(id,newStatus){
   const t=D.tasks.find(x=>x.id===id);if(!t)return;
