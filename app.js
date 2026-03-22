@@ -5057,62 +5057,59 @@ window.uploadReferenceImage=function(){
   var input=document.createElement('input');
   input.type='file';
   input.accept='image/jpeg,image/png,image/webp';
+  input.multiple=true;
   input.onchange=async function(){
-    var file=input.files[0];
-    if(!file)return;
-    var result=await f2fPrompt({title:'🖼 Референс-картинка',fields:[
+    var files=Array.from(input.files);
+    if(!files.length)return;
+    var result=await f2fPrompt({title:'🖼 Референс-картинки ('+files.length+' шт.)',fields:[
       {id:'category',label:'Категория',type:'select',value:'news',options:['news','tournament','match','meme','educational','promo','entertainment']},
       {id:'desc',label:'Опиши стиль (что нравится)',type:'textarea',rows:2,placeholder:'Тёмный стиль, зелёный неон, минимализм'},
       {id:'rating',label:'Оценка (1-5)',type:'number',value:'5',min:1,max:5},
       {id:'tags',label:'Теги через запятую',type:'text',placeholder:'neon, dark, arena'}
-    ],submitText:'Загрузить'});
+    ],submitText:'Загрузить '+files.length+' файл(ов)'});
     if(!result)return;
     var category=result.category||'news';
     var desc=result.desc||'';
     var rating=result.rating||'5';
     var tags=result.tags||'';
 
-    // Show uploading state in chat
     var log=document.getElementById('agentChatLog');
+    var ok=0,fail=0;
+    for(var i=0;i<files.length;i++){
+      var file=files[i];
+      if(log){
+        log.innerHTML+='<div style="padding:6px 10px;background:#f59e0b18;border-radius:8px;margin:4px 0;font-size:12px">⏳ Загружаю '+(i+1)+'/'+files.length+': '+file.name+'...</div>';
+        log.scrollTop=log.scrollHeight;
+      }
+      var formData=new FormData();
+      formData.append('file',file);
+      formData.append('category',category);
+      if(desc)formData.append('style_description',desc);
+      if(rating)formData.append('rating',rating);
+      if(tags)formData.append('tags',tags);
+      try{
+        var res=await fetch(SUPABASE_URL+'/functions/v1/upload-reference',{
+          method:'POST',
+          headers:{'Authorization':'Bearer '+SUPABASE_ANON},
+          body:formData
+        });
+        var data=await res.json();
+        if(data.success){
+          ok++;
+          if(log){
+            log.innerHTML+='<div style="padding:6px 10px;background:#00ff8818;border-radius:8px;margin:4px 0;font-size:12px">'+
+              '✅ '+file.name+'<br>'+
+              '<img src="'+data.image_url+'" style="max-width:150px;border-radius:6px;margin-top:4px"></div>';
+            log.scrollTop=log.scrollHeight;
+          }
+        }else{fail++;if(log)log.innerHTML+='<div style="padding:6px 10px;background:#ff444418;border-radius:8px;margin:4px 0;font-size:12px;color:#ff4444">❌ '+file.name+': '+(data.error||'Ошибка')+'</div>';}
+      }catch(e){fail++;if(log)log.innerHTML+='<div style="padding:6px 10px;background:#ff444418;border-radius:8px;margin:4px 0;font-size:12px;color:#ff4444">❌ '+file.name+': '+e.message+'</div>';}
+    }
     if(log){
-      log.innerHTML+='<div style="padding:6px 10px;background:#f59e0b18;border-radius:8px;margin:4px 0;font-size:12px">⏳ Загружаю '+file.name+'...</div>';
+      log.innerHTML+='<div style="padding:8px 12px;background:#00ff8818;border:1px solid #00ff8833;border-radius:8px;margin:6px 0;font-size:12px;font-weight:600">📊 Итого: ✅ '+ok+' загружено'+(fail?' | ❌ '+fail+' ошибок':'')+'</div>';
       log.scrollTop=log.scrollHeight;
     }
-
-    var formData=new FormData();
-    formData.append('file',file);
-    formData.append('category',category);
-    if(desc)formData.append('style_description',desc);
-    if(rating)formData.append('rating',rating);
-    if(tags)formData.append('tags',tags);
-
-    try{
-      var res=await fetch(SUPABASE_URL+'/functions/v1/upload-reference',{
-        method:'POST',
-        headers:{'Authorization':'Bearer '+SUPABASE_ANON},
-        body:formData
-      });
-      var data=await res.json();
-      if(data.success){
-        if(log){
-          log.innerHTML+='<div style="padding:6px 10px;background:#00ff8818;border-radius:8px;margin:4px 0;font-size:12px">'+
-            '✅ Референс загружен!<br>'+
-            '<img src="'+data.image_url+'" style="max-width:200px;border-radius:6px;margin-top:4px"><br>'+
-            '<span style="color:var(--dim)">Категория: '+data.category+(desc?' | Стиль: '+desc.slice(0,50):'')+'</span></div>';
-          log.scrollTop=log.scrollHeight;
-        }
-        addFeed('art_director','🖼 Загружен новый референс ['+category+']'+(desc?' — '+desc.slice(0,60):''));
-      }else{
-        if(log){
-          log.innerHTML+='<div style="padding:6px 10px;background:#ff444418;border-radius:8px;margin:4px 0;font-size:12px;color:#ff4444">❌ '+
-            (data.error||'Ошибка загрузки')+'</div>';
-        }
-      }
-    }catch(e){
-      if(log){
-        log.innerHTML+='<div style="padding:6px 10px;background:#ff444418;border-radius:8px;margin:4px 0;font-size:12px;color:#ff4444">❌ Ошибка: '+e.message+'</div>';
-      }
-    }
+    if(ok)addFeed('art_director','🖼 Загружено '+ok+' референсов ['+category+']'+(desc?' — '+desc.slice(0,60):''));
   };
   input.click();
 };
