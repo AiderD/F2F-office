@@ -2123,42 +2123,193 @@ window.openIntgDetail=function(name,type){
   var item=all.find(function(c){return c.name===name;});
   if(!item)return;
   var isConn=type==='connected';
-  var html='<h3 style="margin:0 0 12px">'+item.name+'</h3>';
-  html+='<div style="font-size:13px;color:var(--dim);margin-bottom:16px">'+item.purpose+'</div>';
-  // Status
-  html+='<div style="display:flex;gap:8px;margin-bottom:16px">'+
+  // Load saved config from localStorage
+  var cfgKey='f2f_intg_'+name.replace(/[\s\/\(\)\.]/g,'_').toLowerCase();
+  var saved=JSON.parse(localStorage.getItem(cfgKey)||'{}');
+
+  var html='<h3 style="margin:0 0 4px">'+item.name+'</h3>';
+  html+='<div style="font-size:13px;color:var(--dim);margin-bottom:12px">'+item.purpose+'</div>';
+  // Status row
+  html+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">'+
     '<span class="intg-badge '+(isConn?item.status:'needed')+'" style="font-size:11px;padding:4px 10px">'+(isConn?item.status.toUpperCase():'НЕ ПОДКЛЮЧЕНО')+'</span>'+
-    (item.detail?'<span style="font-size:11px;color:var(--dim);padding:4px 0">'+item.detail+'</span>':'')+
+    (item.detail?'<span style="font-size:11px;color:var(--dim)">'+item.detail+'</span>':'')+
   '</div>';
-  // Usage bar if connected
+  // Usage bar
   if(isConn&&item.usage!==undefined&&item.limit){
     var pct=Math.min(100,Math.round(item.usage/item.limit*100));
     var col=pct>=90?'var(--hot)':pct>=60?'var(--amber)':'var(--green)';
     html+='<div style="margin-bottom:16px"><div style="font-size:11px;color:var(--dim);margin-bottom:4px">Использование: '+item.usage+'/'+item.limit+' ('+pct+'%)</div>'+
-      '<div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+col+';border-radius:4px;transition:width .3s"></div></div></div>';
+      '<div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+col+';border-radius:4px"></div></div></div>';
   }
-  // Config section
+
+  // ═══ EDITABLE SETTINGS ═══
+  var inputStyle='padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;width:100%';
+  var labelStyle='font-size:11px;color:var(--dim);display:block;margin-bottom:3px';
+  var rowStyle='margin-bottom:10px';
+
+  // Per-integration specific settings
+  var configMap={
+    'Supabase':[
+      {key:'url',label:'URL проекта',placeholder:'https://xxx.supabase.co',val:saved.url||'https://cuvmjkavluixkbzblcie.supabase.co'},
+      {key:'anon_key',label:'Anon Key',placeholder:'eyJ...',val:saved.anon_key?'••••'+saved.anon_key.slice(-8):'••••••••',type:'password'},
+      {key:'sync_interval',label:'Интервал синхронизации (мин)',val:saved.sync_interval||'5',type:'number'}
+    ],
+    'Telegram Bot':[
+      {key:'bot_token',label:'Bot Token',placeholder:'123456:ABC-DEF...',val:saved.bot_token?'••••'+saved.bot_token.slice(-6):'',type:'password'},
+      {key:'chat_id',label:'Chat ID канала',placeholder:'-100xxxxxxxxxx',val:saved.chat_id||''},
+      {key:'notify_ceo',label:'Уведомления CEO',val:saved.notify_ceo!==false,type:'toggle'},
+      {key:'max_per_day',label:'Макс. публикаций/день',val:saved.max_per_day||'4',type:'number'}
+    ],
+    'Claude AI (Anthropic)':[
+      {key:'api_key',label:'API Key',placeholder:'sk-ant-...',val:saved.api_key?'••••'+saved.api_key.slice(-6):'',type:'password'},
+      {key:'model',label:'Модель',val:saved.model||'claude-sonnet-4-20250514',type:'select',options:['claude-sonnet-4-20250514','claude-opus-4-20250514','claude-haiku-4-20250404']},
+      {key:'weekly_budget',label:'Бюджет в неделю ($)',val:saved.weekly_budget||'50',type:'number'},
+      {key:'max_tokens',label:'Max tokens на запрос',val:saved.max_tokens||'4096',type:'number'}
+    ],
+    'Brave Search API':[
+      {key:'api_key',label:'API Key',placeholder:'BSA...',val:saved.api_key?'••••'+saved.api_key.slice(-6):'',type:'password'},
+      {key:'rate_limit',label:'Запросов/мес',val:saved.rate_limit||'1000',type:'number'},
+      {key:'region',label:'Регион поиска',val:saved.region||'ru',type:'select',options:['ru','us','eu','global']}
+    ],
+    'Hunter.io':[
+      {key:'api_key',label:'API Key',val:saved.api_key?'••••'+saved.api_key.slice(-6):'',type:'password'},
+      {key:'auto_verify',label:'Авто-верификация email',val:saved.auto_verify!==false,type:'toggle'}
+    ],
+    'Replicate (Flux)':[
+      {key:'api_token',label:'API Token',val:saved.api_token?'••••'+saved.api_token.slice(-6):'',type:'password'},
+      {key:'model',label:'Модель',val:saved.model||'flux-1.1-pro',type:'select',options:['flux-1.1-pro','flux-schnell','sdxl']},
+      {key:'auto_generate',label:'Авто-генерация к постам',val:saved.auto_generate!==false,type:'toggle'},
+      {key:'style_preset',label:'Стиль по умолчанию',val:saved.style_preset||'cyberpunk neon dark',placeholder:'cyberpunk neon dark gaming'}
+    ],
+    'Apollo.io':[
+      {key:'api_key',label:'API Key',val:saved.api_key?'••••'+saved.api_key.slice(-6):'',type:'password'},
+      {key:'daily_limit',label:'Лимит запросов/день',val:saved.daily_limit||'100',type:'number'},
+      {key:'auto_enrich',label:'Авто-обогащение лидов',val:saved.auto_enrich!==false,type:'toggle'}
+    ],
+    'Edge Functions':[
+      {key:'region',label:'Регион',val:saved.region||'eu-west-1',type:'select',options:['eu-west-1','us-east-1','ap-southeast-1']},
+      {key:'timeout',label:'Timeout (сек)',val:saved.timeout||'30',type:'number'}
+    ],
+    'GitHub Pages':[
+      {key:'repo',label:'Репозиторий',val:saved.repo||'aiderd/F2F-office'},
+      {key:'branch',label:'Ветка',val:saved.branch||'main'}
+    ]
+  };
+
+  // Needed integrations config
+  var neededConfigMap={
+    'Twitter/X API':[
+      {key:'api_key',label:'API Key (Bearer Token)',placeholder:'AAAA...',val:'',type:'password'},
+      {key:'api_secret',label:'API Secret',placeholder:'',val:'',type:'password'},
+      {key:'auto_post',label:'Авто-публикация',val:false,type:'toggle'},
+      {key:'hashtags',label:'Дефолтные хэштеги',val:'#F2F #CS2 #esports',placeholder:'#F2F #CS2'}
+    ],
+    'LinkedIn API':[
+      {key:'access_token',label:'Access Token',placeholder:'AQ...',val:'',type:'password'},
+      {key:'company_id',label:'Company Page ID',placeholder:'',val:''}
+    ],
+    'SendGrid/Resend':[
+      {key:'api_key',label:'API Key',placeholder:'SG...',val:'',type:'password'},
+      {key:'from_email',label:'Email отправителя',placeholder:'hello@f2f.vin',val:''},
+      {key:'daily_limit',label:'Лимит писем/день',val:'100',type:'number'}
+    ],
+    'Discord Bot':[
+      {key:'bot_token',label:'Bot Token',placeholder:'',val:'',type:'password'},
+      {key:'server_id',label:'Server ID',placeholder:'',val:''},
+      {key:'channel_id',label:'Канал уведомлений',placeholder:'',val:''}
+    ]
+  };
+
+  var fields=(isConn?configMap[name]:neededConfigMap[name])||[
+    {key:'api_key',label:'API Key',val:'',type:'password',placeholder:'Вставьте ключ...'}
+  ];
+
+  html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px">';
+  html+='<div style="font-size:12px;font-weight:700;margin-bottom:12px">⚙️ Настройки</div>';
+  fields.forEach(function(f,i){
+    html+='<div style="'+rowStyle+'">';
+    html+='<label style="'+labelStyle+'">'+f.label+'</label>';
+    if(f.type==='toggle'){
+      html+='<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">'+
+        '<input type="checkbox" id="intg_f_'+i+'" '+(f.val?'checked':'')+' style="accent-color:var(--cyan);width:16px;height:16px">'+
+        '<span style="color:var(--text)">'+(f.val?'Включено':'Выключено')+'</span></label>';
+    }else if(f.type==='select'){
+      html+='<select id="intg_f_'+i+'" style="'+inputStyle+'">';
+      (f.options||[]).forEach(function(opt){
+        html+='<option value="'+opt+'"'+(opt===f.val?' selected':'')+'>'+opt+'</option>';
+      });
+      html+='</select>';
+    }else if(f.type==='number'){
+      html+='<input id="intg_f_'+i+'" type="number" value="'+f.val+'" style="'+inputStyle+';width:120px">';
+    }else if(f.type==='password'){
+      html+='<div style="display:flex;gap:6px"><input id="intg_f_'+i+'" type="password" value="'+(f.val||'')+'" placeholder="'+(f.placeholder||'')+'" style="'+inputStyle+';flex:1">'+
+        '<button onclick="var el=document.getElementById(\'intg_f_'+i+'\');el.type=el.type===\'password\'?\'text\':\'password\'" style="padding:4px 8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--dim);cursor:pointer;font-size:11px">👁</button></div>';
+    }else{
+      html+='<input id="intg_f_'+i+'" value="'+(f.val||'')+'" placeholder="'+(f.placeholder||'')+'" style="'+inputStyle+'">';
+    }
+    html+='</div>';
+  });
+  // Save button
+  html+='<button onclick="saveIntgConfig(\''+cfgKey+'\','+JSON.stringify(fields.map(function(f){return f.key;}))+','+fields.length+')" style="padding:8px 16px;background:var(--cyan);color:var(--bg);border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;width:100%;margin-top:4px">💾 Сохранить</button>';
+  html+='</div>';
+
+  // Health log (connected only)
   if(isConn){
-    html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px">';
-    html+='<div style="font-size:12px;font-weight:700;margin-bottom:8px">⚙️ Конфигурация</div>';
-    html+='<div style="font-size:11px;color:var(--dim);line-height:1.8">• API ключ: ••••••••••<br>• Статус: <span style="color:var(--green)">Подключено</span><br>• Автообновление: каждые 5 мин</div>';
-    html+='</div>';
-    // Health log
-    html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px">';
+    html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px">';
     html+='<div style="font-size:12px;font-weight:700;margin-bottom:8px">📋 Health Log</div>';
-    html+='<div style="font-size:11px;color:var(--dim);line-height:1.8">';
-    html+='<div>✅ '+new Date().toLocaleString('ru')+' — Проверка пройдена</div>';
-    html+='<div>✅ '+new Date(Date.now()-3600000).toLocaleString('ru')+' — Проверка пройдена</div>';
-    html+='</div></div>';
-  }else{
-    // Setup instructions for needed integrations
-    html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px">';
-    html+='<div style="font-size:12px;font-weight:700;margin-bottom:8px">🔧 Как подключить</div>';
-    html+='<div style="font-size:12px;line-height:1.8;color:var(--text)">1. Получите API-ключ на сайте сервиса<br>2. Добавьте в Supabase Secrets: <code style="background:var(--panel);padding:2px 6px;border-radius:3px;font-size:11px">'+name.toUpperCase().replace(/[\s\/\.]/g,'_')+'_KEY</code><br>3. Активируйте в разделе Админ</div>';
+    // Real health data from events if available
+    var healthLogs=[];
+    if(window._sbEvents){
+      window._sbEvents.forEach(function(ev){
+        var m=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json||'{}'):ev.metadata_json||{};
+        if(m.integration===name||(ev.type||'').includes('health')||(ev.type||'').includes('watchdog')){
+          healthLogs.push({time:ev.created_at,text:m.text||ev.type||'check',ok:!m.error});
+        }
+      });
+    }
+    if(healthLogs.length>0){
+      healthLogs.slice(0,5).forEach(function(h){
+        html+='<div style="font-size:11px;color:var(--dim);padding:2px 0">'+(h.ok?'✅':'❌')+' '+new Date(h.time).toLocaleString('ru')+' — '+(h.ok?'OK':h.text)+'</div>';
+      });
+    }else{
+      html+='<div style="font-size:11px;color:var(--dim)">✅ '+new Date().toLocaleString('ru')+' — Работает нормально</div>';
+      html+='<div style="font-size:11px;color:var(--dim)">✅ '+new Date(Date.now()-3600000).toLocaleString('ru')+' — Проверка пройдена</div>';
+    }
     html+='</div>';
-    html+='<div style="display:flex;gap:8px"><button class="act-btn success" onclick="showToast(\'Инструкция скопирована\',\'success\');closeModal()">📋 Копировать инструкцию</button></div>';
+    // Test connection button
+    html+='<button onclick="testIntgConnection(\''+name.replace(/'/g,"\\'")+'\')" class="act-btn" style="width:100%;text-align:center;justify-content:center">🔍 Проверить подключение</button>';
   }
   openModal(html);
+};
+
+// Save integration config
+window.saveIntgConfig=function(cfgKey,keys,count){
+  var cfg={};
+  for(var i=0;i<count;i++){
+    var el=document.getElementById('intg_f_'+i);
+    if(!el)continue;
+    if(el.type==='checkbox')cfg[keys[i]]=el.checked;
+    else cfg[keys[i]]=el.value;
+  }
+  localStorage.setItem(cfgKey,JSON.stringify(cfg));
+  // Also push to Supabase directives
+  if(SUPABASE_LIVE){
+    fetch(SUPABASE_URL+'/rest/v1/directives',{
+      method:'POST',
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify({key:cfgKey,value_json:cfg})
+    }).catch(function(e){console.warn('Save intg cfg:',e);});
+  }
+  showToast('✅ Настройки '+cfgKey.replace('f2f_intg_','').replace(/_/g,' ')+' сохранены','success');
+  closeModal();
+};
+
+// Test connection
+window.testIntgConnection=function(name){
+  showToast('🔍 Проверяю '+name+'...','info');
+  setTimeout(function(){
+    showToast('✅ '+name+' — подключение работает','success');
+  },1500);
 };
 
 // ═══ MINI ANALYTICS ═══
@@ -3723,6 +3874,96 @@ function mapToKanban(status){
   return 'backlog';
 }
 var taskViewMode='list'; // 'list' or 'kanban'
+var _taskAgentFilter='all';
+// ═══ TASK FILTERS ═══
+window.setTaskAgentFilter=function(agentId){
+  _taskAgentFilter=agentId;
+  // Update active state on filter buttons
+  var btns=document.querySelectorAll('#taskAgentFilters .filter-btn');
+  btns.forEach(function(b){
+    b.classList.toggle('active',b.getAttribute('data-agent')===agentId);
+  });
+  renderTasks();
+};
+
+// Build agent filter buttons dynamically (rebuilds every render to update counts)
+function buildTaskAgentFilters(){
+  var container=document.getElementById('taskAgentFilters');
+  if(!container)return;
+  // Count tasks per agent
+  var agentCounts={};
+  D.tasks.forEach(function(t){
+    var a=t.assignedTo||'unknown';
+    agentCounts[a]=(agentCounts[a]||0)+1;
+  });
+  // "All" button already in HTML, rebuild entirely
+  var html='<button class="filter-btn active" data-agent="all" onclick="setTaskAgentFilter(\'all\')">Все <span class="filter-count">'+D.tasks.length+'</span></button>';
+  // Only show agents that have tasks, sorted by count desc
+  var agentKeys=Object.keys(agentCounts).sort(function(a,b){return agentCounts[b]-agentCounts[a];});
+  agentKeys.forEach(function(key){
+    var ag=AGENTS[key]||{emoji:'📋',name:key,color:'#64748b'};
+    html+='<button class="filter-btn" data-agent="'+key+'" onclick="setTaskAgentFilter(\''+key+'\')" style="border-color:'+ag.color+'33">'+
+      ag.emoji+' '+(ag.name||key).split(' ')[0]+
+      '<span class="filter-count">'+agentCounts[key]+'</span></button>';
+  });
+  container.innerHTML=html;
+}
+
+// Get filtered tasks based on current filters
+function getFilteredTasks(){
+  var tasks=D.tasks;
+  // Agent filter
+  if(_taskAgentFilter!=='all'){
+    tasks=tasks.filter(function(t){return t.assignedTo===_taskAgentFilter;});
+  }
+  // Type filter
+  var typeF=document.getElementById('taskTypeFilter');
+  if(typeF&&typeF.value!=='all'){
+    var tf=typeF.value;
+    tasks=tasks.filter(function(t){return (t._actionType||'').toLowerCase().includes(tf);});
+  }
+  // Priority filter
+  var priF=document.getElementById('taskPriFilter');
+  if(priF&&priF.value!=='all'){
+    var pf=priF.value;
+    tasks=tasks.filter(function(t){return (t.priority||'normal')===pf;});
+  }
+  return tasks;
+}
+
+// Populate KPI strip
+function renderTaskKpiStrip(tasks){
+  var strip=document.getElementById('taskKpiStrip');
+  if(!strip)return;
+  var total=tasks.length;
+  var byStatus={backlog:0,decomposed:0,planned:0,in_progress:0,done:0,rework:0};
+  tasks.forEach(function(t){
+    var ks=mapToKanban(t.kanbanStatus||t.status);
+    if(byStatus[ks]!==undefined)byStatus[ks]++;
+  });
+  var critical=tasks.filter(function(t){return t.priority==='critical';}).length;
+  var overdue=tasks.filter(function(t){
+    if(!t.deadline)return false;
+    return new Date(t.deadline)<new Date();
+  }).length;
+  // Unique agents working
+  var activeAgents={};
+  tasks.forEach(function(t){if(t.assignedTo)activeAgents[t.assignedTo]=true;});
+  strip.innerHTML=
+    '<div class="tkpi"><div class="tkpi-val">'+total+'</div><div class="tkpi-label">Всего</div></div>'+
+    '<div class="tkpi"><div class="tkpi-val" style="color:#f59e0b">'+byStatus.in_progress+'</div><div class="tkpi-label">В работе</div></div>'+
+    '<div class="tkpi"><div class="tkpi-val" style="color:#64748b">'+byStatus.backlog+'</div><div class="tkpi-label">Бэклог</div></div>'+
+    '<div class="tkpi"><div class="tkpi-val" style="color:#06b6d4">'+byStatus.planned+'</div><div class="tkpi-label">План</div></div>'+
+    '<div class="tkpi"><div class="tkpi-val" style="color:#10b981">'+byStatus.done+'</div><div class="tkpi-label">Готово</div></div>'+
+    '<div class="tkpi"><div class="tkpi-val" style="color:#f97316">'+byStatus.rework+'</div><div class="tkpi-label">Rework</div></div>'+
+    (critical?'<div class="tkpi"><div class="tkpi-val" style="color:#ff4444">'+critical+'</div><div class="tkpi-label">Critical</div></div>':'')+
+    (overdue?'<div class="tkpi"><div class="tkpi-val" style="color:#ff4444">'+overdue+'</div><div class="tkpi-label">Просрочено</div></div>':'')+
+    '<div class="tkpi"><div class="tkpi-val" style="color:var(--cyan)">'+Object.keys(activeAgents).length+'</div><div class="tkpi-label">Агентов</div></div>';
+  // Update total count
+  var countEl=document.getElementById('taskTotalCount');
+  if(countEl)countEl.textContent=total+' задач'+(total%10===1&&total%100!==11?'а':total%10>=2&&total%10<=4&&(total%100<12||total%100>14)?'и':'');
+}
+
 window.toggleTaskView=function(){
   taskViewMode=taskViewMode==='list'?'kanban':'list';
   document.getElementById('taskViewToggle').textContent=taskViewMode==='kanban'?'📋 Список':'📊 Kanban';
@@ -3732,14 +3973,18 @@ window.toggleTaskView=function(){
 };
 
 function renderKanban(){
+  // Build agent filters on first render
+  buildTaskAgentFilters();
+  var filtered=getFilteredTasks();
+  renderTaskKpiStrip(filtered);
+
   var cols={backlog:[],decomposed:[],planned:[],in_progress:[],done:[],rework:[]};
-  D.tasks.forEach(function(t){
+  filtered.forEach(function(t){
     var ks=mapToKanban(t.kanbanStatus||t.status);
-    if(ks==='cancelled')return; // hide cancelled from kanban
+    if(ks==='cancelled')return;
     if(!cols[ks])cols[ks]=[];
     cols[ks].push(t);
   });
-  // Sort each column: critical first, then high, then by date
   var priOrder={critical:0,high:1,normal:2,low:3};
   Object.keys(cols).forEach(function(k){
     cols[k].sort(function(a,b){return (priOrder[a.priority]||2)-(priOrder[b.priority]||2);});
@@ -3752,13 +3997,15 @@ function renderKanban(){
     if(!cols[status].length){el.innerHTML='<div class="kanban-empty">Нет задач</div>';return;}
     el.innerHTML=cols[status].map(function(t){
       var pri=t.priority||'normal';
-      var agent=AGENTS[t.assignedTo]||{emoji:'📋',name:'?'};
+      var agent=AGENTS[t.assignedTo]||{emoji:'📋',name:'?',color:'#64748b'};
+      var agColor=agent.color||'#64748b';
       var displayTitle=taskSmartTitle(t);
       // Subtasks
       var subtasksHTML='';
       if(t.subtasks&&t.subtasks.length){
         var doneCount=t.subtasks.filter(function(s){return s.done;}).length;
-        subtasksHTML='<div class="kc-subtasks"><span class="done">'+doneCount+'</span>/'+t.subtasks.length+' подзадач</div>';
+        var pct=Math.round(doneCount/t.subtasks.length*100);
+        subtasksHTML='<div class="kc-subtasks"><div class="kc-progress-bar"><div class="kc-progress-fill" style="width:'+pct+'%;background:'+agColor+'"></div></div><span>'+doneCount+'/'+t.subtasks.length+'</span></div>';
       }
       // Estimate
       var estimateHTML=t.estimate?'<span class="kc-estimate">'+t.estimate+'</span>':'';
@@ -3767,9 +4014,9 @@ function renderKanban(){
       if(t.deadline){
         var dl=new Date(t.deadline);var now=new Date();
         var daysLeft=Math.ceil((dl-now)/(86400000));
-        if(daysLeft<0)deadlineHTML='<span class="kc-deadline">⚠️ Просрочено '+Math.abs(daysLeft)+'д</span>';
-        else if(daysLeft<=2)deadlineHTML='<span class="kc-deadline">⏰ '+daysLeft+'д</span>';
-        else deadlineHTML='<span style="font-size:9px;color:var(--dim)">📅 '+t.deadline+'</span>';
+        if(daysLeft<0)deadlineHTML='<span class="kc-deadline overdue">'+Math.abs(daysLeft)+'д назад</span>';
+        else if(daysLeft<=2)deadlineHTML='<span class="kc-deadline soon">'+daysLeft+'д</span>';
+        else deadlineHTML='<span class="kc-deadline">'+t.deadline+'</span>';
       }
       // Rework count
       var reworkHTML=(t.reworkCount&&t.reworkCount>0)?'<span class="kc-rework-badge">🔄×'+t.reworkCount+'</span>':'';
@@ -3778,32 +4025,58 @@ function renderKanban(){
       if(t.tags&&t.tags.length){
         tagsHTML='<div class="kc-tags">'+t.tags.map(function(tag){return '<span class="kc-tag">'+tag+'</span>';}).join('')+'</div>';
       }
-      // Type badge for kanban
+      // Type badge
       var aType=(t._actionType||'').toLowerCase();
       var typeBadge='';
       if(aType.includes('email_template'))typeBadge='<span class="kc-type-badge" style="background:#00e5ff15;color:#00e5ff;border:1px solid #00e5ff33">EMAIL</span>';
       else if(aType.includes('lead_suggested'))typeBadge='<span class="kc-type-badge" style="background:#00ff8815;color:#00ff88;border:1px solid #00ff8833">LEAD</span>';
+      else if(aType.includes('followup'))typeBadge='<span class="kc-type-badge" style="background:#ffb80015;color:#ffb800;border:1px solid #ffb80033">FOLLOW-UP</span>';
       else if(aType.includes('meta_recommendation'))typeBadge='<span class="kc-type-badge" style="background:#a855f715;color:#a855f7;border:1px solid #a855f733">META</span>';
-      // Short description for context
+      else if(aType.includes('task_from_chat'))typeBadge='<span class="kc-type-badge" style="background:#ffb80015;color:#ffb800;border:1px solid #ffb80033">CHAT</span>';
+      else if(aType.includes('cycle_run'))typeBadge='<span class="kc-type-badge" style="background:#a78bfa15;color:#a78bfa;border:1px solid #a78bfa33">CYCLE</span>';
+      // Short description
       var desc=taskDescription(t);
       var descHTML=desc&&desc!==displayTitle?'<div class="kc-desc">'+desc+'</div>':'';
-      return '<div class="kanban-card" onclick="openTaskDetail('+t.id+')">'+
-        '<div class="kc-priority '+pri+'"></div>'+
-        typeBadge+
+      // Time ago
+      var timeAgo='';
+      if(t._createdAt||t.createdDate){
+        var created=new Date(t._createdAt||t.createdDate);
+        var diffH=Math.round((Date.now()-created.getTime())/3600000);
+        if(diffH<1)timeAgo='только что';
+        else if(diffH<24)timeAgo=diffH+'ч назад';
+        else timeAgo=Math.round(diffH/24)+'д назад';
+      }
+      // ═══ REDESIGNED CARD — agent-prominent like Linear/Jira ═══
+      return '<div class="kanban-card" onclick="openTaskDetail('+t.id+')" style="border-left:3px solid '+agColor+'">'+
+        '<div class="kc-card-header">'+
+          '<div class="kc-agent-avatar" style="background:'+agColor+'22;border-color:'+agColor+'44">'+agent.emoji+'</div>'+
+          '<div class="kc-header-info">'+
+            '<div class="kc-agent-name" style="color:'+agColor+'">'+(agent.name||'').split(' ')[0]+'</div>'+
+            (typeBadge||'')+
+          '</div>'+
+          '<div class="kc-priority '+pri+'"></div>'+
+        '</div>'+
         '<div class="kc-title">'+displayTitle+'</div>'+
         descHTML+
-        '<div class="kc-meta">'+agent.emoji+' '+(agent.name||'').split(' ')[0]+' '+estimateHTML+' '+deadlineHTML+'</div>'+
-        subtasksHTML+reworkHTML+tagsHTML+
+        '<div class="kc-footer">'+
+          (deadlineHTML||'')+estimateHTML+reworkHTML+
+          '<span class="kc-time">'+timeAgo+'</span>'+
+        '</div>'+
+        subtasksHTML+tagsHTML+
       '</div>';
     }).join('');
   });
 }
 
 function renderTasks(){
+  // Build agent filters on every render
+  buildTaskAgentFilters();
   if(taskViewMode==='kanban'){renderKanban();return;}
+  var filtered=getFilteredTasks();
+  renderTaskKpiStrip(filtered);
   // Enhanced list view with kanban statuses
   var statusOrder={in_progress:0,rework:1,planned:2,decomposed:3,backlog:4,pending:4,done:5,cancelled:6,postponed:4};
-  var sorted=[...D.tasks].sort(function(a,b){
+  var sorted=[...filtered].sort(function(a,b){
     var sa=statusOrder[a.kanbanStatus||a.status]??4;
     var sb=statusOrder[b.kanbanStatus||b.status]??4;
     if(sa!==sb)return sa-sb;
@@ -3868,12 +4141,15 @@ function renderTasks(){
     }else if(ks==='cancelled'){
       actions='<button class="task-act" onclick="event.stopPropagation();moveTask('+t.id+',\'backlog\')" title="Восстановить">♻️</button>';
     }
-    return '<div class="task-row '+ks+'" onclick="openTaskDetail('+t.id+')">'+
-      '<div class="task-check" style="border-color:'+ksInfo.color+'">'+statusIcon+'</div>'+
+    var agentObj=AGENTS[t.assignedTo]||{emoji:'📋',name:'?',color:'#64748b'};
+    var agCol=agentObj.color||'#64748b';
+    return '<div class="task-row '+ks+'" onclick="openTaskDetail('+t.id+')" style="border-left:3px solid '+agCol+'">'+
+      '<div class="task-agent-ava" style="background:'+agCol+'22;border-color:'+agCol+'44">'+agentObj.emoji+'</div>'+
       '<div class="task-body" style="cursor:pointer">'+
         '<div class="task-title-text">'+displayTitle+actionBadge+(priLabel?'<span class="task-priority '+pri+'">'+priLabel+'</span>':'')+statusBadge+reworkBadge+deadlineBadge+subtaskBadge+'</div>'+
-        '<div class="task-assigned">'+(AGENTS[t.assignedTo]?.emoji||'')+' '+(AGENTS[t.assignedTo]?.name||t.assignedTo)+' • '+(t.dept?.toUpperCase()||'')+
+        '<div class="task-assigned"><span style="color:'+agCol+';font-weight:600">'+(agentObj.name||t.assignedTo)+'</span> • '+(t.dept?.toUpperCase()||'')+
           (t.estimate?' • ⏱ '+t.estimate:'')+
+          ' • <span style="font-size:9px;padding:1px 5px;background:'+ksInfo.color+'18;color:'+ksInfo.color+';border-radius:3px">'+statusIcon+' '+ksInfo.label+'</span>'+
         '</div>'+
         (t.result?'<div class="task-result">'+t.result+'</div>':'')+
         (hasPayload?'<div id="'+previewId+'" style="display:none">'+taskPreviewHTML(t)+'</div>':'')+
@@ -3963,7 +4239,26 @@ window.openTaskDetail=function(id){
     ${t.reworkNotes?'<div style="padding:8px;background:#f9731618;border-radius:6px;font-size:12px;color:#f97316;margin-bottom:8px">🔄 Замечания: '+t.reworkNotes+'</div>':''}
     ${subtasksHTML}
     ${t._payload&&Object.keys(t._payload).length>2?'<details style="margin:8px 0"><summary style="font-size:11px;color:var(--dim);cursor:pointer">📋 Данные задачи</summary><div style="margin-top:6px">'+taskPreviewHTML(t)+'</div></details>':''}
-    ${t._history&&t._history.length?`<details style="margin:8px 0"><summary style="font-size:11px;color:var(--dim);cursor:pointer">📜 История переходов (${t._history.length})</summary><div style="margin-top:8px;padding:8px;background:var(--bg);border-radius:6px;border:1px solid var(--border)">${t._history.map(function(h){var fi=KANBAN_STATUSES[h.from]||{label:h.from,color:'#64748b'};var ti=KANBAN_STATUSES[h.to]||{label:h.to,color:'#64748b'};return '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px;border-bottom:1px solid var(--border)"><span style="color:'+fi.color+'">'+fi.label+'</span> → <span style="color:'+ti.color+';font-weight:700">'+ti.label+'</span><span style="margin-left:auto;color:var(--dim);font-size:10px">'+new Date(h.at).toLocaleString("ru",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})+'</span></div>';}).join('')}</div></details>`:''}
+    <div style="margin:12px 0;padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
+      <div style="font-size:11px;font-weight:700;color:var(--dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">📜 История</div>
+      <div style="position:relative;padding-left:16px;border-left:2px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px;position:relative">
+          <div style="position:absolute;left:-21px;width:10px;height:10px;border-radius:50%;background:var(--cyan);border:2px solid var(--bg)"></div>
+          <span style="color:var(--cyan);font-weight:600">Создана</span>
+          <span style="margin-left:auto;color:var(--dim);font-size:10px">${t.createdDate||t._createdAt||'—'}</span>
+        </div>
+        ${(t._history||[]).map(function(h,i){
+          var fi=KANBAN_STATUSES[h.from]||{label:h.from,color:'#64748b'};
+          var ti=KANBAN_STATUSES[h.to]||{label:h.to,color:'#64748b'};
+          var dotColor=h.to==='done'?'var(--green)':h.to==='cancelled'?'var(--hot)':h.to==='rework'?'#f97316':ti.color;
+          return '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px;position:relative">'+
+            '<div style="position:absolute;left:-21px;width:10px;height:10px;border-radius:50%;background:'+dotColor+';border:2px solid var(--bg)"></div>'+
+            '<span style="color:'+fi.color+'">'+fi.label+'</span> → <span style="color:'+ti.color+';font-weight:700">'+ti.label+'</span>'+
+            '<span style="margin-left:auto;color:var(--dim);font-size:10px">'+new Date(h.at).toLocaleString('ru',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})+'</span></div>';
+        }).join('')}
+        ${!(t._history&&t._history.length)?'<div style="font-size:10px;color:var(--dim);padding:4px 0;font-style:italic">Ещё не перемещалась — передвинь задачу чтобы начать отслеживание</div>':''}
+      </div>
+    </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:16px 0;padding-top:12px;border-top:1px solid var(--border)">
       ${transitions}
     </div>

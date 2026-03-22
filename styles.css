@@ -219,9 +219,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
 .task-priority.low{background:#4488ff22;color:var(--medium)}
 .task-row.cancelled .task-title-text{text-decoration:line-through;color:#475569}
 .task-row.postponed{opacity:0.6}
-.task-row.rework{border-left:3px solid #f97316}
-.task-row.in_progress{border-left:3px solid #f59e0b}
-.task-row.backlog{opacity:0.7}
+.task-row.backlog{opacity:0.8}
 .task-priority.critical{background:#ff000033;color:#ff4444;animation:pulse-critical 1.5s infinite}
 @keyframes pulse-critical{0%,100%{opacity:1}50%{opacity:0.6}}
 
@@ -231,36 +229,60 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
 .kanban-col-header{padding:10px 12px;display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;
   color:var(--text);border-bottom:1px solid var(--border)}
 .kanban-count{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:1px 7px;font-size:10px;color:var(--dim)}
+/* ═══ TASK KPI STRIP ═══ */
+.tkpi{text-align:center;padding:8px 6px;background:var(--panel);border:1px solid var(--border);border-radius:8px}
+.tkpi-val{font-size:18px;font-weight:800;font-family:monospace;color:var(--text)}
+.tkpi-label{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+/* ═══ TASK AGENT FILTERS ═══ */
+#taskAgentFilters{display:flex;gap:4px;flex-wrap:wrap}
+#taskAgentFilters .filter-btn{padding:4px 10px;font-size:11px;background:var(--panel);border:1px solid var(--border);
+  border-radius:6px;color:var(--dim);cursor:pointer;transition:all .2s;white-space:nowrap;display:inline-flex;align-items:center;gap:3px}
+#taskAgentFilters .filter-btn:hover{border-color:var(--cyan);color:var(--text)}
+#taskAgentFilters .filter-btn.active{background:rgba(0,229,255,0.08);color:var(--cyan);border-color:rgba(0,229,255,0.4);font-weight:600}
+.filter-btn .filter-count{font-size:9px;background:rgba(0,229,255,0.2);color:var(--cyan);padding:0 5px;border-radius:8px;margin-left:2px;font-weight:700}
+/* ═══ LIST VIEW AGENT AVATAR ═══ */
+.task-agent-ava{width:36px;height:36px;border-radius:8px;border:1.5px solid;display:flex;align-items:center;justify-content:center;
+  font-size:18px;flex-shrink:0}
+/* ═══ KANBAN CARDS ═══ */
 .kanban-cards{flex:1;padding:6px;display:flex;flex-direction:column;gap:6px;overflow-y:auto;max-height:500px}
-.kanban-card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px 10px;cursor:pointer;
+.kanban-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 12px;cursor:pointer;
   transition:all .15s;position:relative}
-.kanban-card:hover{border-color:var(--cyan);transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,229,255,.08)}
+.kanban-card:hover{border-color:var(--cyan);transform:translateY(-1px);box-shadow:0 2px 12px rgba(0,229,255,.1)}
+/* Card header with agent avatar */
+.kanban-card .kc-card-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.kanban-card .kc-agent-avatar{width:28px;height:28px;border-radius:6px;border:1.5px solid;display:flex;align-items:center;
+  justify-content:center;font-size:14px;flex-shrink:0}
+.kanban-card .kc-header-info{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.kanban-card .kc-agent-name{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
 .kanban-card .kc-title{font-size:12px;font-weight:600;line-height:1.4;margin-bottom:4px}
-.kanban-card .kc-meta{display:flex;gap:6px;align-items:center;font-size:10px;color:var(--dim)}
-.kanban-card .kc-priority{width:6px;height:6px;border-radius:50%;position:absolute;top:10px;right:10px}
-.kanban-card .kc-priority.critical{background:#ff4444;box-shadow:0 0 6px #ff4444}
+.kanban-card .kc-priority{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.kanban-card .kc-priority.critical{background:#ff4444;box-shadow:0 0 8px #ff4444}
 .kanban-card .kc-priority.high{background:#ff9800}
 .kanban-card .kc-priority.normal{background:#2196f3}
 .kanban-card .kc-priority.low{background:#64748b}
-.kanban-card .kc-subtasks{margin-top:4px;font-size:10px;color:var(--dim)}
-.kanban-card .kc-subtasks .done{color:var(--green)}
+/* Card footer */
+.kanban-card .kc-footer{display:flex;gap:6px;align-items:center;font-size:10px;color:var(--dim);flex-wrap:wrap;margin-top:4px}
+.kanban-card .kc-time{margin-left:auto;font-size:9px;opacity:.6}
+.kanban-card .kc-subtasks{margin-top:6px;font-size:10px;color:var(--dim);display:flex;align-items:center;gap:6px}
+.kanban-card .kc-progress-bar{flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden;min-width:40px}
+.kanban-card .kc-progress-fill{height:100%;border-radius:2px;transition:width .3s}
 .kanban-card .kc-tags{display:flex;gap:3px;flex-wrap:wrap;margin-top:4px}
 .kanban-card .kc-tag{font-size:9px;padding:1px 5px;border-radius:3px;background:var(--bg);border:1px solid var(--border)}
 .kanban-card .kc-rework-badge{font-size:9px;padding:1px 5px;border-radius:3px;background:#f9731622;color:#f97316;
-  border:1px solid #f9731633;margin-top:3px;display:inline-block}
-.kanban-card .kc-deadline{font-size:9px;color:#ff4444}
+  border:1px solid #f9731633;display:inline-block}
+.kanban-card .kc-deadline{font-size:9px;color:var(--dim)}
+.kanban-card .kc-deadline.overdue{color:#ff4444;font-weight:600}
+.kanban-card .kc-deadline.soon{color:#ff9800;font-weight:600}
 .kanban-card .kc-estimate{font-size:9px;padding:1px 4px;background:#06b6d418;color:#06b6d4;border-radius:3px}
-.kanban-card .kc-desc{font-size:10px;color:var(--dim);line-height:1.4;margin:4px 0;max-height:40px;overflow:hidden;
+.kanban-card .kc-desc{font-size:10px;color:var(--dim);line-height:1.4;margin:2px 0 4px;max-height:36px;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .kanban-card .kc-type-badge{font-size:8px;padding:1px 5px;border-radius:3px;font-weight:700;text-transform:uppercase;
-  letter-spacing:0.5px;display:inline-block;margin-bottom:4px}
+  letter-spacing:0.5px;display:inline-block}
 /* Empty kanban state */
 .kanban-empty{padding:20px 12px;text-align:center;color:var(--dim);font-size:11px;opacity:0.5;font-style:italic}
 /* Kanban card entrance animation */
 @keyframes cardSlideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .kanban-card{animation:cardSlideIn .2s ease-out}
-/* Active filter count badge */
-.filter-btn .filter-count{font-size:9px;background:rgba(0,229,255,0.25);color:var(--cyan);padding:0 5px;border-radius:8px;margin-left:4px;font-weight:700}
 /* Scrollbar polish for kanban */
 .kanban-cards::-webkit-scrollbar{width:3px}
 .kanban-cards::-webkit-scrollbar-track{background:transparent}
@@ -546,6 +568,12 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
   .kanban-col{min-width:140px}
   .kanban-col-header{padding:6px 8px;font-size:10px}
   .kanban-card .kc-title{font-size:11px}
+  .kanban-card .kc-agent-avatar{width:22px;height:22px;font-size:12px}
+  .kanban-card .kc-agent-name{font-size:9px}
+  .task-agent-ava{width:28px;height:28px;font-size:14px}
+  #taskAgentFilters{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+  #taskAgentFilters .filter-btn{flex-shrink:0;font-size:10px;padding:3px 7px}
+  .tkpi-val{font-size:14px}
   .task-input-area{flex-wrap:wrap}
   .task-input-area .task-select{max-width:none;flex:1}
 
