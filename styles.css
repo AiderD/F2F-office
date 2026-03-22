@@ -551,6 +551,19 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
   /* ─── ACTION BUTTONS ─── */
   .action-bar{gap:4px}
   .act-btn{padding:5px 10px;font-size:10px}
+
+  /* ─── CHARTS & ANALYTICS ─── */
+  #postsAnalytics{grid-template-columns:repeat(2,1fr)!important;gap:6px!important}
+  #postsAnalytics > div{min-width:0!important}
+  canvas{max-width:100%!important}
+  [id^="chart"]{max-height:200px!important}
+  .chart-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+  /* ─── ADMIN PANEL ─── */
+  #panel-admin .data-grid{grid-template-columns:1fr!important}
+
+  /* ─── BOTTOM SAFE AREA ─── */
+  .panel:last-child{padding-bottom:env(safe-area-inset-bottom,0)}
 }
 
 /* ═══ RESPONSIVE — TABLET (769-1024px) ═══ */
