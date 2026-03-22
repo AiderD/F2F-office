@@ -313,6 +313,16 @@ async function reactivateToken(id){
   renderAdmin();
 }
 
+// ═══ ERROR BOUNDARY: Wrap render functions to prevent cascade failures ═══
+function safeRender(fn,sectionName){
+  try{fn();}catch(e){
+    console.error('[F2F] Error in '+sectionName+':',e);
+    // Show inline error instead of breaking entire UI
+    var el=document.getElementById(sectionName+'List')||document.getElementById(sectionName+'Content');
+    if(el)el.innerHTML='<div style="text-align:center;padding:20px;color:#ff6b6b;font-size:12px">⚠️ Ошибка загрузки секции '+(sectionName||'')+'. <button onclick="location.reload()" style="color:var(--cyan);background:none;border:none;cursor:pointer;text-decoration:underline;font-size:12px">Перезагрузить</button></div>';
+  }
+}
+
 // ═══ LOADING STATE UTILITY ═══
 // ═══ SECURITY: HTML escape for user inputs ═══
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}

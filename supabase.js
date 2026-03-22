@@ -234,11 +234,21 @@ function refreshAfterSync(){
       var ag=window._sbAgentById&&a.agent_id?window._sbAgentById[a.agent_id]:null;
       var dashId=ag?SB_SLUG_TO_DASH[ag.slug]:'coordinator';
       var p=a.payload_json||{};
+      // Auto-triage: map action types to kanban statuses
+      var autoKanban=p.kanban_status||p.status||'done';
+      var autoStatus=p.status||'done';
+      if(autoKanban==='pending'||autoKanban==='backlog'){
+        var at=(a.type||'').toLowerCase();
+        if(at.includes('lead_suggested')){autoKanban='backlog';autoStatus='pending';}
+        else if(at.includes('email_template')){autoKanban='planned';autoStatus='pending';}
+        else if(at.includes('task_from_chat')){autoKanban='backlog';autoStatus='pending';}
+        else{autoKanban='backlog';autoStatus='pending';}
+      }
       D.tasks.push({
         id:6000+i, sbId:a.id, title:p.title||p.description||a.type||'Действие',
         assignedTo:dashId, dept:ag?'':AGENTS[dashId]?.dept||'cmd',
-        status:p.status||'done', priority:p.priority||'normal',
-        kanbanStatus:p.kanban_status||p.status||'done',
+        status:autoStatus, priority:p.priority||'normal',
+        kanbanStatus:autoKanban,
         description:p.description||'', deadline:p.deadline||'', estimate:p.estimate||'',
         tags:p.tags||[], subtasks:p.subtasks||[], reworkCount:p.rework_count||0,
         reworkNotes:p.rework_notes||'',
@@ -336,19 +346,20 @@ function refreshAfterSync(){
   // ═══ 8b. AGENT PROMPTS: Load from agents.system_prompt ═══
   if(typeof loadAgentPromptsFromSupabase==='function')loadAgentPromptsFromSupabase();
 
-  // ═══ 9. Render everything ═══
-  if(typeof renderLeads==='function'){renderLeads();}
-  if(typeof renderPosts==='function'){renderPosts();}
-  if(typeof renderPostsAnalytics==='function'){renderPostsAnalytics();}
-  if(typeof renderReports==='function'){renderReports();}
-  if(typeof renderTasks==='function'){renderTasks();}
-  if(typeof renderFinance==='function'){renderFinance();}
-  if(typeof updateKPI==='function'){updateKPI();}
-  if(typeof renderAgentsPanel==='function'){renderAgentsPanel();}
-  if(typeof renderIntegrations==='function'){renderIntegrations();}
-  if(typeof renderAnalytics==='function'){renderAnalytics();}
-  if(typeof loadStrategy==='function'&&!window._stratLoaded){window._stratLoaded=true;loadStrategy();}
-  if(typeof renderStrategyProgress==='function'){renderStrategyProgress();}
+  // ═══ 9. Render everything (with error boundaries) ═══
+  var _sr=typeof safeRender==='function'?safeRender:function(fn){fn();};
+  if(typeof renderLeads==='function'){_sr(renderLeads,'leads');}
+  if(typeof renderPosts==='function'){_sr(renderPosts,'posts');}
+  if(typeof renderPostsAnalytics==='function'){_sr(renderPostsAnalytics,'postsAnalytics');}
+  if(typeof renderReports==='function'){_sr(renderReports,'reports');}
+  if(typeof renderTasks==='function'){_sr(renderTasks,'tasks');}
+  if(typeof renderFinance==='function'){_sr(renderFinance,'finance');}
+  if(typeof updateKPI==='function'){_sr(updateKPI,'kpi');}
+  if(typeof renderAgentsPanel==='function'){_sr(renderAgentsPanel,'agents');}
+  if(typeof renderIntegrations==='function'){_sr(renderIntegrations,'integrations');}
+  if(typeof renderAnalytics==='function'){_sr(renderAnalytics,'analytics');}
+  if(typeof loadStrategy==='function'&&!window._stratLoaded){window._stratLoaded=true;_sr(loadStrategy,'strategy');}
+  if(typeof renderStrategyProgress==='function'){_sr(renderStrategyProgress,'strategyProgress');}
 
   // Add meaningful Supabase events to feed (NOT raw post spam)
   if(SUPABASE_LIVE&&!window._sbFeedEnriched){
