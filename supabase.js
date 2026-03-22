@@ -347,6 +347,8 @@ function refreshAfterSync(){
   if(typeof renderAgentsPanel==='function'){renderAgentsPanel();}
   if(typeof renderIntegrations==='function'){renderIntegrations();}
   if(typeof renderAnalytics==='function'){renderAnalytics();}
+  if(typeof loadStrategy==='function'&&!window._stratLoaded){window._stratLoaded=true;loadStrategy();}
+  if(typeof renderStrategyProgress==='function'){renderStrategyProgress();}
 
   // Add meaningful Supabase events to feed (NOT raw post spam)
   if(SUPABASE_LIVE&&!window._sbFeedEnriched){

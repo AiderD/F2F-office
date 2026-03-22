@@ -314,6 +314,11 @@ async function reactivateToken(id){
 }
 
 // ═══ LOADING STATE UTILITY ═══
+// ═══ SECURITY: HTML escape for user inputs ═══
+function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// Validate & clamp text input (max length, trim)
+function cleanInput(val,maxLen){val=(val||'').trim();if(maxLen&&val.length>maxLen)val=val.slice(0,maxLen);return val;}
+
 function withLoading(btn, asyncFn){
   if(!btn||btn.disabled)return;
   var origText=btn.innerHTML;
@@ -380,6 +385,44 @@ document.querySelectorAll('.kpi[data-goto]').forEach(kpi=>{
 });
 
 // Strategy & KPI Save Handler
+// ═══ STRATEGY: Load saved strategy + render KPI progress ═══
+async function loadStrategy(){
+  if(!SUPABASE_LIVE)return;
+  try{
+    var res=await fetch(SUPABASE_URL+'/rest/v1/directives?key=eq.company_strategy&select=value_json',{
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON}
+    });
+    var data=await res.json();
+    if(data&&data[0]&&data[0].value_json){
+      var s=typeof data[0].value_json==='string'?JSON.parse(data[0].value_json):data[0].value_json;
+      if(s.mission_vision)document.getElementById('strategyText').value=s.mission_vision;
+      if(s.kpi_leads_monthly)document.getElementById('kpi-leads').value=s.kpi_leads_monthly;
+      if(s.kpi_emails_monthly)document.getElementById('kpi-emails').value=s.kpi_emails_monthly;
+      if(s.kpi_content_monthly)document.getElementById('kpi-content').value=s.kpi_content_monthly;
+      if(s.kpi_revenue_target)document.getElementById('kpi-revenue').value=s.kpi_revenue_target;
+    }
+  }catch(e){console.warn('Strategy load error:',e);}
+  renderStrategyProgress();
+}
+function renderStrategyProgress(){
+  var el=document.getElementById('stratProgress');if(!el)return;
+  var targets={
+    leads:parseInt(document.getElementById('kpi-leads').value)||45,
+    content:parseInt(document.getElementById('kpi-content').value)||20
+  };
+  var actual={
+    leads:window._sbPartners?window._sbPartners.length:D.leads.length,
+    content:window._sbContent?window._sbContent.filter(function(c){return c.status==='published';}).length:D.posts.filter(function(p){return p.sbStatus==='published';}).length
+  };
+  function bar(label,val,target,color){
+    var pct=Math.min(100,Math.round(val/target*100));
+    return '<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px">'+
+      '<span style="color:var(--dim)">'+label+'</span><span style="color:'+color+';font-weight:700">'+val+' / '+target+' ('+pct+'%)</span></div>'+
+      '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">'+
+      '<div style="height:100%;width:'+pct+'%;background:'+color+';border-radius:3px;transition:width .5s"></div></div></div>';
+  }
+  el.innerHTML=bar('Лиды',actual.leads,targets.leads,'var(--cyan)')+bar('Контент опубликован',actual.content,targets.content,'var(--green)');
+}
 document.getElementById('stratSaveBtn').addEventListener('click',async function(){
   const strategyText=document.getElementById('strategyText').value;
   const kpiLeads=parseInt(document.getElementById('kpi-leads').value)||45;
@@ -1676,11 +1719,11 @@ function chatRespond(channel,userMsg){
 
 document.getElementById('chatSend').addEventListener('click',function(){
   var input=document.getElementById('chatInput');
-  var msg=input.value.trim();if(!msg)return;
+  var msg=cleanInput(input.value,2000);if(!msg)return;
   input.value='';
   if(!chatHistory[currentChannel])chatHistory[currentChannel]=[];
   chatHistory[currentChannel].push({
-    role:'user', author:'👑 Aider (CEO)', text:msg, color:'var(--cyan)',
+    role:'user', author:'👑 Aider (CEO)', text:esc(msg), color:'var(--cyan)',
     time:new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})
   });
   renderChat();
@@ -2212,6 +2255,14 @@ const modalContent=document.getElementById('modalContent');
 document.getElementById('modalClose').addEventListener('click',()=>closeModal());
 modal.addEventListener('click',e=>{if(e.target===modal)closeModal()});
 
+// ═══ KEYBOARD NAVIGATION ═══
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    var m=document.getElementById('modal');
+    if(m&&m.classList.contains('open')){closeModal();e.preventDefault();}
+  }
+});
+
 // ═══ MOBILE SWIPE-TO-CLOSE ═══
 (function(){
   var modalEl=document.querySelector('.modal');
@@ -2295,13 +2346,13 @@ function renderLeads(){
   document.getElementById('leadsGrid').innerHTML=filtered.map(l=>`
     <div class="lead-card" onclick="openLeadModal(${l.id})">
       <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"><div class="priority ${l.priority}">${l.priority}</div>${l.sbStage?`<span style="font-size:9px;padding:1px 6px;border-radius:3px;background:${l.sbStage==='negotiating'?'#ffb80018;color:#ffb800':l.sbStage==='contacted'?'#00e5ff18;color:#00e5ff':l.sbStage==='closed_won'?'#00ff8818;color:#00ff88':'#64748b18;color:#64748b'}">${l.sbStage==='identified'?'🔍':l.sbStage==='contacted'?'📧':l.sbStage==='negotiating'?'🤝':l.sbStage==='closed_won'?'✅':'❌'} ${l.sbStage}</span>`:''}</div>
-      <div class="lead-name">${l.name}</div>
-      <div class="lead-title">${l.title}</div>
-      <div class="lead-company">${l.company}</div>
+      <div class="lead-name">${esc(l.name)}</div>
+      <div class="lead-title">${esc(l.title)}</div>
+      <div class="lead-company">${esc(l.company)}</div>
       <div class="lead-meta">
-        ${l.email?`<span>📧 ${l.email}</span>`:''}
-        ${l.linkedin?`<a href="${l.linkedin}" target="_blank" onclick="event.stopPropagation()">🔗 LinkedIn</a>`:''}
-        <span>📍 ${l.location}</span>
+        ${l.email?`<span>📧 ${esc(l.email)}</span>`:''}
+        ${l.linkedin?`<a href="${esc(l.linkedin)}" target="_blank" onclick="event.stopPropagation()">🔗 LinkedIn</a>`:''}
+        <span>📍 ${esc(l.location)}</span>
       </div>
       <div class="lead-notes">${l.notes}</div>
       ${l.sbStage==='identified'?`<div style="display:flex;gap:4px;margin-top:6px;border-top:1px solid var(--border);padding-top:6px" onclick="event.stopPropagation()">
@@ -2719,8 +2770,8 @@ function renderPosts(){
       </div>
       <div class="post-category">${p.category||''}</div>
       ${p.imageUrl?'<div style="margin:6px 0;border-radius:6px;overflow:hidden;max-height:120px"><img src="'+p.imageUrl+'" style="width:100%;height:auto;display:block;object-fit:cover" onerror="this.parentElement.style.display=\'none\'"></div>':''}
-      <div class="post-text">${(p.text||'').length>180?(p.text||'').slice(0,180)+'...':(p.text||'')}</div>
-      <div class="post-tags">${p.hashtags||''}</div>
+      <div class="post-text">${esc((p.text||'').length>180?(p.text||'').slice(0,180)+'...':p.text||'')}</div>
+      <div class="post-tags">${esc(p.hashtags||'')}</div>
       <div class="post-date">📅 ${p.date||''}${!p.isLive?' <span style="color:#ff9800;font-size:9px">(mock)</span>':''}${p.imageUrl?' <span style="color:#00e55f;font-size:9px">🖼</span>':''}${p.qaScore?` <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:${p.qaScore>=8?'#10b98122;color:#10b981':p.qaScore>=5?'#f59e0b22;color:#f59e0b':'#ef444422;color:#ef4444'}">QA:${p.qaScore}</span>`:''}${p.ceoScore?` <span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#f59e0b22;color:#f59e0b">⭐${p.ceoScore}</span>`:''}</div>
       ${p.sbStatus==='pending_approval'?`<div style="display:flex;gap:6px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px" onclick="event.stopPropagation()">
         <button onclick="quickPostAction('${p.sbId||p.id}','approve')" style="flex:1;padding:5px;background:#00ff8812;color:#00ff88;border:1px solid #00ff8833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">✅ Одобрить</button>
@@ -3368,22 +3419,22 @@ function taskSmartTitle(t){
   var p=t._payload||{};
   var aType=(t._actionType||'').toLowerCase();
   if(aType.includes('email_template')){
-    var to=p.to||p.email||p.recipient||p.contact_email||'';
-    var subj=p.subject||p.email_subject||'';
-    var company=p.company||p.partner||'';
+    var to=esc(p.to||p.email||p.recipient||p.contact_email||'');
+    var subj=esc(p.subject||p.email_subject||'');
+    var company=esc(p.company||p.partner||'');
     if(to||company)return '📧 Email'+(company?' → '+company:'')+(to?' ('+to+')':'')+(subj?' — '+subj:'');
-    if(p.template||p.body||p.text)return '📧 Email: '+(p.template||p.body||p.text||'').slice(0,60)+'...';
+    if(p.template||p.body||p.text)return '📧 Email: '+esc((p.template||p.body||p.text||'').slice(0,60))+'...';
     return '📧 Email шаблон (нажми для превью)';
   }
   if(aType.includes('lead_suggested')){
-    var name=p.name||p.contact||p.contact_name||'';
-    var comp=p.company||p.organization||'';
-    var reason=p.reason||p.description||p.why||'';
+    var name=esc(p.name||p.contact||p.contact_name||'');
+    var comp=esc(p.company||p.organization||'');
+    var reason=esc(p.reason||p.description||p.why||'');
     if(name||comp)return '🆕 Лид: '+(name?name:'')+(comp?' @ '+comp:'')+(reason?' — '+reason.slice(0,40):'');
     return '🆕 Рекомендация лида (нажми для превью)';
   }
-  if(aType.includes('task_from_chat')||t.fromChat)return t.title;
-  return t.title;
+  if(aType.includes('task_from_chat')||t.fromChat)return esc(t.title);
+  return esc(t.title);
 }
 // Helper: build preview card HTML from payload
 function taskPreviewHTML(t){
@@ -3853,9 +3904,9 @@ document.getElementById('taskSubmit').addEventListener('click',async()=>{
   const input=document.getElementById('taskInput');
   const agent=document.getElementById('taskAgent').value;
   const priSelect=document.getElementById('taskPrioritySelect');
-  if(!input.value.trim())return;
+  var rawTitle=cleanInput(input.value,500);if(!rawTitle)return;
   const ag=AGENTS[agent];
-  const title=input.value.trim();
+  const title=rawTitle;
   const pri=priSelect?priSelect.value:'normal';
   const taskData={
     id:D.tasks.reduce(function(m,x){return Math.max(m,x.id);},0)+1, title:title,
