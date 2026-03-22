@@ -385,7 +385,7 @@ function refreshAfterSync(){
 
     // 3. Recent reports
     if(window._sbReports&&window._sbReports.length>0){
-      var recent=window._sbReports.slice(0,3);
+      var recent=window._sbReports;
       recent.forEach(r=>{
         var ago=window._sbAgentById&&r.agent_id?window._sbAgentById[r.agent_id]:null;
         var dashId=ago?SB_SLUG_TO_DASH[ago.slug]:'coordinator';
@@ -408,7 +408,7 @@ function refreshAfterSync(){
 
     // 5b. Real Supabase events from events table (with full metadata for drill-down)
     if(window._sbEvents&&window._sbEvents.length>0){
-      var recentEvents=window._sbEvents.slice(0,15);
+      var recentEvents=window._sbEvents;
       recentEvents.forEach(function(ev){
         var m=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json||'{}'):ev.metadata_json||{};
         if(m.source==='dashboard')return; // skip our own feed events

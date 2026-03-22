@@ -663,12 +663,11 @@ function renderFinanceOverview(entries,totalSalary,totalSubs,totalEvents,totalOt
     '<h3>Статус оплат</h3>';
   if(unpaid.length){
     html+='<div class="fin-big" style="color:var(--hot)">'+unpaid.length+' неоплаченных</div>'+
-    '<div style="margin-top:12px">'+unpaid.slice(0,10).map(function(e){
+    '<div style="margin-top:12px">'+unpaid.map(function(e){
       return '<div class="fin-row" style="cursor:pointer" onclick="openPaymentModal(\''+e.id+'\')">'+
         '<span class="label" style="color:var(--hot)">⚠️ '+e.description+'</span>'+
         '<span class="val red">'+fmtUSD(parseFloat(e.amount_usdt)||0)+'</span></div>';
     }).join('')+'</div>';
-    if(unpaid.length>10)html+='<div style="color:var(--dim);font-size:11px;margin-top:8px">...ещё '+(unpaid.length-10)+' записей</div>';
   }else{
     html+='<div style="padding:12px;color:var(--green);font-size:13px">✅ Все оплаты за '+financePeriod+' закрыты</div>';
   }
@@ -2418,7 +2417,7 @@ window.openIntgDetail=function(name,type){
       });
     }
     if(healthLogs.length>0){
-      healthLogs.slice(0,5).forEach(function(h){
+      healthLogs.forEach(function(h){
         html+='<div style="font-size:11px;color:var(--dim);padding:2px 0">'+(h.ok?'✅':'❌')+' '+new Date(h.time).toLocaleString('ru')+' — '+(h.ok?'OK':h.text)+'</div>';
       });
     }else{
@@ -3664,7 +3663,7 @@ function renderReports(){
       <div class="report-title">${r.title}</div>
       <div class="report-meta">${AGENTS[r.agentId]?.emoji||''} ${AGENTS[r.agentId]?.name||''} • ${r.date}</div>
       <div class="report-content">${contentPreview}</div>
-      ${r.actionItems&&r.actionItems.length?`<div class="report-actions">${r.actionItems.slice(0,2).map(a=>`<div class="report-action">${typeof a==='string'?a:JSON.stringify(a)}</div>`).join('')}</div>`:''}
+      ${r.actionItems&&r.actionItems.length?`<div class="report-actions">${r.actionItems.map(a=>`<div class="report-action">${typeof a==='string'?a:JSON.stringify(a)}</div>`).join('')}</div>`:''}
     </div>`;
   }).join('');
 }
