@@ -5180,10 +5180,6 @@ window.doUploadReferences=async function(){
   log.innerHTML+='<div style="padding:6px 8px;font-size:12px;font-weight:600;color:#00ff88;border-top:1px solid var(--border);margin-top:4px">📊 Готово: ✅ '+ok+(fail?' | ❌ '+fail:'')+'</div>';
   btn.textContent='✅ Загружено '+ok+' файлов';
   if(ok)addFeed('art_director','🖼 Загружено '+ok+' референсов ['+category+']');
-    }
-    if(ok)addFeed('art_director','🖼 Загружено '+ok+' референсов ['+category+']'+(desc?' — '+desc.slice(0,60):''));
-  };
-  input.click();
 };
 
 // ═══ FEED ═══
