@@ -1521,15 +1521,72 @@ function loadAgentPromptsFromSupabase(){
 window.openPromptEditor=function(agentId){
   var a=AGENTS[agentId];
   var currentPrompt=AGENT_PROMPTS[agentId]||'Промпт не задан';
+  var desc=AGENT_DESC[agentId]||{};
   openModal(
-    '<h2 style="margin-bottom:12px">'+a.emoji+' '+a.name+' — Стратегия / Промпт</h2>'+
-    '<div style="font-size:11px;color:var(--dim);margin-bottom:12px">Scenario ID: '+(a.scenarioId||'—')+' | Интервал: '+(a.interval||'—')+'</div>'+
-    '<textarea id="promptArea" style="width:100%;height:200px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:12px;resize:vertical;line-height:1.6;font-family:inherit">'+currentPrompt+'</textarea>'+
+    '<h2 style="margin-bottom:8px">'+a.emoji+' '+a.name+' — Стратегия / Промпт</h2>'+
+    '<div style="font-size:11px;color:var(--dim);margin-bottom:12px">'+(desc.purpose||'')+'</div>'+
+    // Step 1: AI Assistant
+    '<div id="promptAiBlock" style="margin-bottom:12px;padding:12px;background:#a855f708;border:1px solid #a855f722;border-radius:8px">'+
+      '<div style="font-size:12px;font-weight:600;color:#a855f7;margin-bottom:8px">🤖 AI-ассистент — опиши задачу простыми словами</div>'+
+      '<textarea id="promptUserInput" rows="3" placeholder="Например: Хочу чтобы агент фокусировался на мемах про CS2 и писал более дерзко, в стиле Durex. Меньше скучных гайдов, больше провокаций." style="width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box;line-height:1.5"></textarea>'+
+      '<button onclick="aiGeneratePrompt(\''+agentId+'\')" id="btnAiGen" style="margin-top:8px;padding:6px 14px;background:#a855f722;color:#a855f7;border:1px solid #a855f744;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;width:100%">✨ Сгенерировать промпт через AI</button>'+
+    '</div>'+
+    // Step 2: Result (hidden initially)
+    '<div id="promptAiResult" style="display:none;margin-bottom:12px;padding:12px;background:#00ff8808;border:1px solid #00ff8822;border-radius:8px">'+
+      '<div style="font-size:12px;font-weight:600;color:#00ff88;margin-bottom:8px">✅ AI-версия промпта (проверь и отредактируй если нужно)</div>'+
+    '</div>'+
+    // Editable prompt
+    '<div style="font-size:11px;color:var(--dim);margin-bottom:4px">Финальный промпт (можно редактировать вручную):</div>'+
+    '<textarea id="promptArea" style="width:100%;height:180px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;padding:12px;resize:vertical;line-height:1.6;font-family:monospace">'+currentPrompt.replace(/</g,'&lt;')+'</textarea>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">'+
       '<button onclick="saveAgentPrompt(\''+agentId+'\')" style="padding:8px 20px;background:var(--green);color:#000;border:none;border-radius:6px;cursor:pointer;font-weight:700">💾 Сохранить</button>'+
       '<button onclick="closeModal()" style="padding:8px 20px;background:var(--border);color:var(--text);border:none;border-radius:6px;cursor:pointer">Отмена</button>'+
     '</div>'
   );
+};
+
+window.aiGeneratePrompt=async function(agentId){
+  var a=AGENTS[agentId];
+  var desc=AGENT_DESC[agentId]||{};
+  var userInput=document.getElementById('promptUserInput').value.trim();
+  if(!userInput){showToast('Опиши что хочешь от агента','warning');return;}
+  var btn=document.getElementById('btnAiGen');
+  btn.disabled=true;btn.textContent='⏳ AI думает...';
+  var currentPrompt=document.getElementById('promptArea').value;
+  try{
+    var resp=await fetch(SUPABASE_URL+'/functions/v1/agent-chat',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+      body:JSON.stringify({
+        agent:'coordinator',
+        message:'Ты — эксперт по созданию системных промптов для AI-агентов. '+
+          'Агент: '+a.name+' ('+a.emoji+'). Роль: '+(desc.purpose||'')+'. '+
+          'Текущий промпт:\n```\n'+currentPrompt.slice(0,500)+'\n```\n\n'+
+          'CEO просит: "'+userInput+'"\n\n'+
+          'Напиши УЛУЧШЕННЫЙ системный промпт для этого агента. '+
+          'Промпт должен быть на русском, конкретным, с чёткими инструкциями. '+
+          'Не пиши ничего кроме самого промпта — никаких пояснений, только чистый текст промпта.',
+        skipMemory:true
+      })
+    });
+    var data=await resp.json();
+    var aiPrompt=(data.response||data.reply||'').trim();
+    if(aiPrompt){
+      // Show AI result
+      var resultBlock=document.getElementById('promptAiResult');
+      resultBlock.style.display='block';
+      resultBlock.innerHTML='<div style="font-size:12px;font-weight:600;color:#00ff88;margin-bottom:8px">✅ AI-версия (нажми «Применить» или отредактируй вручную)</div>'+
+        '<div style="font-size:12px;color:var(--text);line-height:1.6;max-height:150px;overflow-y:auto;padding:8px;background:var(--bg);border-radius:6px;white-space:pre-wrap">'+aiPrompt.replace(/</g,'&lt;').slice(0,2000)+'</div>'+
+        '<button onclick="document.getElementById(\'promptArea\').value=this.parentElement.querySelector(\'div:last-of-type\').textContent;showToast(\'Промпт применён — проверь и сохрани\',\'success\')" style="margin-top:8px;padding:6px 14px;background:#00ff8822;color:#00ff88;border:1px solid #00ff8844;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;width:100%">📋 Применить в поле редактирования</button>';
+      btn.textContent='✨ Сгенерировать заново';btn.disabled=false;
+    }else{
+      showToast('AI не вернул результат','error');
+      btn.textContent='✨ Сгенерировать промпт через AI';btn.disabled=false;
+    }
+  }catch(e){
+    showToast('Ошибка: '+e.message,'error');
+    btn.textContent='✨ Сгенерировать промпт через AI';btn.disabled=false;
+  }
 };
 
 window.saveAgentPrompt=async function(agentId){
@@ -5012,13 +5069,8 @@ window.agentSendMsg=function(id){agentAIChat(id);};
 
 // Quick prompt editor via chat modal
 window.chatCmdPromptEdit=function(id){
-  var a=AGENTS[id];
-  var current=AGENT_PROMPTS[id]||'';
-  f2fPrompt({title:a.emoji+' Промпт '+a.name,fields:[{id:'p',label:'Системный промпт',type:'textarea',value:current,rows:5}],submitText:'Сохранить'}).then(function(newPrompt){
-    if(newPrompt&&newPrompt.trim()&&newPrompt!==current){
-      agentAIChat(id,'/prompt '+newPrompt.trim());
-    }
-  });
+  closeModal();
+  setTimeout(function(){openPromptEditor(id);},200);
 };
 
 // Quick image rating
@@ -5054,60 +5106,80 @@ window.chatCmdLearnGlobal=function(){
 
 // Upload reference image for Art Director
 window.uploadReferenceImage=function(){
-  var input=document.createElement('input');
-  input.type='file';
-  input.accept='image/jpeg,image/png,image/webp';
-  input.multiple=true;
-  input.onchange=async function(){
-    var files=Array.from(input.files);
-    if(!files.length)return;
-    var result=await f2fPrompt({title:'🖼 Референс-картинки ('+files.length+' шт.)',fields:[
-      {id:'category',label:'Категория',type:'select',value:'news',options:['news','tournament','match','meme','educational','promo','entertainment']},
-      {id:'desc',label:'Опиши стиль (что нравится)',type:'textarea',rows:2,placeholder:'Тёмный стиль, зелёный неон, минимализм'},
-      {id:'rating',label:'Оценка (1-5)',type:'number',value:'5',min:1,max:5},
-      {id:'tags',label:'Теги через запятую',type:'text',placeholder:'neon, dark, arena'}
-    ],submitText:'Загрузить '+files.length+' файл(ов)'});
-    if(!result)return;
-    var category=result.category||'news';
-    var desc=result.desc||'';
-    var rating=result.rating||'5';
-    var tags=result.tags||'';
+  // Close agent modal first to avoid z-index conflicts
+  closeModal();
+  setTimeout(function(){
+    var input=document.createElement('input');
+    input.type='file';
+    input.accept='image/jpeg,image/png,image/webp';
+    input.multiple=true;
+    input.onchange=function(){
+      var files=Array.from(input.files);
+      if(!files.length)return;
+      // Show upload form via openModal (not f2fPrompt — avoids overlay conflict)
+      window._uploadFiles=files;
+      openModal(
+        '<h2 style="margin-bottom:12px">🖼 Загрузка референсов ('+files.length+' файл'+((files.length>1&&files.length<5)?'а':'ов')+')</h2>'+
+        '<div style="margin-bottom:10px;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:12px;max-height:80px;overflow-y:auto">'+
+          files.map(function(f){return '📎 '+f.name+' ('+Math.round(f.size/1024)+'KB)';}).join('<br>')+
+        '</div>'+
+        '<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Категория</label>'+
+        '<select id="upCat" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
+        '<option value="news">news</option><option value="tournament">tournament</option><option value="match">match</option><option value="meme">meme</option><option value="educational">educational</option><option value="promo">promo</option><option value="entertainment">entertainment</option></select></div>'+
+        '<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Опиши стиль</label>'+
+        '<textarea id="upDesc" rows="2" placeholder="Тёмный стиль, зелёный неон, минимализм" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box"></textarea></div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
+        '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Оценка (1-5)</label>'+
+        '<input id="upRating" type="number" min="1" max="5" value="5" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;box-sizing:border-box"></div>'+
+        '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Теги</label>'+
+        '<input id="upTags" type="text" placeholder="neon, dark" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;box-sizing:border-box"></div></div>'+
+        '<div id="uploadLog" style="display:none;margin-bottom:10px;max-height:120px;overflow-y:auto"></div>'+
+        '<button onclick="doUploadReferences()" id="btnDoUpload" style="width:100%;padding:10px;background:#ec489922;color:#ec4899;border:1px solid #ec489944;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700">🖼 Загрузить '+files.length+' файл(ов)</button>'
+      );
+    };
+    input.click();
+  },200);
+};
 
-    var log=document.getElementById('agentChatLog');
-    var ok=0,fail=0;
-    for(var i=0;i<files.length;i++){
-      var file=files[i];
-      if(log){
-        log.innerHTML+='<div style="padding:6px 10px;background:#f59e0b18;border-radius:8px;margin:4px 0;font-size:12px">⏳ Загружаю '+(i+1)+'/'+files.length+': '+file.name+'...</div>';
-        log.scrollTop=log.scrollHeight;
-      }
-      var formData=new FormData();
-      formData.append('file',file);
-      formData.append('category',category);
-      if(desc)formData.append('style_description',desc);
-      if(rating)formData.append('rating',rating);
-      if(tags)formData.append('tags',tags);
-      try{
-        var res=await fetch(SUPABASE_URL+'/functions/v1/upload-reference',{
-          method:'POST',
-          headers:{'Authorization':'Bearer '+SUPABASE_ANON},
-          body:formData
-        });
-        var data=await res.json();
-        if(data.success){
-          ok++;
-          if(log){
-            log.innerHTML+='<div style="padding:6px 10px;background:#00ff8818;border-radius:8px;margin:4px 0;font-size:12px">'+
-              '✅ '+file.name+'<br>'+
-              '<img src="'+data.image_url+'" style="max-width:150px;border-radius:6px;margin-top:4px"></div>';
-            log.scrollTop=log.scrollHeight;
-          }
-        }else{fail++;if(log)log.innerHTML+='<div style="padding:6px 10px;background:#ff444418;border-radius:8px;margin:4px 0;font-size:12px;color:#ff4444">❌ '+file.name+': '+(data.error||'Ошибка')+'</div>';}
-      }catch(e){fail++;if(log)log.innerHTML+='<div style="padding:6px 10px;background:#ff444418;border-radius:8px;margin:4px 0;font-size:12px;color:#ff4444">❌ '+file.name+': '+e.message+'</div>';}
-    }
-    if(log){
-      log.innerHTML+='<div style="padding:8px 12px;background:#00ff8818;border:1px solid #00ff8833;border-radius:8px;margin:6px 0;font-size:12px;font-weight:600">📊 Итого: ✅ '+ok+' загружено'+(fail?' | ❌ '+fail+' ошибок':'')+'</div>';
-      log.scrollTop=log.scrollHeight;
+window.doUploadReferences=async function(){
+  var files=window._uploadFiles||[];
+  if(!files.length){showToast('Нет файлов','error');return;}
+  var category=document.getElementById('upCat').value;
+  var desc=document.getElementById('upDesc').value;
+  var rating=document.getElementById('upRating').value;
+  var tags=document.getElementById('upTags').value;
+  var btn=document.getElementById('btnDoUpload');
+  var log=document.getElementById('uploadLog');
+  btn.disabled=true;btn.textContent='⏳ Загружаю...';
+  log.style.display='block';
+  var ok=0,fail=0;
+  for(var i=0;i<files.length;i++){
+    var file=files[i];
+    log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:var(--dim)">⏳ '+(i+1)+'/'+files.length+': '+file.name+'</div>';
+    log.scrollTop=log.scrollHeight;
+    var formData=new FormData();
+    formData.append('file',file);
+    formData.append('category',category);
+    if(desc)formData.append('style_description',desc);
+    if(rating)formData.append('rating',rating);
+    if(tags)formData.append('tags',tags);
+    try{
+      var res=await fetch(SUPABASE_URL+'/functions/v1/upload-reference',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+SUPABASE_ANON},
+        body:formData
+      });
+      var data=await res.json();
+      if(data.success){
+        ok++;
+        log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:#00ff88">✅ '+file.name+'</div>';
+      }else{fail++;log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:#ff4444">❌ '+file.name+': '+(data.error||'Ошибка')+'</div>';}
+    }catch(e){fail++;log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:#ff4444">❌ '+file.name+': '+e.message+'</div>';}
+    log.scrollTop=log.scrollHeight;
+  }
+  log.innerHTML+='<div style="padding:6px 8px;font-size:12px;font-weight:600;color:#00ff88;border-top:1px solid var(--border);margin-top:4px">📊 Готово: ✅ '+ok+(fail?' | ❌ '+fail:'')+'</div>';
+  btn.textContent='✅ Загружено '+ok+' файлов';
+  if(ok)addFeed('art_director','🖼 Загружено '+ok+' референсов ['+category+']');
     }
     if(ok)addFeed('art_director','🖼 Загружено '+ok+' референсов ['+category+']'+(desc?' — '+desc.slice(0,60):''));
   };
