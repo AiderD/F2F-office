@@ -441,8 +441,8 @@ function getLedgerBurn(){
 
 function updateKPI(){
   var burn=getLedgerBurn();
-  // Demo mode indicator
-  var demoTag=SUPABASE_LIVE?'':' <span style="font-size:8px;color:#ffb800;vertical-align:super">demo</span>';
+  // Demo mode indicator — only show when not logged in at all
+  var demoTag=_currentSession?'':' <span style="font-size:8px;color:#ffb800;vertical-align:super">demo</span>';
   // Leads: prefer live count from D.leads (already replaced by SB data in refreshAfterSync)
   var leadsCount=SUPABASE_LIVE&&window._sbPartners?window._sbPartners.length:D.leads.length;
   document.getElementById('kpi-leads').innerHTML=leadsCount+demoTag;
