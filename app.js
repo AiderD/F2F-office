@@ -1476,7 +1476,7 @@ function renderChat(){
 const CHAT_EDGE_URL=SUPABASE_URL+'/functions/v1/agent-chat';
 let f2fApiKey=localStorage.getItem('f2f_api_key')||'';
 
-function closeModal(){modal.classList.remove('open');var m=document.querySelector('.modal');if(m){m.style.transform='';m.style.transition='';}}
+function closeModal(){var el=document.getElementById('modal');if(el)el.classList.remove('open');var m=document.querySelector('.modal-overlay .modal')||document.querySelector('.modal');if(m){m.style.transform='';m.style.transition='';}}
 function openApiKeyModal(){
   var html='<h2 style="margin-bottom:16px">🔑 Anthropic API Key</h2>'+
     '<p style="color:var(--dim);margin-bottom:12px;font-size:13px">Для AI-ответов агентов нужен ключ Claude API. Он хранится только локально в вашем браузере.</p>'+
