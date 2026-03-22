@@ -5106,18 +5106,21 @@ window.chatCmdLearnGlobal=function(){
 
 // Upload reference image for Art Director
 window.uploadReferenceImage=function(){
-  // Close agent modal first to avoid z-index conflicts
-  closeModal();
-  setTimeout(function(){
-    var input=document.createElement('input');
-    input.type='file';
-    input.accept='image/jpeg,image/png,image/webp';
-    input.multiple=true;
-    input.onchange=function(){
-      var files=Array.from(input.files);
-      if(!files.length)return;
-      // Show upload form via openModal (not f2fPrompt — avoids overlay conflict)
-      window._uploadFiles=files;
+  // IMPORTANT: input.click() must happen synchronously from user gesture (Safari blocks setTimeout)
+  var input=document.createElement('input');
+  input.type='file';
+  input.accept='image/jpeg,image/png,image/webp';
+  input.multiple=true;
+  input.style.cssText='position:fixed;top:-9999px;left:-9999px';
+  document.body.appendChild(input);
+  input.onchange=function(){
+    var files=Array.from(input.files);
+    input.remove();
+    if(!files.length)return;
+    window._uploadFiles=files;
+    // Close agent modal, show upload form
+    closeModal();
+    setTimeout(function(){
       openModal(
         '<h2 style="margin-bottom:12px">🖼 Загрузка референсов ('+files.length+' файл'+((files.length>1&&files.length<5)?'а':'ов')+')</h2>'+
         '<div style="margin-bottom:10px;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:12px;max-height:80px;overflow-y:auto">'+
@@ -5136,9 +5139,9 @@ window.uploadReferenceImage=function(){
         '<div id="uploadLog" style="display:none;margin-bottom:10px;max-height:120px;overflow-y:auto"></div>'+
         '<button onclick="doUploadReferences()" id="btnDoUpload" style="width:100%;padding:10px;background:#ec489922;color:#ec4899;border:1px solid #ec489944;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700">🖼 Загрузить '+files.length+' файл(ов)</button>'
       );
-    };
-    input.click();
-  },200);
+    },100);
+  };
+  input.click();
 };
 
 window.doUploadReferences=async function(){
