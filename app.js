@@ -5251,17 +5251,24 @@ cwrap.addEventListener('mousemove',e=>{
   const world=document.getElementById('officeWorld');
   if(world&&!isDragging){
     const wr=world.getBoundingClientRect();
+    const wrapRect=cwrap.getBoundingClientRect();
     const imgX=(e.clientX-wr.left)/camZoom;
     const imgY=(e.clientY-wr.top)/camZoom;
     const hov=typeof officeHoverUpdate==='function'?officeHoverUpdate(imgX,imgY):null;
     cwrap.style.cursor=hov?'pointer':'grab';
+    // Show/hide hover tooltip
+    if(hov&&typeof showHoverTooltip==='function'){
+      showHoverTooltip(hov,e.clientX-wrapRect.left,e.clientY-wrapRect.top);
+    }else if(typeof hideHoverTooltip==='function'){
+      hideHoverTooltip();
+    }
   }
   if(!isDragging)return;
   _dragMoved=true;
   camX=camStartX+(e.clientX-dragStartX)/camZoom;camY=camStartY+(e.clientY-dragStartY)/camZoom;
 });
 cwrap.addEventListener('mouseup',()=>{isDragging=false;cwrap.style.cursor='grab';});
-cwrap.addEventListener('mouseleave',()=>{isDragging=false;cwrap.style.cursor='grab';});
+cwrap.addEventListener('mouseleave',()=>{isDragging=false;cwrap.style.cursor='grab';if(typeof hideHoverTooltip==='function')hideHoverTooltip();});
 cwrap.addEventListener('wheel',e=>{e.preventDefault();const delta=e.deltaY>0?0.9:1.1;camZoom=Math.min(4,Math.max(0.5,camZoom*delta));},{passive:false});
 cwrap.style.cursor='grab';
 

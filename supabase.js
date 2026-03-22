@@ -444,12 +444,84 @@ function refreshAfterSync(){
   document.getElementById('syncBadge').style.color='#00ff88';
 }
 
+// ═══ OFFICE LIVE STATUS SYNC ═══
+// Reads Supabase events + content + agent_memory and maps to office agent visual statuses
+function syncOfficeLiveStatus(){
+  if(typeof setAgentLiveStatus!=='function')return;
+  var now=Date.now();
+  var recentWindow=30*60*1000; // 30 min window for "recent"
+
+  // 1. Check events for recent activity per agent
+  if(window._sbEvents&&window._sbEvents.length>0){
+    // Build: agentSlug → latest event
+    var agentLatest={};
+    window._sbEvents.forEach(function(ev){
+      var meta=ev.metadata_json;
+      if(typeof meta==='string'){try{meta=JSON.parse(meta);}catch(e){meta={};}}
+      if(!meta)meta={};
+      var slug=meta.agent_slug||ev.agent_slug||'';
+      var dashId=meta.agent_dash_id||(slug&&SB_SLUG_TO_DASH[slug])||'';
+      if(!dashId)return;
+      if(!agentLatest[dashId]){
+        agentLatest[dashId]={type:ev.type||'',time:new Date(ev.created_at).getTime(),desc:(ev.description||'').slice(0,80)};
+      }
+    });
+    Object.keys(agentLatest).forEach(function(dashId){
+      var ev=agentLatest[dashId];
+      var age=now-ev.time;
+      if(age>recentWindow)return; // too old
+      var type=ev.type||'';
+      if(type.indexOf('error')!==-1||type.indexOf('fail')!==-1){
+        setAgentLiveStatus(dashId,'error',ev.desc);
+      }else if(type.indexOf('publish')!==-1){
+        setAgentLiveStatus(dashId,'publishing',ev.desc);
+      }else if(type.indexOf('approved')!==-1){
+        setAgentLiveStatus(dashId,'approved',ev.desc);
+      }else if(type.indexOf('rework')!==-1){
+        setAgentLiveStatus(dashId,'rework',ev.desc);
+      }else if(type.indexOf('cycle')!==-1||type.indexOf('run')!==-1){
+        setAgentLiveStatus(dashId,'active',ev.desc);
+      }
+    });
+  }
+
+  // 2. Check agent_memory for working state
+  if(window._sbMemory&&window._sbMemory.length>0){
+    window._sbMemory.forEach(function(m){
+      if(!m.dashId)return;
+      var existing=window._agentLiveStatus?window._agentLiveStatus[m.dashId]:null;
+      if(existing&&(now-existing.ts)<5000)return; // don't overwrite fresh event-based status
+      if(m.state==='working'||m.state==='active'){
+        setAgentLiveStatus(m.dashId,'active',(m.last_output||'').slice(0,60));
+      }else if(m.state==='error'){
+        setAgentLiveStatus(m.dashId,'error',(m.last_output||'').slice(0,60));
+      }
+    });
+  }
+
+  // 3. Check recent content queue for SMM agent
+  if(window._sbContent&&window._sbContent.length>0){
+    var recent=window._sbContent.filter(function(c){return (now-new Date(c.created_at).getTime())<recentWindow;});
+    var published=recent.filter(function(c){return c.status==='published';});
+    var rework=recent.filter(function(c){return c.status==='needs_rework';});
+    if(published.length>0){
+      var existing=window._agentLiveStatus?window._agentLiveStatus['content']:null;
+      if(!existing||existing.status!=='publishing'){
+        setAgentLiveStatus('content','publishing',published.length+' post(s) published');
+      }
+    }else if(rework.length>0){
+      setAgentLiveStatus('content','rework',rework.length+' post(s) need rework');
+    }
+  }
+}
+
 async function initSupabase(){
   const ok=await syncSupabaseData();
   if(ok){
     SUPABASE_LIVE=true;
     console.log('✅ Supabase LIVE — agents: '+Object.keys(window._sbAgents).join(', '));
     refreshAfterSync();
+    syncOfficeLiveStatus();
     setupRealtimeNotifications();
   }else{
     console.warn('⚠️ Supabase not reachable or empty — using f2f_data.js fallback');
@@ -477,6 +549,7 @@ window.addEventListener('load',()=>{
     try{
       await syncSupabaseData();
       refreshAfterSync();
+      syncOfficeLiveStatus();
       console.log('🔄 Supabase auto-refresh OK — '+new Date().toLocaleTimeString('ru'));
     }catch(e){console.warn('Auto-refresh error:',e);}
   },30000);
@@ -492,7 +565,7 @@ function setupRealtimeNotifications(){
     try{
       var lastCheck=window._lastRealtimeCheck||new Date(Date.now()-60000).toISOString();
       // Check for new events
-      var newEvents=await sbFetch('events','select=id,type,description,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=5');
+      var newEvents=await sbFetch('events','select=id,type,description,metadata_json,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=5');
       if(newEvents&&newEvents.length>0){
         newEvents.forEach(function(ev){
           var msgType='ℹ️';
@@ -501,6 +574,20 @@ function setupRealtimeNotifications(){
           else if(ev.type.includes('error'))msgType='❌';
           var msg=(ev.description||ev.type).slice(0,80);
           if(typeof showToast==='function')showToast(msgType+' '+msg,'info');
+          // Trigger office visual effects for new events
+          if(typeof setAgentLiveStatus==='function'){
+            var meta=ev.metadata_json;
+            if(typeof meta==='string'){try{meta=JSON.parse(meta);}catch(e){meta={};}}
+            var dashId=(meta&&meta.agent_dash_id)||(meta&&meta.agent_slug&&SB_SLUG_TO_DASH[meta.agent_slug])||'';
+            if(dashId){
+              var evType=ev.type||'';
+              if(evType.indexOf('publish')!==-1)setAgentLiveStatus(dashId,'publishing',msg);
+              else if(evType.indexOf('error')!==-1)setAgentLiveStatus(dashId,'error',msg);
+              else if(evType.indexOf('approved')!==-1)setAgentLiveStatus(dashId,'approved',msg);
+              else if(evType.indexOf('rework')!==-1)setAgentLiveStatus(dashId,'rework',msg);
+              else setAgentLiveStatus(dashId,'active',msg);
+            }
+          }
         });
       }
       // Check for new content queue items
