@@ -1450,7 +1450,7 @@ function renderAgentsPanel(){
           '<b style="color:#00ff88;font-size:9px;text-transform:uppercase">📡 Live Output:</b><br>'+truncated+
         '</div>';
       }
-      return '<div class="agent-detail-card" style="border-left:3px solid '+a.color+';'+(sbMem?'border-top:2px solid #00ff8833;':'')+'">'+
+      return '<div class="agent-detail-card" onclick="showAgentDetail(\''+id+'\')" style="cursor:pointer;border-left:3px solid '+a.color+';'+(sbMem?'border-top:2px solid #00ff8833;':'')+'">'+
         '<div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:8px">'+
           '<div style="width:44px;height:44px;border-radius:10px;background:'+a.color+'18;border:1px solid '+a.color+'33;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">'+a.emoji+'</div>'+
           '<div style="flex:1;min-width:0">'+
