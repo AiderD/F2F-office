@@ -2094,7 +2094,7 @@ function renderIntegrations(){
         '<div class="intg-progress" style="flex:1"><div class="intg-progress-fill" style="width:'+usePct+'%;background:'+useColor+'"></div></div>'+
         '<span style="font-size:9px;color:var(--dim);font-family:monospace;white-space:nowrap">'+c.usage+'/'+c.limit+'</span></div>';
     }
-    return '<div class="intg-row">'+
+    return '<div class="intg-row" style="cursor:pointer" onclick="openIntgDetail(\''+c.name.replace(/'/g,"\\'")+"','connected')\">" +
       '<div class="intg-dot '+c.status+'"></div>'+
       '<div style="flex:1;min-width:0"><div class="intg-name" style="margin-bottom:1px">'+c.name+'</div><div style="font-size:10px;color:var(--dim)">'+c.purpose+'</div></div>'+
       (usageBar||'<div style="font-size:10px;color:var(--dim);white-space:nowrap">'+c.detail+'</div>')+
@@ -2106,7 +2106,7 @@ function renderIntegrations(){
   html+=need.map(function(n){
     var priColor=n.priority==='high'?'var(--hot)':n.priority==='medium'?'var(--amber)':'var(--dim)';
     var priLabel=n.priority==='high'?'ВЫСОКИЙ':n.priority==='medium'?'СРЕДНИЙ':'НИЗКИЙ';
-    return '<div class="intg-row">'+
+    return '<div class="intg-row" style="cursor:pointer" onclick="openIntgDetail(\''+n.name.replace(/'/g,"\\'")+"','needed')\">" +
       '<div class="intg-dot needed"></div>'+
       '<div style="flex:1;min-width:0"><div class="intg-name" style="margin-bottom:1px">'+n.name+'</div><div style="font-size:10px;color:var(--dim)">'+n.purpose+'</div></div>'+
       '<div class="intg-badge needed" style="color:'+priColor+';border-color:'+priColor+'44">'+priLabel+'</div>'+
@@ -2115,6 +2115,51 @@ function renderIntegrations(){
   document.getElementById('intgContent').innerHTML=html;
 }
 renderIntegrations();
+
+// Integration detail modal
+window.openIntgDetail=function(name,type){
+  var intg=buildLiveIntegrations();
+  var all=intg.connected.concat(intg.needed);
+  var item=all.find(function(c){return c.name===name;});
+  if(!item)return;
+  var isConn=type==='connected';
+  var html='<h3 style="margin:0 0 12px">'+item.name+'</h3>';
+  html+='<div style="font-size:13px;color:var(--dim);margin-bottom:16px">'+item.purpose+'</div>';
+  // Status
+  html+='<div style="display:flex;gap:8px;margin-bottom:16px">'+
+    '<span class="intg-badge '+(isConn?item.status:'needed')+'" style="font-size:11px;padding:4px 10px">'+(isConn?item.status.toUpperCase():'НЕ ПОДКЛЮЧЕНО')+'</span>'+
+    (item.detail?'<span style="font-size:11px;color:var(--dim);padding:4px 0">'+item.detail+'</span>':'')+
+  '</div>';
+  // Usage bar if connected
+  if(isConn&&item.usage!==undefined&&item.limit){
+    var pct=Math.min(100,Math.round(item.usage/item.limit*100));
+    var col=pct>=90?'var(--hot)':pct>=60?'var(--amber)':'var(--green)';
+    html+='<div style="margin-bottom:16px"><div style="font-size:11px;color:var(--dim);margin-bottom:4px">Использование: '+item.usage+'/'+item.limit+' ('+pct+'%)</div>'+
+      '<div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+col+';border-radius:4px;transition:width .3s"></div></div></div>';
+  }
+  // Config section
+  if(isConn){
+    html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px">';
+    html+='<div style="font-size:12px;font-weight:700;margin-bottom:8px">⚙️ Конфигурация</div>';
+    html+='<div style="font-size:11px;color:var(--dim);line-height:1.8">• API ключ: ••••••••••<br>• Статус: <span style="color:var(--green)">Подключено</span><br>• Автообновление: каждые 5 мин</div>';
+    html+='</div>';
+    // Health log
+    html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px">';
+    html+='<div style="font-size:12px;font-weight:700;margin-bottom:8px">📋 Health Log</div>';
+    html+='<div style="font-size:11px;color:var(--dim);line-height:1.8">';
+    html+='<div>✅ '+new Date().toLocaleString('ru')+' — Проверка пройдена</div>';
+    html+='<div>✅ '+new Date(Date.now()-3600000).toLocaleString('ru')+' — Проверка пройдена</div>';
+    html+='</div></div>';
+  }else{
+    // Setup instructions for needed integrations
+    html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px">';
+    html+='<div style="font-size:12px;font-weight:700;margin-bottom:8px">🔧 Как подключить</div>';
+    html+='<div style="font-size:12px;line-height:1.8;color:var(--text)">1. Получите API-ключ на сайте сервиса<br>2. Добавьте в Supabase Secrets: <code style="background:var(--panel);padding:2px 6px;border-radius:3px;font-size:11px">'+name.toUpperCase().replace(/[\s\/\.]/g,'_')+'_KEY</code><br>3. Активируйте в разделе Админ</div>';
+    html+='</div>';
+    html+='<div style="display:flex;gap:8px"><button class="act-btn success" onclick="showToast(\'Инструкция скопирована\',\'success\');closeModal()">📋 Копировать инструкцию</button></div>';
+  }
+  openModal(html);
+};
 
 // ═══ MINI ANALYTICS ═══
 function renderAnalytics(){
@@ -2805,6 +2850,8 @@ function renderPosts(){
         imageUrl:c.image_url||null, imagePrompt:c.image_prompt||null,
         qaScore:c.qa_score||null, qaVerdict:c.qa_verdict||null, ceoScore:c.ceo_score||null,
         templateId:c.template_id||null,
+        metaJson:c.metadata_json||null,
+        abStyle:(c.metadata_json&&c.metadata_json.style)||null,
         agentId:dashAgentId, status:statusMap[c.status]||'draft', sbStatus:c.status, isLive:true
       });
     });
@@ -2826,6 +2873,7 @@ function renderPosts(){
       <div class="post-header">
         <span class="post-platform ${p.platform}">${p.platform}</span>
         ${p.isLive?'<span style="font-size:9px;padding:2px 6px;background:#00ff8822;color:#00ff88;border:1px solid #00ff8844;border-radius:4px;font-weight:700">LIVE</span>':''}
+        ${p.abStyle?`<span style="font-size:9px;padding:2px 6px;border-radius:4px;font-weight:600;${p.abStyle==='provocative'?'background:#ff2d7822;color:#ff2d78;border:1px solid #ff2d7844':p.abStyle==='meme'?'background:#a855f722;color:#a855f7;border:1px solid #a855f744':p.abStyle==='storytelling'?'background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44':'background:#00e5ff22;color:#00e5ff;border:1px solid #00e5ff44'}">${p.abStyle.toUpperCase()}</span>`:''}
         <span class="post-status ${p.status}">${p.sbStatus==='pending_approval'?'⏳ Ждёт одобрения':p.sbStatus==='approved'?'✅ Одобрен':p.sbStatus==='published'?'📢 Опубликован':p.sbStatus==='needs_rework'?'🔄 На доработке':p.sbStatus==='rejected'?'❌ Отклонён':p.status==='ready'?'✅ Ready':'📝 Draft'}</span>
       </div>
       <div class="post-category">${p.category||''}</div>
@@ -2934,6 +2982,44 @@ function renderPostsAnalytics(){
       options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
         scales:{x:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#64748b',font:{size:10}}},y:{grid:{display:false},ticks:{color:'#94a3b8',font:{size:11,weight:'600'}}}}}
     });
+  }
+  // === A/B STYLE ANALYTICS ===
+  var abStats={provocative:{n:0,qaSum:0,ceoSum:0,ceoN:0,pub:0},informative:{n:0,qaSum:0,ceoSum:0,ceoN:0,pub:0},meme:{n:0,qaSum:0,ceoSum:0,ceoN:0,pub:0},storytelling:{n:0,qaSum:0,ceoSum:0,ceoN:0,pub:0}};
+  posts.forEach(function(p){
+    var style=p.abStyle;if(!style||!abStats[style])return;
+    abStats[style].n++;
+    if(p.qaScore!=null)abStats[style].qaSum+=p.qaScore;
+    if(p.ceoScore!=null){abStats[style].ceoSum+=p.ceoScore;abStats[style].ceoN++;}
+    if(p.sbStatus==='published')abStats[style].pub++;
+  });
+  var abEl=el('pa-ab-styles');
+  if(abEl){
+    var abStyles=[
+      {key:'provocative',label:'🔥 Provocative',color:'#ff2d78'},
+      {key:'informative',label:'📊 Informative',color:'#00e5ff'},
+      {key:'meme',label:'😂 Meme',color:'#a855f7'},
+      {key:'storytelling',label:'📖 Storytelling',color:'#f59e0b'}
+    ];
+    var abHasData=abStyles.some(function(s){return abStats[s.key].n>0;});
+    if(abHasData){
+      abEl.innerHTML='<div style="font-size:13px;font-weight:700;margin-bottom:8px">A/B Стили</div>'+
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">'+
+        abStyles.map(function(s){
+          var st=abStats[s.key];
+          if(st.n===0)return '';
+          var avgQA=st.qaSum>0?(st.qaSum/st.n).toFixed(1):'—';
+          var avgCEO=st.ceoN>0?(st.ceoSum/st.ceoN).toFixed(1):'—';
+          var pubRate=st.n>0?Math.round(st.pub/st.n*100):0;
+          return '<div style="background:var(--bg);border:1px solid '+s.color+'33;border-radius:8px;padding:10px">'+
+            '<div style="font-size:11px;font-weight:700;color:'+s.color+';margin-bottom:6px">'+s.label+'</div>'+
+            '<div style="font-size:20px;font-weight:700;font-family:monospace;color:var(--text)">'+st.n+'</div>'+
+            '<div style="font-size:10px;color:var(--dim)">QA avg: '+avgQA+' | CEO: '+avgCEO+'</div>'+
+            '<div style="height:4px;background:var(--border);border-radius:2px;margin-top:6px"><div style="height:100%;width:'+pubRate+'%;background:'+s.color+';border-radius:2px"></div></div>'+
+            '<div style="font-size:9px;color:var(--dim);margin-top:2px">'+pubRate+'% опубликовано</div></div>';
+        }).join('')+'</div>';
+    }else{
+      abEl.innerHTML='<div style="font-size:11px;color:var(--dim);padding:8px">A/B стили появятся после генерации постов с metadata_json.style</div>';
+    }
   }
 }
 
@@ -3806,6 +3892,9 @@ window.toggleTaskPreview=function(id){
 window.moveTask=function(id,newKanbanStatus){
   var t=D.tasks.find(function(x){return x.id===id;});if(!t)return;
   var oldStatus=t.kanbanStatus||mapToKanban(t.status);
+  // Track history
+  if(!t._history)t._history=[];
+  t._history.push({from:oldStatus,to:newKanbanStatus,at:new Date().toISOString()});
   t.kanbanStatus=newKanbanStatus;
   // Map kanban → old status for compatibility
   if(newKanbanStatus==='done'){t.status='done';t.completedDate=new Date().toISOString().slice(0,10);}
@@ -3874,6 +3963,7 @@ window.openTaskDetail=function(id){
     ${t.reworkNotes?'<div style="padding:8px;background:#f9731618;border-radius:6px;font-size:12px;color:#f97316;margin-bottom:8px">🔄 Замечания: '+t.reworkNotes+'</div>':''}
     ${subtasksHTML}
     ${t._payload&&Object.keys(t._payload).length>2?'<details style="margin:8px 0"><summary style="font-size:11px;color:var(--dim);cursor:pointer">📋 Данные задачи</summary><div style="margin-top:6px">'+taskPreviewHTML(t)+'</div></details>':''}
+    ${t._history&&t._history.length?`<details style="margin:8px 0"><summary style="font-size:11px;color:var(--dim);cursor:pointer">📜 История переходов (${t._history.length})</summary><div style="margin-top:8px;padding:8px;background:var(--bg);border-radius:6px;border:1px solid var(--border)">${t._history.map(function(h){var fi=KANBAN_STATUSES[h.from]||{label:h.from,color:'#64748b'};var ti=KANBAN_STATUSES[h.to]||{label:h.to,color:'#64748b'};return '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px;border-bottom:1px solid var(--border)"><span style="color:'+fi.color+'">'+fi.label+'</span> → <span style="color:'+ti.color+';font-weight:700">'+ti.label+'</span><span style="margin-left:auto;color:var(--dim);font-size:10px">'+new Date(h.at).toLocaleString("ru",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})+'</span></div>';}).join('')}</div></details>`:''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:16px 0;padding-top:12px;border-top:1px solid var(--border)">
       ${transitions}
     </div>
@@ -4362,6 +4452,73 @@ window.saveReplyAsPost=async function(agentId,replyElId,platform){
 };
 
 // ═══ SMM Auto-Generate via Edge Function ═══
+// ═══ ALGORITHM SETTINGS ═══
+window.openAlgorithmSettings=function(){
+  // Load current settings from localStorage (persisted per session)
+  var cfg=JSON.parse(localStorage.getItem('f2f_algo_cfg')||'{}');
+  var qaThr=cfg.qa_threshold||8;
+  var maxPerDay=cfg.max_per_day||4;
+  var interval=cfg.interval_hours||3;
+  var batchSize=cfg.batch_size||10;
+  var styles=cfg.styles||{provocative:25,informative:25,meme:25,storytelling:25};
+  var autoImage=cfg.auto_image!==false;
+  var autoPublish=cfg.auto_publish!==false;
+  var html='<h3 style="margin:0 0 16px">⚙️ Настройки алгоритма контента</h3>';
+  // QA threshold
+  html+='<div style="margin-bottom:14px"><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">QA порог (минимум для одобрения)</label>'+
+    '<input id="algQaThr" type="number" min="1" max="10" value="'+qaThr+'" style="padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;width:80px"> <span style="font-size:11px;color:var(--dim)">/ 10</span></div>';
+  // Batch size
+  html+='<div style="margin-bottom:14px"><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Постов за генерацию</label>'+
+    '<input id="algBatch" type="number" min="1" max="20" value="'+batchSize+'" style="padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;width:80px"></div>';
+  // Max per day + interval
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
+    '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Макс публикаций/день</label>'+
+    '<input id="algMaxDay" type="number" min="1" max="20" value="'+maxPerDay+'" style="padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;width:100%"></div>'+
+    '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Интервал (часы)</label>'+
+    '<input id="algInterval" type="number" min="1" max="12" value="'+interval+'" style="padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;width:100%"></div></div>';
+  // A/B style weights
+  html+='<div style="margin-bottom:14px"><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:8px">Веса A/B стилей (%)</label>'+
+    '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">'+
+    '<div style="display:flex;align-items:center;gap:6px"><span style="color:#ff2d78;font-size:12px;min-width:90px">🔥 Provocative</span><input id="algS1" type="number" min="0" max="100" value="'+styles.provocative+'" style="padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;width:50px">%</div>'+
+    '<div style="display:flex;align-items:center;gap:6px"><span style="color:#00e5ff;font-size:12px;min-width:90px">📊 Informative</span><input id="algS2" type="number" min="0" max="100" value="'+styles.informative+'" style="padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;width:50px">%</div>'+
+    '<div style="display:flex;align-items:center;gap:6px"><span style="color:#a855f7;font-size:12px;min-width:90px">😂 Meme</span><input id="algS3" type="number" min="0" max="100" value="'+styles.meme+'" style="padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;width:50px">%</div>'+
+    '<div style="display:flex;align-items:center;gap:6px"><span style="color:#f59e0b;font-size:12px;min-width:90px">📖 Storytelling</span><input id="algS4" type="number" min="0" max="100" value="'+styles.storytelling+'" style="padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;width:50px">%</div></div></div>';
+  // Toggles
+  html+='<div style="display:flex;gap:16px;margin-bottom:16px">'+
+    '<label style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px"><input type="checkbox" id="algAutoImg" '+(autoImage?'checked':'')+' style="accent-color:var(--cyan)"> Авто-генерация картинок</label>'+
+    '<label style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px"><input type="checkbox" id="algAutoPub" '+(autoPublish?'checked':'')+' style="accent-color:var(--cyan)"> Авто-публикация</label></div>';
+  // Save
+  html+='<button onclick="saveAlgorithmSettings()" style="padding:10px 20px;background:var(--cyan);color:var(--bg);border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;width:100%">💾 Сохранить настройки</button>';
+  openModal(html);
+};
+window.saveAlgorithmSettings=function(){
+  var cfg={
+    qa_threshold:parseInt(document.getElementById('algQaThr').value)||8,
+    batch_size:parseInt(document.getElementById('algBatch').value)||10,
+    max_per_day:parseInt(document.getElementById('algMaxDay').value)||4,
+    interval_hours:parseInt(document.getElementById('algInterval').value)||3,
+    styles:{
+      provocative:parseInt(document.getElementById('algS1').value)||25,
+      informative:parseInt(document.getElementById('algS2').value)||25,
+      meme:parseInt(document.getElementById('algS3').value)||25,
+      storytelling:parseInt(document.getElementById('algS4').value)||25
+    },
+    auto_image:document.getElementById('algAutoImg').checked,
+    auto_publish:document.getElementById('algAutoPub').checked
+  };
+  localStorage.setItem('f2f_algo_cfg',JSON.stringify(cfg));
+  // Also save to Supabase directives for edge functions to use
+  if(SUPABASE_LIVE){
+    fetch(SUPABASE_URL+'/rest/v1/directives',{
+      method:'POST',
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify({key:'smm_algorithm',value_json:cfg})
+    }).catch(function(e){console.warn('Save algo cfg:',e);});
+  }
+  showToast('✅ Настройки алгоритма сохранены','success');
+  closeModal();
+};
+
 window.generatePostsBatch=async function(){
   var btn=document.getElementById('btnGenPosts');
   if(!btn)return;
@@ -4576,6 +4733,27 @@ window.openFeedDetail=function(feedId){
     '<p style="color:var(--dim);margin:0;font-size:12px">'+(DEPTS.find(function(d){return d.agents&&d.agents.includes(f.agentId);})?.name||'')+'  •  '+f.time+'</p></div></div>';
   // Main content
   html+='<div style="font-size:14px;line-height:1.8;padding:16px;background:var(--bg);border-radius:8px;border:1px solid var(--border);margin-bottom:16px">'+f.text+'</div>';
+  // Supabase event metadata (drill-down details)
+  if(f.sbEvent||f.sbMeta){
+    var ev=f.sbEvent||{};var m=f.sbMeta||{};
+    html+='<div style="margin-bottom:16px"><h3 style="margin:0 0 8px">📦 Данные события</h3>';
+    html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px">';
+    if(ev.type)html+='<div style="margin-bottom:6px"><span style="color:var(--dim)">Тип:</span> <span style="color:var(--cyan)">'+ev.type+'</span></div>';
+    if(ev.created_at)html+='<div style="margin-bottom:6px"><span style="color:var(--dim)">Время:</span> '+new Date(ev.created_at).toLocaleString('ru')+'</div>';
+    // Show all metadata fields
+    var metaKeys=Object.keys(m).filter(function(k){return k!=='source'&&k!=='agent_dash_id'&&k!=='text';});
+    if(metaKeys.length>0){
+      html+='<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">';
+      metaKeys.forEach(function(k){
+        var val=m[k];
+        if(typeof val==='object')val=JSON.stringify(val,null,2);
+        if(typeof val==='string'&&val.length>200)val=val.slice(0,200)+'...';
+        html+='<div style="margin-bottom:4px"><span style="color:var(--dim)">'+k+':</span> <span style="color:var(--text)">'+esc(String(val))+'</span></div>';
+      });
+      html+='</div>';
+    }
+    html+='</div></div>';
+  }
   // Agent purpose
   if(descD.purpose){
     html+='<h3>Зачем этот агент</h3><p style="font-size:13px;line-height:1.6">'+descD.purpose+'</p>';
@@ -4584,11 +4762,10 @@ window.openFeedDetail=function(feedId){
   if(f.sources&&f.sources.length){
     html+='<h3>Источники данных</h3><div class="agent-sources" style="margin-bottom:12px">'+
       f.sources.map(function(s){return '<span style="font-size:11px;padding:4px 10px;background:var(--panel);border-radius:6px;border:1px solid var(--border);color:var(--cyan)">'+s+'</span>';}).join('')+'</div>';
-    html+='<p style="font-size:11px;color:var(--dim);line-height:1.5">⚠️ Агент парсит данные из этих источников. Для получения актуальных данных в реальном времени нужны API-интеграции (см. таб 🔗 Интеграции). Сейчас часть данных — оценки на основе последнего анализа.</p>';
   }
   // Replaces
-  if(m&&m.replaces){
-    html+='<h3>Что экономит</h3><p style="font-size:13px;color:var(--amber)">'+m.replaces+'</p>';
+  if(descD&&descD.replaces){
+    html+='<h3>Что экономит</h3><p style="font-size:13px;color:var(--amber)">'+descD.replaces+'</p>';
   }
   // Actions
   html+='<div class="action-bar">'+

@@ -406,6 +406,28 @@ function refreshAfterSync(){
     var activeAgents=Object.keys(window._sbAgents||{}).length;
     if(activeAgents>0) addFeed('watchdog','🟢 '+activeAgents+' агентов онлайн | Supabase подключён');
 
+    // 5b. Real Supabase events from events table (with full metadata for drill-down)
+    if(window._sbEvents&&window._sbEvents.length>0){
+      var recentEvents=window._sbEvents.slice(0,15);
+      recentEvents.forEach(function(ev){
+        var m=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json||'{}'):ev.metadata_json||{};
+        if(m.source==='dashboard')return; // skip our own feed events
+        var agSlug=null;
+        if(ev.agent_id&&window._sbAgentById&&window._sbAgentById[ev.agent_id])agSlug=window._sbAgentById[ev.agent_id].slug;
+        var dashId=(agSlug&&SB_SLUG_TO_DASH[agSlug])?SB_SLUG_TO_DASH[agSlug]:'coordinator';
+        var text=m.text||m.summary||ev.type||'Событие';
+        if(text.length>120)text=text.slice(0,120)+'...';
+        var ago=ev.created_at?timeSince(ev.created_at):'';
+        var item={
+          id:++feedIdCounter,agentId:dashId,text:text,
+          time:ago,fullTime:ev.created_at,color:(AGENTS[dashId]||{}).color||'#64748b',
+          sbEvent:ev,sbMeta:m
+        };
+        feedItems.push(item);
+      });
+      renderFeed();
+    }
+
     // 6. Metrics highlights
     if(window._sbMetrics){
       var m=window._sbMetrics;
