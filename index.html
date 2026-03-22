@@ -322,9 +322,43 @@
   <div class="data-header">
     <h2>📋 Задачи</h2>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="act-btn" onclick="toggleTaskView()" id="taskViewToggle" style="font-size:11px;padding:3px 10px">📊 Kanban</button>
-      <button class="act-btn success" onclick="openCreateTaskModal()" style="font-size:11px;padding:3px 10px">➕ Новая задача</button>
+      <button class="act-btn" onclick="toggleTaskView()" id="taskViewToggle" style="font-size:11px;padding:4px 12px">📊 Kanban</button>
+      <button class="act-btn success" onclick="openCreateTaskModal()" style="font-size:11px;padding:4px 12px">+ Новая задача</button>
     </div>
+  </div>
+  <!-- Task Stats Bar -->
+  <div id="taskStatsBar" class="task-stats-bar"></div>
+  <!-- Filters -->
+  <div class="task-filters">
+    <input type="text" id="taskSearch" placeholder="🔍 Поиск по задачам..." class="task-search-input" oninput="renderTasks()">
+    <select id="taskFilterStatus" class="task-filter-select" onchange="renderTasks()">
+      <option value="all">Все статусы</option>
+      <option value="backlog">📥 Бэклог</option>
+      <option value="decomposed">🧩 Декомпозиция</option>
+      <option value="planned">📋 Запланировано</option>
+      <option value="in_progress">🔧 В работе</option>
+      <option value="done">✅ Выполнено</option>
+      <option value="rework">🔄 Переработка</option>
+      <option value="cancelled">❌ Отменено</option>
+    </select>
+    <select id="taskFilterAgent" class="task-filter-select" onchange="renderTasks()">
+      <option value="all">Все агенты</option>
+      <option value="coordinator">🎯 Coordinator</option>
+      <option value="content">📱 SMM</option>
+      <option value="market">📊 Analyst</option>
+      <option value="leads">📧 BizDev</option>
+      <option value="outreach">🎯 Outreach</option>
+      <option value="social">👥 Community</option>
+      <option value="lead_finder">🔍 Lead Finder</option>
+      <option value="followup">📨 Follow-Up</option>
+    </select>
+    <select id="taskFilterPriority" class="task-filter-select" onchange="renderTasks()">
+      <option value="all">Все приоритеты</option>
+      <option value="critical">🚨 Critical</option>
+      <option value="high">🔴 High</option>
+      <option value="normal">🔵 Normal</option>
+      <option value="low">⚪ Low</option>
+    </select>
   </div>
   <!-- Quick create bar -->
   <div class="task-input-area">
@@ -332,16 +366,13 @@
     <select class="task-select" id="taskAgent">
       <option value="">Агент</option>
       <option value="coordinator">🎯 Coordinator</option>
-      <option value="content">📱 SMM Agent</option>
+      <option value="content">📱 SMM</option>
       <option value="market">📊 Analyst</option>
       <option value="leads">📧 BizDev</option>
       <option value="outreach">🎯 Outreach</option>
       <option value="social">👥 Community</option>
       <option value="lead_finder">🔍 Lead Finder</option>
       <option value="followup">📨 Follow-Up</option>
-      <option value="processor">⚙️ Processor</option>
-      <option value="watchdog">🛡️ Watchdog</option>
-      <option value="quality_controller">✅ QA</option>
     </select>
     <select class="task-select" id="taskPrioritySelect" style="max-width:100px">
       <option value="normal">🔵 Normal</option>
@@ -376,6 +407,10 @@
     <div class="kanban-col" data-status="rework">
       <div class="kanban-col-header" style="border-top:3px solid #f97316"><span>🔄 Переработка</span><span class="kanban-count" id="kc-rework">0</span></div>
       <div class="kanban-cards" id="kanban-rework"></div>
+    </div>
+    <div class="kanban-col" data-status="cancelled">
+      <div class="kanban-col-header" style="border-top:3px solid #ef4444"><span>❌ Отменено</span><span class="kanban-count" id="kc-cancelled">0</span></div>
+      <div class="kanban-cards" id="kanban-cancelled"></div>
     </div>
   </div>
   <!-- List view -->

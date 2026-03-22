@@ -234,18 +234,52 @@ function refreshAfterSync(){
       if(D.tasks.find(function(x){return x.sbId===a.id;}))return;
       var ag=window._sbAgentById&&a.agent_id?window._sbAgentById[a.agent_id]:null;
       var dashId=ag?SB_SLUG_TO_DASH[ag.slug]:'coordinator';
-      var p=a.payload_json||{};
+      var agentName=ag?ag.name:'Координатор';
+      var p=typeof a.payload_json==='string'?JSON.parse(a.payload_json||'{}'):a.payload_json||{};
       var stableTaskId=6000+Math.abs(String(a.id).split('').reduce(function(h,c){return ((h<<5)-h)+c.charCodeAt(0);},0)%9000);
+      // Smart title extraction from payload
+      var smartTitle=p.title||p.description||p.subject||p.email_subject||'';
+      if(!smartTitle){
+        // Build title from action type + context
+        var aType=(a.type||'').toLowerCase();
+        if(aType.includes('email'))smartTitle='📧 Email: '+(p.company||p.partner||p.to||'шаблон');
+        else if(aType.includes('lead'))smartTitle='🆕 Лид: '+(p.company||p.name||p.contact_name||'рекомендация');
+        else if(aType.includes('followup'))smartTitle='🔄 Follow-up: '+(p.contact||p.company||p.name||'контакт');
+        else if(aType.includes('content')||aType.includes('post'))smartTitle='📝 Контент: '+(p.platform||p.type||'создание');
+        else if(aType.includes('research')||aType.includes('analysis'))smartTitle='🔍 Исследование: '+(p.topic||p.query||a.type);
+        else smartTitle=a.type||'Действие агента';
+      }
+      // Smart description from payload fields
+      var smartDesc=p.description||'';
+      if(!smartDesc){
+        var descParts=[];
+        if(p.body||p.template||p.text||p.content||p.email_body)descParts.push((p.body||p.template||p.text||p.content||p.email_body||'').slice(0,300));
+        if(p.reason||p.why)descParts.push('Причина: '+(p.reason||p.why));
+        if(p.company)descParts.push('Компания: '+p.company);
+        if(p.contact||p.contact_name||p.name)descParts.push('Контакт: '+(p.contact||p.contact_name||p.name));
+        if(p.platform)descParts.push('Платформа: '+p.platform);
+        if(p.url||p.link)descParts.push('Ссылка: '+(p.url||p.link));
+        smartDesc=descParts.join('\n');
+      }
+      // Smart result from response/output fields
+      var smartResult=p.result||p.output||p.response||p.summary||null;
+      if(!smartResult&&(p.status==='done'||p.status==='executed')){
+        smartResult='Выполнено агентом '+agentName;
+      }
+      // Cancelled tracking
+      var cancelledBy=p.cancelled_by||null;
+      var cancelReason=p.cancel_reason||p.cancelled_reason||null;
       D.tasks.push({
-        id:stableTaskId, sbId:a.id, title:p.title||p.description||a.type||'Действие',
-        assignedTo:dashId, dept:ag?'':AGENTS[dashId]?.dept||'cmd',
+        id:stableTaskId, sbId:a.id, title:smartTitle,
+        assignedTo:dashId, agentName:agentName, dept:ag?'':AGENTS[dashId]?.dept||'cmd',
         status:p.status||'done', priority:p.priority||'normal',
         kanbanStatus:p.kanban_status||p.status||'done',
-        description:p.description||'', deadline:p.deadline||'', estimate:p.estimate||'',
+        description:smartDesc, deadline:p.deadline||'', estimate:p.estimate||'',
         tags:p.tags||[], subtasks:p.subtasks||[], reworkCount:p.rework_count||0,
         reworkNotes:p.rework_notes||'',
         createdDate:(a.created_at||'').slice(0,10), completedDate:p.completed_at||(a.created_at||'').slice(0,10),
-        result:p.result||null, isLive:true,
+        result:smartResult, isLive:true,
+        cancelledBy:cancelledBy, cancelReason:cancelReason,
         _actionType:a.type||'', _payload:p
       });
     });
@@ -296,13 +330,26 @@ function refreshAfterSync(){
     if(typeof renderTeam==='function')renderTeam();
   }
 
-  // ═══ 7. STRATEGY: Load from directives ═══
+  // ═══ 7. STRATEGY & KPI TARGETS: Load from directives ═══
   if(window._sbDirectives){
     var strat=window._sbDirectives.find(function(d){return d.key==='company_strategy';});
     if(strat&&strat.value_json){
       var sv=typeof strat.value_json==='string'?JSON.parse(strat.value_json):strat.value_json;
       var el=document.getElementById('strategyText');
       if(el&&sv.mission_vision)el.value=sv.mission_vision;
+      // ═══ GLOBAL KPI TARGETS — used by coordinator, decomposition, alerts ═══
+      window._kpiTargets={
+        leads:parseInt(sv.kpi_leads_monthly)||1000,
+        emails:parseInt(sv.kpi_emails_monthly)||3000,
+        content:parseInt(sv.kpi_content_monthly)||100,
+        revenue:parseInt(sv.kpi_revenue_target)||15000
+      };
+      window._strategyText=sv.mission_vision||'';
+      // Populate KPI input fields
+      var kl=document.getElementById('kpi-leads');if(kl&&kl.tagName==='INPUT')kl.value=window._kpiTargets.leads;
+      var ke=document.getElementById('kpi-emails');if(ke&&ke.tagName==='INPUT')ke.value=window._kpiTargets.emails;
+      var kc=document.getElementById('kpi-content');if(kc&&kc.tagName==='INPUT')kc.value=window._kpiTargets.content;
+      var kr=document.getElementById('kpi-revenue');if(kr&&kr.tagName==='INPUT')kr.value=window._kpiTargets.revenue;
     }
     // Load exchange rate from directives into financeExchangeRate
     if(typeof loadExchangeRateFromDirectives==='function')loadExchangeRateFromDirectives();
@@ -407,6 +454,22 @@ function refreshAfterSync(){
       if(m.retention_d7) addFeed('market','📈 Retention D7: '+m.retention_d7.value+'%');
     }
   }
+  // ═══ KPI DEFICIT ALERTS — coordinator must see gaps ═══
+  if(SUPABASE_LIVE&&window._kpiProgress&&!window._kpiDeficitAlerted){
+    window._kpiDeficitAlerted=true;
+    var kp=window._kpiProgress;var mp=kp.monthPct||0;
+    if(kp.leads&&kp.leads.pct<mp-15){
+      var deficit=Math.round((kp.leads.target*mp/100)-kp.leads.current);
+      addFeed('coordinator','⚠️ KPI дефицит: лиды '+kp.leads.current+'/'+kp.leads.target+' ('+kp.leads.pct+'% vs '+mp+'% месяца). Нужно ещё ~'+deficit);
+    }
+    if(kp.content&&kp.content.pct<mp-15){
+      var cDef=Math.round((kp.content.target*mp/100)-kp.content.current);
+      addFeed('coordinator','⚠️ KPI дефицит: контент '+kp.content.current+'/'+kp.content.target+' ('+kp.content.pct+'% vs '+mp+'% месяца). Нужно ещё ~'+cDef);
+    }
+    if(kp.leads&&kp.leads.pct>=mp)addFeed('coordinator','✅ KPI темп: лиды на уровне или выше плана ('+kp.leads.pct+'%)');
+    if(kp.content&&kp.content.pct>=mp)addFeed('coordinator','✅ KPI темп: контент на уровне или выше плана ('+kp.content.pct+'%)');
+  }
+
   // Update sync badge with count
   const liveCount=window._sbMemory?window._sbMemory.filter(m=>m.state==='working').length:0;
   const contentCount=window._sbContent?window._sbContent.length:0;
