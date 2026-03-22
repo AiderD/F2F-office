@@ -103,6 +103,7 @@ async function loginWithToken(){
   }
 }
 
+window.logout=function(){logoutUser();};
 function logoutUser(){
   if(_currentSession) auditLog('logout','auth','Выход: '+_currentSession.login_name);
   _currentSession=null;
@@ -312,8 +313,19 @@ async function reactivateToken(id){
   renderAdmin();
 }
 
+// ═══ LOADING STATE UTILITY ═══
+function withLoading(btn, asyncFn){
+  if(!btn||btn.disabled)return;
+  var origText=btn.innerHTML;
+  btn.disabled=true;btn.style.opacity='0.6';btn.innerHTML='<span class="spinner"></span> '+origText;
+  Promise.resolve(asyncFn()).then(function(){btn.disabled=false;btn.style.opacity='';btn.innerHTML=origText;})
+    .catch(function(e){btn.disabled=false;btn.style.opacity='';btn.innerHTML=origText;showToast('Ошибка: '+e.message,'error');});
+}
+
 // ═══ DATA ═══
 const D = window.F2F_DATA || {leads:[],posts:[],reports:[],tasks:[],companies:[],kpi:{},financeReports:[],hrReports:[],techReports:[]};
+D.feed = D.feed || [];
+D.agents = D.agents || [];
 // Merge all department reports into one unified reports array
 if(D.financeReports) D.reports = D.reports.concat(D.financeReports);
 if(D.hrReports) D.reports = D.reports.concat(D.hrReports);
@@ -429,13 +441,15 @@ function getLedgerBurn(){
 
 function updateKPI(){
   var burn=getLedgerBurn();
+  // Demo mode indicator
+  var demoTag=SUPABASE_LIVE?'':' <span style="font-size:8px;color:#ffb800;vertical-align:super">demo</span>';
   // Leads: prefer live count from D.leads (already replaced by SB data in refreshAfterSync)
   var leadsCount=SUPABASE_LIVE&&window._sbPartners?window._sbPartners.length:D.leads.length;
-  document.getElementById('kpi-leads').textContent=leadsCount;
+  document.getElementById('kpi-leads').innerHTML=leadsCount+demoTag;
   // Posts: prefer live count
   var postsCount=SUPABASE_LIVE&&window._sbContent?window._sbContent.length:D.posts.length;
-  document.getElementById('kpi-posts').textContent=postsCount;
-  document.getElementById('kpi-reports').textContent=D.reports.length;
+  document.getElementById('kpi-posts').innerHTML=postsCount+demoTag;
+  document.getElementById('kpi-reports').innerHTML=D.reports.length+demoTag;
   // Partnerships: from metrics or fallback 0
   var partnerships=0;
   if(window._sbMetrics){
@@ -2277,6 +2291,7 @@ function renderLeads(){
     return l.priority===leadFilter;
   });
   document.getElementById('leads-count').textContent=filtered.length+' контактов';
+  if(filtered.length===0){document.getElementById('leadsGrid').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--dim);font-size:14px">🔍 Нет лидов по выбранному фильтру</div>';return;}
   document.getElementById('leadsGrid').innerHTML=filtered.map(l=>`
     <div class="lead-card" onclick="openLeadModal(${l.id})">
       <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"><div class="priority ${l.priority}">${l.priority}</div>${l.sbStage?`<span style="font-size:9px;padding:1px 6px;border-radius:3px;background:${l.sbStage==='negotiating'?'#ffb80018;color:#ffb800':l.sbStage==='contacted'?'#00e5ff18;color:#00e5ff':l.sbStage==='closed_won'?'#00ff8818;color:#00ff88':'#64748b18;color:#64748b'}">${l.sbStage==='identified'?'🔍':l.sbStage==='contacted'?'📧':l.sbStage==='negotiating'?'🤝':l.sbStage==='closed_won'?'✅':'❌'} ${l.sbStage}</span>`:''}</div>
@@ -2694,6 +2709,7 @@ function renderPosts(){
     return p.platform&&p.platform.toLowerCase()===postFilter.toLowerCase();
   });
   document.getElementById('posts-count').textContent=filtered.length+' постов';
+  if(filtered.length===0){document.getElementById('postsGrid').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--dim);font-size:14px">📝 Нет постов по выбранному фильтру</div>';renderPostsAnalytics();return;}
   document.getElementById('postsGrid').innerHTML=filtered.map(p=>`
     <div class="post-card" onclick="openPostModal(${typeof p.sbId==='string'?("'"+p.sbId+"'"):p.id})" style="${p.isLive?'border-top:2px solid #00ff88;':''}${p.sbStatus==='pending_approval'?'border-left:3px solid #ff9800;':p.sbStatus==='approved'?'border-left:3px solid #00ff88;':p.sbStatus==='needs_rework'?'border-left:3px solid #a855f7;':p.sbStatus==='rejected'?'border-left:3px solid #ff4444;':p.sbStatus==='published'?'border-left:3px solid #00e5ff;':''}">
       <div class="post-header">
@@ -3900,6 +3916,7 @@ renderAgentList();
 
 function showAgentDetail(id){
   const a=AGENTS[id];
+  if(!a){showToast('Агент «'+id+'» не найден в данных','error');return;}
   const agentTasks=D.tasks.filter(t=>t.assignedTo===id);
   const agentReports=D.reports.filter(r=>r.agentId===id);
   const agentPosts=D.posts.filter(p=>p.agentId===id);

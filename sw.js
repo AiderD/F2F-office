@@ -29,6 +29,10 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  // Skip non-GET requests (POST to Supabase, etc.) — Cache API only supports GET
+  if (e.request.method !== 'GET') return;
+  // Skip Supabase API calls — always fetch fresh
+  if (e.request.url.includes('supabase.co')) return;
   // Network-first strategy — always try fresh data, fallback to cache
   e.respondWith(
     fetch(e.request)
