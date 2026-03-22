@@ -345,11 +345,11 @@ function refreshAfterSync(){
         revenue:parseInt(sv.kpi_revenue_target)||15000
       };
       window._strategyText=sv.mission_vision||'';
-      // Populate KPI input fields
-      var kl=document.getElementById('kpi-leads');if(kl&&kl.tagName==='INPUT')kl.value=window._kpiTargets.leads;
-      var ke=document.getElementById('kpi-emails');if(ke&&ke.tagName==='INPUT')ke.value=window._kpiTargets.emails;
-      var kc=document.getElementById('kpi-content');if(kc&&kc.tagName==='INPUT')kc.value=window._kpiTargets.content;
-      var kr=document.getElementById('kpi-revenue');if(kr&&kr.tagName==='INPUT')kr.value=window._kpiTargets.revenue;
+      // Populate KPI input fields (strat- prefixed to avoid ID conflict with header)
+      var kl=document.getElementById('strat-kpi-leads');if(kl)kl.value=window._kpiTargets.leads;
+      var ke=document.getElementById('strat-kpi-emails');if(ke)ke.value=window._kpiTargets.emails;
+      var kc=document.getElementById('strat-kpi-content');if(kc)kc.value=window._kpiTargets.content;
+      var kr=document.getElementById('strat-kpi-revenue');if(kr)kr.value=window._kpiTargets.revenue;
     }
     // Load exchange rate from directives into financeExchangeRate
     if(typeof loadExchangeRateFromDirectives==='function')loadExchangeRateFromDirectives();

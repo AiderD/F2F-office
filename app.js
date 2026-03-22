@@ -385,10 +385,10 @@ document.querySelectorAll('.kpi[data-goto]').forEach(kpi=>{
 // Strategy & KPI Save Handler
 document.getElementById('stratSaveBtn').addEventListener('click',async function(){
   const strategyText=document.getElementById('strategyText').value;
-  const kpiLeads=parseInt(document.getElementById('kpi-leads').value)||45;
-  const kpiEmails=parseInt(document.getElementById('kpi-emails').value)||200;
-  const kpiContent=parseInt(document.getElementById('kpi-content').value)||20;
-  const kpiRevenue=parseInt(document.getElementById('kpi-revenue').value)||15000;
+  const kpiLeads=parseInt(document.getElementById('strat-kpi-leads').value)||45;
+  const kpiEmails=parseInt(document.getElementById('strat-kpi-emails').value)||200;
+  const kpiContent=parseInt(document.getElementById('strat-kpi-content').value)||20;
+  const kpiRevenue=parseInt(document.getElementById('strat-kpi-revenue').value)||15000;
 
   const strategyData={
     mission_vision:strategyText,
@@ -399,15 +399,28 @@ document.getElementById('stratSaveBtn').addEventListener('click',async function(
     updated_at:new Date().toISOString()
   };
 
-  // Save to Supabase directives table (upsert — update if key exists)
-  const result=await sbUpsert('directives',{
-    key:'company_strategy',
-    value_json:strategyData,
-    active:true,
-    updated_at:new Date().toISOString()
-  });
+  // Save to Supabase directives — try PATCH first, then INSERT
+  var saveOk=false;
+  var saveData={value_json:strategyData,active:true,updated_at:new Date().toISOString()};
+  // 1. Try update existing row
+  var patchRes=await sbPatch('directives','key=eq.company_strategy',saveData);
+  if(patchRes&&patchRes.length>0){
+    saveOk=true;
+    console.log('✅ Strategy updated via PATCH');
+  }else{
+    // 2. Row doesn't exist — insert new
+    var insertRes=await sbInsert('directives',Object.assign({key:'company_strategy'},saveData));
+    if(insertRes&&insertRes.length>0){
+      saveOk=true;
+      console.log('✅ Strategy inserted via INSERT');
+    }
+  }
+  // Also update global targets immediately
+  window._kpiTargets={leads:kpiLeads,emails:kpiEmails,content:kpiContent,revenue:kpiRevenue};
+  window._strategyText=strategyText;
+  if(typeof updateKPI==='function')updateKPI();
 
-  if(result){
+  if(saveOk){
     const btn=document.getElementById('stratSaveBtn');
     const origText=btn.textContent;
     btn.textContent='✅ Сохранено!';
@@ -418,9 +431,10 @@ document.getElementById('stratSaveBtn').addEventListener('click',async function(
       btn.style.background='var(--green)22';
       btn.style.color='var(--green)';
     },3000);
-    addFeed('coordinator','🎯 Стратегия обновлена — все цели пересчитаны');
+    addFeed('coordinator','🎯 Стратегия обновлена — KPI: лиды='+kpiLeads+', контент='+kpiContent+', выручка=$'+kpiRevenue);
   }else{
-    showToast('Ошибка сохранения. Проверь соединение с Supabase.','error');
+    showToast('Ошибка сохранения. Проверь консоль браузера (F12).','error');
+    console.error('Strategy save failed — check directives table permissions and schema');
   }
 });
 
