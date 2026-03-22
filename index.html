@@ -296,6 +296,7 @@
     <button class="sub-tab active" data-ftab="overview">Обзор</button>
     <button class="sub-tab" data-ftab="ledger">Журнал записей</button>
     <button class="sub-tab" data-ftab="unpaid">Неоплаченные</button>
+    <button class="sub-tab" data-ftab="costs">💳 AI Расходы</button>
   </div>
   <div id="financeContent"></div>
 </div>
@@ -365,13 +366,42 @@
 
 <!-- TASKS PANEL -->
 <div class="panel data-panel" id="panel-tasks">
-  <div class="data-header">
-    <h2>📋 Задачи</h2>
+  <!-- TASK TRACKER HEADER -->
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:12px">
+      <h2 style="margin:0;font-size:18px">📋 Задачи</h2>
+      <span id="taskTotalCount" style="font-size:12px;color:var(--dim);background:var(--panel);padding:3px 10px;border-radius:8px">0 задач</span>
+    </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="act-btn" onclick="toggleTaskView()" id="taskViewToggle" style="font-size:11px;padding:3px 10px">📊 Kanban</button>
+      <button class="act-btn" onclick="toggleTaskView()" id="taskViewToggle" style="font-size:11px;padding:3px 10px">📊 Список</button>
       <button class="act-btn success" onclick="openCreateTaskModal()" style="font-size:11px;padding:3px 10px">➕ Новая задача</button>
     </div>
   </div>
+  <!-- FILTERS BAR -->
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+    <div class="filter-bar" id="taskAgentFilters" style="flex-wrap:wrap">
+      <button class="filter-btn active" data-agent="all" onclick="setTaskAgentFilter('all')">Все агенты</button>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <select id="taskTypeFilter" onchange="renderTasks()" style="padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px">
+        <option value="all">Все типы</option>
+        <option value="email_template">📧 Email</option>
+        <option value="lead_suggested">🆕 Лиды</option>
+        <option value="followup_email">📨 Follow-up</option>
+        <option value="meta_recommendation">🤖 Meta</option>
+        <option value="task_from_chat">💬 Из чата</option>
+      </select>
+      <select id="taskPriFilter" onchange="renderTasks()" style="padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px">
+        <option value="all">Все приоритеты</option>
+        <option value="critical">🚨 Critical</option>
+        <option value="high">🔴 High</option>
+        <option value="normal">🔵 Normal</option>
+        <option value="low">⚪ Low</option>
+      </select>
+    </div>
+  </div>
+  <!-- KPI STRIP -->
+  <div id="taskKpiStrip" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:14px"></div>
   <!-- Quick create bar -->
   <div class="task-input-area">
     <input class="task-input" id="taskInput" placeholder="Быстрая задача — опиши и нажми Enter..." maxlength="500">
@@ -460,6 +490,14 @@
 <!-- APP LOGIC -->
 <script src="app.js"></script>
 <script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});</script>
+
+<!-- COMMAND PALETTE -->
+<div class="command-palette-overlay" id="commandPaletteOverlay">
+  <div class="command-palette">
+    <input type="text" id="commandPaletteInput" class="command-palette-input" placeholder="Поиск... (⌘K или Ctrl+K)">
+    <div class="command-palette-list" id="commandPaletteList"></div>
+  </div>
+</div>
 
 <!-- ANTHEM OVERLAY -->
 <div class="anthem-overlay" id="anthemOverlay">

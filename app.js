@@ -620,6 +620,7 @@ function renderFinance(){
   if(financeTab==='overview')renderFinanceOverview(periodEntries,totalSalary,totalSubs,totalEvents,totalOther,totalAll,unpaidEntries);
   else if(financeTab==='ledger')renderFinanceLedger(periodEntries);
   else if(financeTab==='unpaid')renderFinanceUnpaid(unpaidEntries);
+  else if(financeTab==='costs')renderFinanceCosts();
 }
 
 function renderFinanceOverview(entries,totalSalary,totalSubs,totalEvents,totalOther,totalAll,unpaid){
@@ -729,6 +730,98 @@ function renderFinanceUnpaid(unpaid){
         '<button class="act-btn success" onclick="openPaymentModal(\''+e.id+'\')" style="font-size:11px;padding:4px 12px">💳 Отметить оплату</button>'+
       '</div></div>';
   });
+  document.getElementById('financeContent').innerHTML=html;
+}
+
+// ═══ FINANCE COSTS — AI Credits Analytics ═══
+function renderFinanceCosts(){
+  var credits=window._sbCredits||[];
+  if(!credits.length){
+    document.getElementById('financeContent').innerHTML='<div style="padding:20px;color:var(--dim);text-align:center">Нет данных по расходам AI</div>';
+    return;
+  }
+
+  // Calculate totals
+  var totalCost=0,costByAgent={},costByModel={};
+  var dayData={};
+  credits.forEach(function(c){
+    var cost=parseFloat(c.cost_usd)||0;
+    totalCost+=cost;
+    // By agent
+    var agId=c.agent_id;
+    if(!costByAgent[agId])costByAgent[agId]={cost:0,count:0};
+    costByAgent[agId].cost+=cost;
+    costByAgent[agId].count++;
+    // By model
+    var model=c.model||'unknown';
+    if(!costByModel[model])costByModel[model]={cost:0,count:0};
+    costByModel[model].cost+=cost;
+    costByModel[model].count++;
+    // By day
+    if(c.created_at){
+      var day=c.created_at.slice(0,10);
+      if(!dayData[day])dayData[day]=0;
+      dayData[day]+=cost;
+    }
+  });
+
+  var html='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px">';
+  // Total spend card
+  html+='<div class="fin-card" style="border-top:3px solid var(--magenta);grid-column:1/-1">'+
+    '<h3 style="color:var(--magenta)">Всего затрат на AI</h3>'+
+    '<div class="fin-big" style="color:var(--magenta)">'+fmtUSD(Math.round(totalCost))+'</div>'+
+    '<div class="fin-sub">'+Math.round(credits.length)+' транзакций</div>'+
+  '</div>';
+
+  // Per-agent breakdown
+  var agentCosts=Object.keys(costByAgent).map(function(agId){
+    return {agId:agId,cost:costByAgent[agId].cost,count:costByAgent[agId].count};
+  }).sort(function(a,b){return b.cost-a.cost;});
+
+  if(agentCosts.length>0){
+    html+='<div class="fin-card" style="grid-column:1/-1">'+
+      '<h3>По агентам</h3>'+
+      '<div style="margin-top:12px;max-height:300px;overflow-y:auto">'+
+      agentCosts.map(function(item){
+        var ag=window._sbAgentById[item.agId]||{slug:'unknown',name:'Unknown'};
+        var dashName=SB_SLUG_TO_DASH[ag.slug]||'unknown';
+        var pct=(item.cost/totalCost*100).toFixed(1);
+        var agColor=AGENTS[dashName]?.color||'#64748b';
+        return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">'+
+          '<div style="width:100%;min-width:0">'+
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
+              '<span style="font-weight:600;color:'+agColor+'">'+ag.name+'</span>'+
+              '<span style="font-size:11px;color:var(--dim)">'+item.count+' вызовов</span>'+
+            '</div>'+
+            '<div style="display:flex;align-items:center;gap:6px">'+
+              '<div style="flex:1;height:6px;background:var(--bg);border-radius:2px;overflow:hidden">'+
+                '<div style="height:100%;width:'+pct+'%;background:'+agColor+'"></div>'+
+              '</div>'+
+              '<span style="font-size:11px;font-weight:600;color:var(--cyan)">'+fmtUSD(Math.round(item.cost))+' ('+pct+'%)</span>'+
+            '</div>'+
+          '</div>'+
+        '</div>';
+      }).join('')+'</div></div>';
+  }
+
+  html+='</div>';
+
+  // Per-model breakdown
+  var modelCosts=Object.keys(costByModel).map(function(m){
+    return {model:m,cost:costByModel[m].cost,count:costByModel[m].count};
+  }).sort(function(a,b){return b.cost-a.cost;});
+
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">';
+  modelCosts.forEach(function(item){
+    var color=item.model.includes('sonnet')?'var(--cyan)':item.model.includes('haiku')?'var(--green)':'var(--amber)';
+    html+='<div class="fin-card" style="border-top:3px solid '+color+'">'+
+      '<h3 style="color:'+color+';text-transform:uppercase;font-size:11px">'+item.model+'</h3>'+
+      '<div class="fin-big" style="color:'+color+'">'+fmtUSD(Math.round(item.cost))+'</div>'+
+      '<div class="fin-sub">'+item.count+' запросов</div>'+
+    '</div>';
+  });
+  html+='</div>';
+
   document.getElementById('financeContent').innerHTML=html;
 }
 
@@ -3970,7 +4063,37 @@ window.toggleTaskView=function(){
   document.getElementById('kanbanBoard').style.display=taskViewMode==='kanban'?'grid':'none';
   document.getElementById('tasksList').style.display=taskViewMode==='kanban'?'none':'flex';
   renderTasks();
+  // Setup drop listeners for kanban columns after render
+  setTimeout(setupKanbanDropZones,0);
 };
+
+// ═══ DRAG & DROP HANDLERS ═══
+window.dragStart=function(ev){
+  var taskId=ev.target.closest('.kanban-card')?.getAttribute('data-task-id');
+  if(!taskId)return;
+  ev.dataTransfer.effectAllowed='move';
+  ev.dataTransfer.setData('text/taskid',taskId);
+  ev.target.closest('.kanban-card').classList.add('dragging');
+};
+window.dragEnd=function(ev){
+  document.querySelectorAll('.kanban-card').forEach(c=>c.classList.remove('dragging'));
+  document.querySelectorAll('.kanban-cards').forEach(c=>c.classList.remove('drag-over'));
+};
+function setupKanbanDropZones(){
+  var statuses=['backlog','decomposed','planned','in_progress','rework','done'];
+  statuses.forEach(function(status){
+    var dropZone=document.getElementById('kanban-'+status);
+    if(!dropZone)return;
+    dropZone.ondragover=function(ev){ev.preventDefault();ev.dataTransfer.dropEffect='move';dropZone.classList.add('drag-over');};
+    dropZone.ondragleave=function(){dropZone.classList.remove('drag-over');};
+    dropZone.ondrop=function(ev){
+      ev.preventDefault();
+      dropZone.classList.remove('drag-over');
+      var taskId=parseInt(ev.dataTransfer.getData('text/taskid'),10);
+      if(taskId)moveTask(taskId,status);
+    };
+  });
+}
 
 function renderKanban(){
   // Build agent filters on first render
@@ -4047,7 +4170,7 @@ function renderKanban(){
         else timeAgo=Math.round(diffH/24)+'д назад';
       }
       // ═══ REDESIGNED CARD — agent-prominent like Linear/Jira ═══
-      return '<div class="kanban-card" onclick="openTaskDetail('+t.id+')" style="border-left:3px solid '+agColor+'">'+
+      return '<div class="kanban-card" draggable="true" data-task-id="'+t.id+'" ondragstart="dragStart(event)" ondragend="dragEnd(event)" onclick="openTaskDetail('+t.id+')" style="border-left:3px solid '+agColor+'">'+
         '<div class="kc-card-header">'+
           '<div class="kc-agent-avatar" style="background:'+agColor+'22;border-color:'+agColor+'44">'+agent.emoji+'</div>'+
           '<div class="kc-header-info">'+
@@ -4530,6 +4653,36 @@ function showAgentDetail(id){
       '</div>'+
       (sbMem&&sbMem.cycle_number?'<div style="font-size:10px;color:var(--dim);margin-top:2px">Цикл #'+sbMem.cycle_number+' • '+sbMem.tasks_done+' задач</div>':'')+
     '</div></div>';
+
+  // Metrics cards
+  const sbSlugKey=DASH_TO_SB_SLUG[id];
+  const agentCredits=(window._sbCredits||[]).filter(c=>c.agent_name&&c.agent_name.toLowerCase().includes((AGENTS[id]?.name||'').toLowerCase().split(' ')[0].toLowerCase())).length;
+  const agentQAScores=D.posts.filter(p=>p.agentId===id&&p.qaScore).map(p=>p.qaScore);
+  const avgQA=agentQAScores.length>0?Math.round(agentQAScores.reduce((a,b)=>a+b,0)/agentQAScores.length*10)/10:0;
+  const agentErrors=(window._sbMemory||[]).filter(m=>m.slug===sbSlugKey||m.dashId===id).reduce((sum,m)=>sum+(m.errors_count||0),0);
+
+  html+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">'+
+    '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center">'+
+      '<div style="font-size:11px;color:var(--dim)">Задач</div>'+
+      '<div style="font-size:18px;font-weight:700;color:var(--cyan)">'+agentTasks.length+'</div>'+
+      '<div style="font-size:10px;color:var(--green)">✅ '+doneTasks+'</div>'+
+    '</div>'+
+    '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center">'+
+      '<div style="font-size:11px;color:var(--dim)">QA Avg</div>'+
+      '<div style="font-size:18px;font-weight:700;color:'+(avgQA>=8?'#00ff88':avgQA>=5?'#ffb800':'#ff4444')+'">'+avgQA+'</div>'+
+      '<div style="font-size:10px;color:var(--dim)">'+agentQAScores.length+' постов</div>'+
+    '</div>'+
+    '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center">'+
+      '<div style="font-size:11px;color:var(--dim)">Расходы AI</div>'+
+      '<div style="font-size:18px;font-weight:700;color:#ffb800">$'+agentCredits+'</div>'+
+      '<div style="font-size:10px;color:var(--dim)">этот месяц</div>'+
+    '</div>'+
+    '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center">'+
+      '<div style="font-size:11px;color:var(--dim)">Ошибок</div>'+
+      '<div style="font-size:18px;font-weight:700;color:'+(agentErrors>0?'#ff4444':'#00ff88')+'">'+agentErrors+'</div>'+
+      '<div style="font-size:10px;color:var(--dim)">всего</div>'+
+    '</div>'+
+  '</div>';
 
   // Supabase live data block
   if(SUPABASE_LIVE&&sbMem){
@@ -5578,3 +5731,171 @@ setTimeout(function(){
   if(unassigned>0)addFeed('team_analyst','⚠️ '+unassigned+' сотрудников не распределены по отделам → таб 👥 Команда');
 },3500);
 
+
+// ═══ FEATURE 1: COMMAND PALETTE (⌘K / Ctrl+K) ═══
+const commandPaletteOverlay=document.getElementById('commandPaletteOverlay');
+const commandPaletteInput=document.getElementById('commandPaletteInput');
+const commandPaletteList=document.getElementById('commandPaletteList');
+let commandPaletteSelectedIdx=0;
+
+// Global shortcuts to open command palette
+document.addEventListener('keydown',function(e){
+  if((e.key==='k'||e.key==='K')&&(e.metaKey||e.ctrlKey)){
+    e.preventDefault();
+    openCommandPalette();
+  }
+  if(e.key==='Escape'&&commandPaletteOverlay.classList.contains('open')){
+    closeCommandPalette();
+  }
+});
+
+function openCommandPalette(){
+  commandPaletteOverlay.classList.add('open');
+  commandPaletteInput.value='';
+  commandPaletteSelectedIdx=0;
+  commandPaletteInput.focus();
+  renderCommandPalette();
+}
+function closeCommandPalette(){
+  commandPaletteOverlay.classList.remove('open');
+  commandPaletteSelectedIdx=0;
+}
+
+function renderCommandPalette(){
+  const query=(commandPaletteInput.value||'').toLowerCase().trim();
+
+  // Build command list
+  const commands=[
+    // Navigation
+    {icon:'🏢',title:'Офис',action:()=>switchTab('office'),category:'nav'},
+    {icon:'📧',title:'Лиды',action:()=>switchTab('leads'),category:'nav'},
+    {icon:'📱',title:'Посты',action:()=>switchTab('posts'),category:'nav'},
+    {icon:'📋',title:'Отчёты',action:()=>switchTab('reports'),category:'nav'},
+    {icon:'✅',title:'Задачи',action:()=>switchTab('tasks'),category:'nav'},
+    {icon:'🎯',title:'Стратегия',action:()=>switchTab('strategy'),category:'nav'},
+    {icon:'💵',title:'Финансы',action:()=>switchTab('finance'),category:'nav'},
+    {icon:'👥',title:'Команда',action:()=>switchTab('team'),category:'nav'},
+    {icon:'🤖',title:'AI Агенты',action:()=>switchTab('agents'),category:'nav'},
+    {icon:'💬',title:'Чат',action:()=>switchTab('chat'),category:'nav'},
+    {icon:'🔌',title:'Интеграции',action:()=>switchTab('integrations'),category:'nav'},
+
+    // Agent actions
+    {icon:'☀️',title:'Запустить брифинг',action:()=>{triggerSingleAgent('coordinator');closeCommandPalette();},category:'agent'},
+    {icon:'▶️',title:'Запустить все циклы',action:()=>{agentsActive=!agentsActive;document.getElementById('agentToggle').checked=agentsActive;if(agentsActive)startLiveEngine();else stopLiveEngine();showToast('Циклы '+(agentsActive?'запущены':'остановлены'));closeCommandPalette();},category:'agent'},
+
+    // Agent specific runners
+    ...Object.keys(AGENTS).map(id=>{
+      const a=AGENTS[id];
+      return {icon:a.emoji,title:'Запустить '+a.name,action:()=>{if(a.scenarioId)triggerSingleAgent(DASH_TO_SB_SLUG[id]||id);closeCommandPalette();},category:'agent'};
+    }),
+
+    // Quick actions
+    {icon:'✍️',title:'Сгенерировать посты',action:()=>{showToast('Генерирую посты...');closeCommandPalette();},category:'action'},
+    {icon:'➕',title:'Создать задачу',action:()=>{switchTab('tasks');closeCommandPalette();},category:'action'},
+    {icon:'⭐',title:'Посты не оценены',action:()=>{switchTab('posts');leadFilter='unrated';renderPosts();closeCommandPalette();},category:'action'},
+    {icon:'🔥',title:'Лиды hot',action:()=>{switchTab('leads');leadFilter='hot';renderLeads();closeCommandPalette();},category:'action'},
+    {icon:'⚡',title:'Задачи critical',action:()=>{switchTab('tasks');taskFilter='critical';renderTasks();closeCommandPalette();},category:'action'}
+  ];
+
+  // Filter by query
+  let filtered=query?commands.filter(c=>c.title.toLowerCase().includes(query)||c.category.toLowerCase().includes(query)):commands;
+  if(filtered.length>20)filtered=filtered.slice(0,20);
+
+  // Render items
+  commandPaletteList.innerHTML=filtered.length?filtered.map((cmd,idx)=>{
+    const isSelected=idx===commandPaletteSelectedIdx;
+    return '<button class="command-item '+(isSelected?'selected':'')+'">'+
+      '<span class="command-item-icon">'+cmd.icon+'</span>'+
+      '<span class="command-item-content"><span class="command-item-title">'+cmd.title+'</span></span>'+
+      '</button>';
+  }).join(''):'<div style="text-align:center;color:var(--dim);padding:40px 20px;font-size:12px">Ничего не найдено</div>';
+
+  // Bind click handlers
+  document.querySelectorAll('.command-item').forEach((el,idx)=>{
+    el.addEventListener('click',()=>{
+      if(filtered[idx]){filtered[idx].action();closeCommandPalette();}
+    });
+  });
+
+  // Bind keyboard navigation
+  commandPaletteInput.onkeydown=function(e){
+    if(e.key==='ArrowDown'){
+      e.preventDefault();
+      commandPaletteSelectedIdx=Math.min(commandPaletteSelectedIdx+1,filtered.length-1);
+      renderCommandPalette();
+    }else if(e.key==='ArrowUp'){
+      e.preventDefault();
+      commandPaletteSelectedIdx=Math.max(commandPaletteSelectedIdx-1,0);
+      renderCommandPalette();
+    }else if(e.key==='Enter'){
+      e.preventDefault();
+      if(filtered[commandPaletteSelectedIdx]){
+        filtered[commandPaletteSelectedIdx].action();
+        closeCommandPalette();
+      }
+    }
+  };
+  commandPaletteInput.oninput=function(){renderCommandPalette();};
+}
+
+// Close on overlay click
+commandPaletteOverlay.addEventListener('click',function(e){
+  if(e.target===commandPaletteOverlay)closeCommandPalette();
+});
+
+// ═══ FEATURE 3: ACTIVITY SUMMARY IN FEED ═══
+function renderActivitySummary(){
+  const feed_header=document.querySelector('.feed-header');
+  if(!feed_header)return;
+
+  // Count actions by agent in last 24h
+  const now=new Date();
+  const d24=new Date(now-24*3600000);
+  const agentActivity={};
+
+  (window._sbActions||[]).forEach(a=>{
+    if(a.created_at&&new Date(a.created_at)>=d24&&a.agent_id){
+      agentActivity[a.agent_id]=(agentActivity[a.agent_id]||0)+1;
+    }
+  });
+
+  // Build summary HTML
+  if(Object.keys(agentActivity).length===0)return;
+
+  let html='<div class="activity-summary">⚡ Активность за 24ч</div>'+
+    '<div class="activity-mini-cards">';
+  Object.entries(agentActivity).forEach(([agentId,count])=>{
+    // Map SB agent_id → dashboard agent ID
+    let dashId='coordinator';
+    const sbAgent=window._sbReports?window._sbReports.find(r=>r.agent_id===agentId):null;
+    if(sbAgent&&sbAgent.agent_name){
+      const agentName=sbAgent.agent_name.toLowerCase();
+      if(agentName.includes('smm'))dashId='content';
+      else if(agentName.includes('analyst')||agentName.includes('market'))dashId='market';
+      else if(agentName.includes('bizdev')||agentName.includes('lead'))dashId='leads';
+      else if(agentName.includes('outreach'))dashId='outreach';
+      else if(agentName.includes('community'))dashId='social';
+    }
+    const a=AGENTS[dashId];
+    if(a)html+='<div class="activity-mini-card" style="border-left:3px solid '+a.color+'">'+a.emoji+' '+count+'</div>';
+  });
+  html+='</div>';
+
+  // Insert after feed header
+  const existing=feed_header.nextElementSibling;
+  if(existing&&existing.classList.contains('activity-summary')){
+    existing.outerHTML=html;
+  }else{
+    feed_header.insertAdjacentHTML('afterend',html);
+  }
+}
+
+// Re-render activity summary when feed updates
+const origRenderFeed=window.renderFeed;
+window.renderFeed=function(){
+  if(origRenderFeed)origRenderFeed.call(this);
+  renderActivitySummary();
+};
+
+// Initial render
+renderActivitySummary();

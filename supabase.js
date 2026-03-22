@@ -130,7 +130,7 @@ async function syncSupabaseData(){
   if(reports)window._sbReports=reports;
 
   // Actions (tasks)
-  const actions=await sbFetch('actions','select=id,agent_id,type,payload_json,created_at&order=created_at.desc&limit=50');
+  const actions=await sbFetch('actions','select=id,agent_id,type,payload_json,created_at&order=created_at.desc&limit=200');
   if(actions)window._sbActions=actions;
 
   // Finance (legacy)
@@ -450,6 +450,7 @@ async function initSupabase(){
     SUPABASE_LIVE=true;
     console.log('✅ Supabase LIVE — agents: '+Object.keys(window._sbAgents).join(', '));
     refreshAfterSync();
+    setupRealtimeNotifications();
   }else{
     console.warn('⚠️ Supabase not reachable or empty — using f2f_data.js fallback');
     document.getElementById('syncBadge').textContent='● LOCAL DATA';
@@ -480,3 +481,47 @@ window.addEventListener('load',()=>{
     }catch(e){console.warn('Auto-refresh error:',e);}
   },30000);
 });
+
+// ═══ REALTIME NOTIFICATIONS ═══
+function setupRealtimeNotifications(){
+  // Poll every 30 seconds for new events/content to show notifications
+  // This serves as lightweight realtime without needing WebSocket setup
+  window._lastRealtimeCheck=new Date(Date.now()-60000).toISOString();
+  setInterval(async function(){
+    if(!SUPABASE_LIVE||!isAuthenticated())return;
+    try{
+      var lastCheck=window._lastRealtimeCheck||new Date(Date.now()-60000).toISOString();
+      // Check for new events
+      var newEvents=await sbFetch('events','select=id,type,description,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=5');
+      if(newEvents&&newEvents.length>0){
+        newEvents.forEach(function(ev){
+          var msgType='ℹ️';
+          if(ev.type.includes('approved'))msgType='✅';
+          else if(ev.type.includes('published'))msgType='📢';
+          else if(ev.type.includes('error'))msgType='❌';
+          var msg=(ev.description||ev.type).slice(0,80);
+          if(typeof showToast==='function')showToast(msgType+' '+msg,'info');
+        });
+      }
+      // Check for new content queue items
+      var newContent=await sbFetch('content_queue','select=id,status,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=3');
+      if(newContent&&newContent.length>0){
+        newContent.forEach(function(c){
+          var statusMsg='новый пост';
+          if(c.status==='approved')statusMsg='✅ пост одобрен';
+          else if(c.status==='needs_rework')statusMsg='🔄 переработка';
+          if(typeof showToast==='function')showToast('📱 '+statusMsg,'info');
+        });
+      }
+      // Check for new actions
+      var newActions=await sbFetch('actions','select=id,title,status,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=5');
+      if(newActions&&newActions.length>0){
+        var actionCount=newActions.filter(function(a){return a.status!=='done';}).length;
+        if(actionCount>0&&typeof showToast==='function')showToast('📋 '+actionCount+' новых задач','info');
+      }
+      window._lastRealtimeCheck=new Date().toISOString();
+    }catch(e){
+      console.warn('Realtime notification error:',e);
+    }
+  },30000);
+}
