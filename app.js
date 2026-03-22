@@ -2797,7 +2797,6 @@ document.getElementById('postFilters').addEventListener('click',e=>{
 // ═══ POSTS ANALYTICS (Charts + KPIs) ═══
 var _chartQA=null,_chartDaily=null;
 function renderPostsAnalytics(){
-  if(typeof Chart==='undefined')return;
   var posts=D.posts.filter(function(p){return p.isLive;});
   var total=posts.length;
   var counts={approved:0,published:0,rejected:0,pending_approval:0,needs_rework:0};
@@ -2826,6 +2825,8 @@ function renderPostsAnalytics(){
   if(el('pa-rejected-pct'))el('pa-rejected-pct').textContent=total>0?Math.round(counts.rejected/total*100)+'% брак':'';
   if(el('pa-avg-score'))el('pa-avg-score').textContent=avgScore;
   if(el('pa-score-sub'))el('pa-score-sub').textContent='порог: 8+ | approval: '+Math.round((counts.approved+counts.published)/Math.max(total,1)*100)+'%';
+  // Charts require Chart.js
+  if(typeof Chart==='undefined')return;
   // QA Score chart
   var scores=Object.keys(scoreDist).sort(function(a,b){return a-b;});
   var scoreColors=scores.map(function(s){return parseInt(s)>=8?'#00ff88cc':parseInt(s)>=5?'#ffb800cc':'#ff4444cc';});
