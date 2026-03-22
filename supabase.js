@@ -14,67 +14,42 @@ Object.keys(SB_SLUG_TO_DASH).forEach(k=>{DASH_TO_SB_SLUG[SB_SLUG_TO_DASH[k]]=k;}
 // Store Supabase agents by slug for UUID lookup
 window._sbAgents={};
 
-// ═══ ERROR TRACKING ═══
-var _sbErrors={count:0,last:null,tables:{}};
-function _sbLogError(op,table,err){
-  _sbErrors.count++;
-  _sbErrors.last={op:op,table:table,error:String(err),time:new Date().toISOString()};
-  _sbErrors.tables[table]=(_sbErrors.tables[table]||0)+1;
-  console.warn('Supabase '+op+' error ('+table+'):',err);
-  // Show toast only for write operations (not reads) and max 1 per 10s
-  if(op!=='fetch'&&typeof showToast==='function'){
-    if(!window._sbLastErrToast||Date.now()-window._sbLastErrToast>10000){
-      window._sbLastErrToast=Date.now();
-      showToast('⚠️ Ошибка сохранения ('+table+'). Данные могут быть не сохранены.','error');
-    }
-  }
-}
-// Fetch with timeout (10s)
-function _sbFetchWithTimeout(url,opts,timeoutMs){
-  timeoutMs=timeoutMs||10000;
-  return Promise.race([
-    fetch(url,opts),
-    new Promise(function(_,reject){setTimeout(function(){reject(new Error('timeout'));},timeoutMs);})
-  ]);
-}
-
 // Generic Supabase REST fetch
-async function sbFetch(table,params){
-  params=params||'';
+async function sbFetch(table,params=''){
   try{
-    const r=await _sbFetchWithTimeout(SUPABASE_URL+'/rest/v1/'+table+(params?'?'+params:''),{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+(params?'?'+params:''),{
       headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json'}
-    },12000);
-    if(!r.ok)throw new Error('HTTP '+r.status);
+    });
+    if(!r.ok)throw new Error(r.status);
     return await r.json();
-  }catch(e){_sbLogError('fetch',table,e);return null;}
+  }catch(e){console.warn('Supabase fetch error ('+table+'):',e);return null;}
 }
 async function sbPatch(table,filter,data){
   try{
-    const r=await _sbFetchWithTimeout(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
       method:'PATCH',
       headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'},
       body:JSON.stringify(data)
     });
-    if(!r.ok)throw new Error('HTTP '+r.status);
+    if(!r.ok)throw new Error(r.status);
     return await r.json();
-  }catch(e){_sbLogError('patch',table,e);return null;}
+  }catch(e){console.warn('Supabase patch error ('+table+'):',e);return null;}
 }
 async function sbInsert(table,data){
   try{
-    const r=await _sbFetchWithTimeout(SUPABASE_URL+'/rest/v1/'+table,{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/'+table,{
       method:'POST',
       headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'},
       body:JSON.stringify(data)
     });
-    if(!r.ok)throw new Error('HTTP '+r.status);
+    if(!r.ok)throw new Error(r.status);
     return await r.json();
-  }catch(e){_sbLogError('insert',table,e);return null;}
+  }catch(e){console.warn('Supabase insert error ('+table+'):',e);return null;}
 }
 // Upsert — insert or update on conflict
 async function sbUpsert(table,data,onConflict){
   try{
-    const r=await _sbFetchWithTimeout(SUPABASE_URL+'/rest/v1/'+table,{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/'+table,{
       method:'POST',
       headers:{
         'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,
@@ -83,20 +58,20 @@ async function sbUpsert(table,data,onConflict){
       },
       body:JSON.stringify(data)
     });
-    if(!r.ok)throw new Error('HTTP '+r.status);
+    if(!r.ok)throw new Error(r.status);
     return await r.json();
-  }catch(e){_sbLogError('upsert',table,e);return null;}
+  }catch(e){console.warn('Supabase upsert error ('+table+'):',e);return null;}
 }
 // Delete row
 async function sbDelete(table,filter){
   try{
-    const r=await _sbFetchWithTimeout(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
       method:'DELETE',
       headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'}
     });
-    if(!r.ok)throw new Error('HTTP '+r.status);
+    if(!r.ok)throw new Error(r.status);
     return await r.json();
-  }catch(e){_sbLogError('delete',table,e);return null;}
+  }catch(e){console.warn('Supabase delete error ('+table+'):',e);return null;}
 }
 
 // Fetch and merge Supabase data
@@ -125,7 +100,7 @@ async function syncSupabaseData(){
   }
 
   // Content queue
-  const content=await sbFetch('content_queue','select=*&order=created_at.desc&limit=30');
+  const content=await sbFetch('content_queue','select=*&order=created_at.desc&limit=200');
   if(content){
     window._sbContent=content;
     window._sbContentMerged=false;
@@ -186,8 +161,8 @@ function refreshAfterSync(){
     // Reset merge flag so renderLeads re-processes
     window._sbPartnersMerged=false;
     // Remove ALL mock leads (keep only those with sbId from previous merge)
-    // Keep SB-sourced AND manually created local leads (localCreated flag)
-    D.leads=D.leads.filter(function(l){return l.sbId||l.localCreated;});
+    D.leads=D.leads.filter(function(l){return l.sbId;});
+    // Re-merge from Supabase (renderLeads will add them)
   }
 
   // ═══ 2. POSTS: Reset merge flag so renderPosts re-merges fresh SB data ═══
@@ -198,7 +173,8 @@ function refreshAfterSync(){
 
   // ═══ 3. REPORTS: Merge Supabase reports into D.reports ═══
   if(window._sbReports&&window._sbReports.length>0){
-    D.reports=D.reports.filter(function(r){return r.sbId||r.localCreated;});
+    // Remove mock reports, keep only SB-sourced
+    D.reports=D.reports.filter(function(r){return r.sbId;});
     window._sbReports.forEach(function(r,i){
       if(D.reports.find(function(x){return x.sbId===r.id;}))return;
       var ag=window._sbAgentById&&r.agent_id?window._sbAgentById[r.agent_id]:null;
@@ -239,9 +215,8 @@ function refreshAfterSync(){
       if(r.type_ab==='morning')rType='morning';
       else if(r.type_ab==='evening')rType='evening';
       else if(r.type_ab==='weekly')rType='weekly';
-      var stableRptId=7000+Math.abs(String(r.id).split('').reduce(function(h,c){return ((h<<5)-h)+c.charCodeAt(0);},0)%9000);
       D.reports.push({
-        id:stableRptId, sbId:r.id, title:parsed&&parsed.title?parsed.title:(r.summary||'Отчёт'),
+        id:7000+i, sbId:r.id, title:parsed&&parsed.title?parsed.title:(r.summary||'Отчёт'),
         type:rType,
         agentId:dashId, date:(r.created_at||'').slice(0,10),
         content:content,
@@ -253,57 +228,22 @@ function refreshAfterSync(){
 
   // ═══ 4. TASKS: Merge Supabase actions into D.tasks ═══
   if(window._sbActions&&window._sbActions.length>0){
-    D.tasks=D.tasks.filter(function(t){return t.sbId||t.localCreated;});
+    D.tasks=D.tasks.filter(function(t){return t.sbId;});
     window._sbActions.forEach(function(a,i){
       if(D.tasks.find(function(x){return x.sbId===a.id;}))return;
       var ag=window._sbAgentById&&a.agent_id?window._sbAgentById[a.agent_id]:null;
       var dashId=ag?SB_SLUG_TO_DASH[ag.slug]:'coordinator';
-      var agentName=ag?ag.name:'Координатор';
-      var p=typeof a.payload_json==='string'?JSON.parse(a.payload_json||'{}'):a.payload_json||{};
-      var stableTaskId=6000+Math.abs(String(a.id).split('').reduce(function(h,c){return ((h<<5)-h)+c.charCodeAt(0);},0)%9000);
-      // Smart title extraction from payload
-      var smartTitle=p.title||p.description||p.subject||p.email_subject||'';
-      if(!smartTitle){
-        // Build title from action type + context
-        var aType=(a.type||'').toLowerCase();
-        if(aType.includes('email'))smartTitle='📧 Email: '+(p.company||p.partner||p.to||'шаблон');
-        else if(aType.includes('lead'))smartTitle='🆕 Лид: '+(p.company||p.name||p.contact_name||'рекомендация');
-        else if(aType.includes('followup'))smartTitle='🔄 Follow-up: '+(p.contact||p.company||p.name||'контакт');
-        else if(aType.includes('content')||aType.includes('post'))smartTitle='📝 Контент: '+(p.platform||p.type||'создание');
-        else if(aType.includes('research')||aType.includes('analysis'))smartTitle='🔍 Исследование: '+(p.topic||p.query||a.type);
-        else smartTitle=a.type||'Действие агента';
-      }
-      // Smart description from payload fields
-      var smartDesc=p.description||'';
-      if(!smartDesc){
-        var descParts=[];
-        if(p.body||p.template||p.text||p.content||p.email_body)descParts.push((p.body||p.template||p.text||p.content||p.email_body||'').slice(0,300));
-        if(p.reason||p.why)descParts.push('Причина: '+(p.reason||p.why));
-        if(p.company)descParts.push('Компания: '+p.company);
-        if(p.contact||p.contact_name||p.name)descParts.push('Контакт: '+(p.contact||p.contact_name||p.name));
-        if(p.platform)descParts.push('Платформа: '+p.platform);
-        if(p.url||p.link)descParts.push('Ссылка: '+(p.url||p.link));
-        smartDesc=descParts.join('\n');
-      }
-      // Smart result from response/output fields
-      var smartResult=p.result||p.output||p.response||p.summary||null;
-      if(!smartResult&&(p.status==='done'||p.status==='executed')){
-        smartResult='Выполнено агентом '+agentName;
-      }
-      // Cancelled tracking
-      var cancelledBy=p.cancelled_by||null;
-      var cancelReason=p.cancel_reason||p.cancelled_reason||null;
+      var p=a.payload_json||{};
       D.tasks.push({
-        id:stableTaskId, sbId:a.id, title:smartTitle,
-        assignedTo:dashId, agentName:agentName, dept:ag?'':AGENTS[dashId]?.dept||'cmd',
+        id:6000+i, sbId:a.id, title:p.title||p.description||a.type||'Действие',
+        assignedTo:dashId, dept:ag?'':AGENTS[dashId]?.dept||'cmd',
         status:p.status||'done', priority:p.priority||'normal',
-        kanbanStatus:p.kanban_status||(p.status==='done'||p.status==='executed'||p.status==='completed'?'done':p.status==='cancelled'?'cancelled':p.status==='in_progress'||p.status==='working'?'in_progress':p.status==='rework'?'rework':'done'),
-        description:smartDesc, deadline:p.deadline||'', estimate:p.estimate||'',
+        kanbanStatus:p.kanban_status||p.status||'done',
+        description:p.description||'', deadline:p.deadline||'', estimate:p.estimate||'',
         tags:p.tags||[], subtasks:p.subtasks||[], reworkCount:p.rework_count||0,
         reworkNotes:p.rework_notes||'',
         createdDate:(a.created_at||'').slice(0,10), completedDate:p.completed_at||(a.created_at||'').slice(0,10),
-        result:smartResult, isLive:true,
-        cancelledBy:cancelledBy, cancelReason:cancelReason,
+        result:p.result||null, isLive:true,
         _actionType:a.type||'', _payload:p
       });
     });
@@ -354,26 +294,13 @@ function refreshAfterSync(){
     if(typeof renderTeam==='function')renderTeam();
   }
 
-  // ═══ 7. STRATEGY & KPI TARGETS: Load from directives ═══
+  // ═══ 7. STRATEGY: Load from directives ═══
   if(window._sbDirectives){
     var strat=window._sbDirectives.find(function(d){return d.key==='company_strategy';});
     if(strat&&strat.value_json){
       var sv=typeof strat.value_json==='string'?JSON.parse(strat.value_json):strat.value_json;
       var el=document.getElementById('strategyText');
       if(el&&sv.mission_vision)el.value=sv.mission_vision;
-      // ═══ GLOBAL KPI TARGETS — used by coordinator, decomposition, alerts ═══
-      window._kpiTargets={
-        leads:parseInt(sv.kpi_leads_monthly)||1000,
-        emails:parseInt(sv.kpi_emails_monthly)||3000,
-        content:parseInt(sv.kpi_content_monthly)||100,
-        revenue:parseInt(sv.kpi_revenue_target)||15000
-      };
-      window._strategyText=sv.mission_vision||'';
-      // Populate KPI input fields (strat- prefixed to avoid ID conflict with header)
-      var kl=document.getElementById('strat-kpi-leads');if(kl)kl.value=window._kpiTargets.leads;
-      var ke=document.getElementById('strat-kpi-emails');if(ke)ke.value=window._kpiTargets.emails;
-      var kc=document.getElementById('strat-kpi-content');if(kc)kc.value=window._kpiTargets.content;
-      var kr=document.getElementById('strat-kpi-revenue');if(kr)kr.value=window._kpiTargets.revenue;
     }
     // Load exchange rate from directives into financeExchangeRate
     if(typeof loadExchangeRateFromDirectives==='function')loadExchangeRateFromDirectives();
@@ -386,29 +313,24 @@ function refreshAfterSync(){
 
   // ═══ 8. FEED: Restore from Supabase events ═══
   if(window._sbEvents&&window._sbEvents.length>0&&typeof feedItems!=='undefined'){
-    // Track loaded event IDs to avoid duplicates but allow new events on refresh
-    if(!window._sbFeedLoadedIds)window._sbFeedLoadedIds=new Set();
-    // Cap memory: keep only last 200 event IDs
-    if(window._sbFeedLoadedIds.size>200){var arr=[...window._sbFeedLoadedIds];window._sbFeedLoadedIds=new Set(arr.slice(-100));}
-    var feedAdded=false;
-    window._sbEvents.forEach(function(ev){
-      if(!ev.id||window._sbFeedLoadedIds.has(ev.id))return;
-      if(!ev.metadata_json)return;
-      var meta;try{meta=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;}catch(e){return;}
-      if(!meta.text)return;
-      window._sbFeedLoadedIds.add(ev.id);
-      var agId=meta.agent_dash_id||'coordinator';
-      var ag=AGENTS[agId]||{color:'#64748b'};
-      var t=new Date(ev.created_at);
-      feedItems.push({
-        id:feedItems.length+1,agentId:agId,text:meta.text,
-        time:t.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}),
-        fullTime:ev.created_at,color:ag.color
+    // Only load once per session (don't re-add on auto-refresh)
+    if(!window._sbFeedLoaded){
+      window._sbFeedLoaded=true;
+      window._sbEvents.forEach(function(ev){
+        if(!ev.metadata_json)return;
+        var meta=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;
+        if(!meta.text)return;
+        var agId=meta.agent_dash_id||'coordinator';
+        var ag=AGENTS[agId]||{color:'#64748b'};
+        var t=new Date(ev.created_at);
+        feedItems.push({
+          id:feedItems.length+1,agentId:agId,text:meta.text,
+          time:t.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}),
+          fullTime:ev.created_at,color:ag.color
+        });
       });
-      feedAdded=true;
-    });
-    if(feedAdded&&typeof renderFeed==='function')renderFeed();
-    window._sbFeedLoaded=true; // backward compat flag
+      if(typeof renderFeed==='function')renderFeed();
+    }
   }
 
   // ═══ 8b. AGENT PROMPTS: Load from agents.system_prompt ═══
@@ -417,14 +339,13 @@ function refreshAfterSync(){
   // ═══ 9. Render everything ═══
   if(typeof renderLeads==='function'){renderLeads();}
   if(typeof renderPosts==='function'){renderPosts();}
+  if(typeof renderPostsAnalytics==='function'){renderPostsAnalytics();}
   if(typeof renderReports==='function'){renderReports();}
   if(typeof renderTasks==='function'){renderTasks();}
   if(typeof renderFinance==='function'){renderFinance();}
   if(typeof updateKPI==='function'){updateKPI();}
   if(typeof renderAgentsPanel==='function'){renderAgentsPanel();}
   if(typeof renderIntegrations==='function'){renderIntegrations();}
-  if(typeof _intgSeedVaultKeys==='function'){_intgSeedVaultKeys();}
-  if(typeof renderCalendar==='function'){renderCalendar();}
   if(typeof renderAnalytics==='function'){renderAnalytics();}
 
   // Add meaningful Supabase events to feed (NOT raw post spam)
@@ -462,7 +383,7 @@ function refreshAfterSync(){
     // 4. Tasks/Actions summary
     if(window._sbActions&&window._sbActions.length>0){
       var pendingActions=window._sbActions.filter(a=>{
-        var p;try{p=typeof a.payload_json==='string'?JSON.parse(a.payload_json):a.payload_json;}catch(e){p={};}
+        var p=typeof a.payload_json==='string'?JSON.parse(a.payload_json):a.payload_json;
         return p&&p.status!=='executed';
       }).length;
       if(pendingActions>0) addFeed('coordinator','📌 '+pendingActions+' действий ожидают выполнения');
@@ -480,101 +401,47 @@ function refreshAfterSync(){
       if(m.retention_d7) addFeed('market','📈 Retention D7: '+m.retention_d7.value+'%');
     }
   }
-  // ═══ KPI DEFICIT ALERTS — coordinator must see gaps ═══
-  if(SUPABASE_LIVE&&window._kpiProgress&&!window._kpiDeficitAlerted){
-    window._kpiDeficitAlerted=true;
-    var kp=window._kpiProgress;var mp=kp.monthPct||0;
-    if(kp.leads&&kp.leads.pct<mp-15){
-      var deficit=Math.round((kp.leads.target*mp/100)-kp.leads.current);
-      addFeed('coordinator','⚠️ KPI дефицит: лиды '+kp.leads.current+'/'+kp.leads.target+' ('+kp.leads.pct+'% vs '+mp+'% месяца). Нужно ещё ~'+deficit);
-    }
-    if(kp.content&&kp.content.pct<mp-15){
-      var cDef=Math.round((kp.content.target*mp/100)-kp.content.current);
-      addFeed('coordinator','⚠️ KPI дефицит: контент '+kp.content.current+'/'+kp.content.target+' ('+kp.content.pct+'% vs '+mp+'% месяца). Нужно ещё ~'+cDef);
-    }
-    if(kp.leads&&kp.leads.pct>=mp)addFeed('coordinator','✅ KPI темп: лиды на уровне или выше плана ('+kp.leads.pct+'%)');
-    if(kp.content&&kp.content.pct>=mp)addFeed('coordinator','✅ KPI темп: контент на уровне или выше плана ('+kp.content.pct+'%)');
-  }
-
   // Update sync badge with count
   const liveCount=window._sbMemory?window._sbMemory.filter(m=>m.state==='working').length:0;
   const contentCount=window._sbContent?window._sbContent.length:0;
   const partnerCount=window._sbPartners?window._sbPartners.length:0;
-  var _syncB=document.getElementById('syncBadge');
-  if(_syncB){_syncB.textContent='● LIVE ('+partnerCount+' leads, '+contentCount+' posts)';_syncB.style.color='#00ff88';}
+  document.getElementById('syncBadge').textContent='● LIVE ('+partnerCount+' leads, '+contentCount+' posts)';
+  document.getElementById('syncBadge').style.color='#00ff88';
 }
 
 async function initSupabase(){
-  var _sb=document.getElementById('syncBadge');
-  try{
-    const ok=await syncSupabaseData();
-    if(ok){
-      SUPABASE_LIVE=true;
-      console.log('✅ Supabase LIVE — agents: '+Object.keys(window._sbAgents).join(', '));
-      refreshAfterSync();
-      // Check Edge Functions health (non-blocking)
-      _checkEdgeFunctions();
-    }else{
-      console.warn('⚠️ Supabase not reachable or empty — using f2f_data.js fallback');
-      if(_sb){_sb.textContent='● LOCAL DATA';_sb.style.color='#ffb800';}
-      if(typeof showToast==='function')showToast('Supabase недоступен — работаем с локальными данными','warning');
-    }
-  }catch(e){
-    console.warn('initSupabase error:',e);
-    if(_sb){_sb.textContent='● ОШИБКА';_sb.style.color='#ff4444';}
-    if(typeof showToast==='function')showToast('Ошибка подключения к Supabase','error');
+  const ok=await syncSupabaseData();
+  if(ok){
+    SUPABASE_LIVE=true;
+    console.log('✅ Supabase LIVE — agents: '+Object.keys(window._sbAgents).join(', '));
+    refreshAfterSync();
+  }else{
+    console.warn('⚠️ Supabase not reachable or empty — using f2f_data.js fallback');
+    document.getElementById('syncBadge').textContent='● LOCAL DATA';
+    document.getElementById('syncBadge').style.color='#ffb800';
   }
 }
 
 // Run after DOM ready + auto-refresh every 30s
 // SECURITY: Only init Supabase if user is authenticated
 function isAuthenticated(){
-  try{
-    var s=JSON.parse(localStorage.getItem('f2f_session')||'null');
-    return !!(s&&s.token&&s.token_id);
-  }catch(e){return false;}
+  var s=JSON.parse(sessionStorage.getItem('f2f_session')||'null');
+  return !!(s&&s.token);
 }
 window.addEventListener('load',()=>{
-  var _sb2=document.getElementById('syncBadge');
   if(isAuthenticated()){
     setTimeout(initSupabase,500);
   } else {
     console.log('🔒 Not authenticated — skipping Supabase init');
-    if(_sb2){_sb2.textContent='● OFFLINE';_sb2.style.color='#666';}
+    document.getElementById('syncBadge').textContent='● OFFLINE';
+    document.getElementById('syncBadge').style.color='#666';
   }
-  var _syncing=false;
-  var _autoRefreshInterval=setInterval(async()=>{
-    if(!SUPABASE_LIVE||!isAuthenticated()||_syncing)return;
-    _syncing=true;
+  setInterval(async()=>{
+    if(!SUPABASE_LIVE||!isAuthenticated())return;
     try{
       await syncSupabaseData();
       refreshAfterSync();
+      console.log('🔄 Supabase auto-refresh OK — '+new Date().toLocaleTimeString('ru'));
     }catch(e){console.warn('Auto-refresh error:',e);}
-    finally{_syncing=false;}
   },30000);
-  // Clean up on page unload
-  window.addEventListener('beforeunload',function(){clearInterval(_autoRefreshInterval);});
 });
-
-// ═══ EDGE FUNCTION HEALTH CHECK ═══
-async function _checkEdgeFunctions(){
-  var funcs=['agent-chat','quality-review','smm-generate','coordinator-briefing','agent-autonomous-cycle'];
-  var results={ok:[],fail:[]};
-  for(var i=0;i<funcs.length;i++){
-    try{
-      var r=await _sbFetchWithTimeout(SUPABASE_URL+'/functions/v1/'+funcs[i],{
-        method:'OPTIONS',
-        headers:{'Authorization':'Bearer '+SUPABASE_ANON}
-      },5000);
-      if(r.status<500)results.ok.push(funcs[i]);
-      else results.fail.push(funcs[i]);
-    }catch(e){results.fail.push(funcs[i]);}
-  }
-  window._edgeFuncStatus=results;
-  if(results.fail.length>0){
-    console.warn('⚠️ Edge Functions недоступны: '+results.fail.join(', '));
-    if(typeof addFeed==='function')addFeed('watchdog','⚠️ '+results.fail.length+' Edge Functions недоступны: '+results.fail.join(', ')+'. Чат с агентами и автогенерация могут не работать.');
-  }else{
-    console.log('✅ Все '+results.ok.length+' Edge Functions доступны');
-  }
-}

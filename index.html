@@ -9,6 +9,7 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>F2F.vin • AI Virtual Office v15</title>
 <link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="f2f_data.js"></script>
 <script src="office_chars.js" defer></script>
 <script src="supabase.js"></script>
@@ -84,7 +85,6 @@
   <button class="tab" data-panel="team">👥 Команда <span class="badge" id="tab-team-count">0</span></button>
   <button class="tab" data-panel="agents">🤖 AI Агенты <span class="badge" style="background:var(--cyan)" id="tab-agents-count">0</span></button>
   <button class="tab" data-panel="chat">💬 Чат</button>
-  <button class="tab" data-panel="calendar">🏆 Мероприятия <span class="badge" id="tab-calendar-count" style="background:#a855f7">0</span></button>
   <button class="tab" data-panel="integrations">🔗 Интеграции</button>
   <button class="tab" data-panel="admin" id="tabAdmin" style="display:none">🔐 Админ</button>
 </div>
@@ -139,14 +139,56 @@
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
       <div class="filter-bar" id="postFilters">
         <button class="filter-btn active" data-filter="all">Все</button>
-        <button class="filter-btn" data-filter="Telegram">Telegram</button>
-        <button class="filter-btn" data-filter="Twitter">Twitter</button>
         <button class="filter-btn" data-filter="pending">⏳ Pending</button>
         <button class="filter-btn" data-filter="approved">✅ Одобрен</button>
+        <button class="filter-btn" data-filter="needs_rework">🔄 Доработка</button>
         <button class="filter-btn" data-filter="published">📢 Опубликован</button>
+        <button class="filter-btn" data-filter="rejected">❌ Отклонён</button>
       </div>
       <button onclick="generatePostsBatch()" id="btnGenPosts" style="padding:6px 14px;background:#00e5ff22;color:#00e5ff;border:1px solid #00e5ff44;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">🤖 Сгенерировать посты</button>
       <div class="data-count" id="posts-count">0 постов</div>
+    </div>
+  </div>
+  <!-- Content Analytics -->
+  <div id="postsAnalytics" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;border-top:3px solid var(--cyan)">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Всего</div>
+      <div id="pa-total" style="font-size:26px;font-weight:700">—</div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;border-top:3px solid var(--green)">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Опубликовано</div>
+      <div id="pa-published" style="font-size:26px;font-weight:700;color:var(--green)">—</div>
+      <div id="pa-published-pct" style="font-size:10px;color:var(--dim)"></div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;border-top:3px solid var(--cyan)">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Одобрено</div>
+      <div id="pa-approved" style="font-size:26px;font-weight:700;color:var(--cyan)">—</div>
+      <div style="font-size:10px;color:var(--dim)">ждут публикации</div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;border-top:3px solid var(--amber)">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">На проверке</div>
+      <div id="pa-pending" style="font-size:26px;font-weight:700;color:var(--amber)">—</div>
+      <div id="pa-pending-sub" style="font-size:10px;color:var(--dim)"></div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;border-top:3px solid var(--hot)">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Отклонено</div>
+      <div id="pa-rejected" style="font-size:26px;font-weight:700;color:var(--hot)">—</div>
+      <div id="pa-rejected-pct" style="font-size:10px;color:var(--dim)"></div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;border-top:3px solid var(--purple)">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Средний QA</div>
+      <div id="pa-avg-score" style="font-size:26px;font-weight:700;color:var(--purple)">—</div>
+      <div id="pa-score-sub" style="font-size:10px;color:var(--dim)">порог: 8+</div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:10px">📊 Распределение QA Score</div>
+      <canvas id="chartQAScores" style="max-height:180px"></canvas>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:10px">📈 Генерация по дням</div>
+      <canvas id="chartDailyPosts" style="max-height:180px"></canvas>
     </div>
   </div>
   <div class="data-grid" id="postsGrid"></div>
@@ -242,50 +284,9 @@
   </div>
 </div>
 
-<!-- EVENTS / TOURNAMENTS PANEL -->
-<div class="panel data-panel" id="panel-calendar">
-  <div class="data-header">
-    <h2>🏆 Мероприятия</h2>
-    <button onclick="calCreateEvent()" style="padding:8px 18px;background:#a855f7;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s;box-shadow:0 2px 8px #a855f733" onmouseover="this.style.background='#9333ea';this.style.transform='translateY(-1px)'" onmouseout="this.style.background='#a855f7';this.style.transform=''">+ Новое мероприятие</button>
-  </div>
-  <!-- Toolbar -->
-  <div class="ev-toolbar">
-    <div class="ev-view-toggle">
-      <button class="ev-view-btn active" id="evViewList" onclick="calSwitchView('list')">📋 Карточки</button>
-      <button class="ev-view-btn" id="evViewCal" onclick="calSwitchView('calendar')">📅 Календарь</button>
-    </div>
-    <div class="ev-filters">
-      <select id="evFilterStatus" onchange="renderCalendar()">
-        <option value="all">Все статусы</option>
-        <option value="draft">📝 Черновик</option>
-        <option value="announced">📢 Анонсирован</option>
-        <option value="reg_open">✅ Рег. открыта</option>
-        <option value="reg_closed">🔒 Рег. закрыта</option>
-        <option value="live">🔴 LIVE</option>
-        <option value="completed">🏁 Завершён</option>
-      </select>
-      <select id="evFilterGame" onchange="renderCalendar()">
-        <option value="all">Все игры</option>
-      </select>
-    </div>
-    <!-- Calendar nav (shown only in calendar view) -->
-    <div class="ev-cal-nav" id="evCalNav" style="display:none">
-      <button onclick="calNavigate(-1)" style="padding:4px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer;font-size:12px">◀</button>
-      <span id="calMonthLabel" style="font-size:13px;font-weight:700;min-width:120px;text-align:center;color:var(--text)">—</span>
-      <button onclick="calNavigate(1)" style="padding:4px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer;font-size:12px">▶</button>
-      <button onclick="calGoToday()" style="padding:4px 12px;background:#00ff8815;color:#00ff88;border:1px solid #00ff8833;border-radius:6px;cursor:pointer;font-size:11px;font-weight:600">Сегодня</button>
-    </div>
-  </div>
-  <!-- Event count -->
-  <div id="evCountBar" style="padding:4px 16px;font-size:11px;color:var(--dim)"></div>
-  <!-- Main content area -->
-  <div id="calGrid" style="padding:0 12px 12px"></div>
-</div>
-
 <!-- INTEGRATIONS PANEL -->
 <div class="panel data-panel" id="panel-integrations">
-  <div class="data-header"><h2>🔗 Интеграции & API</h2><div class="data-count" id="intg-count">-</div></div>
-  <div style="padding:12px 16px 6px;font-size:11px;color:#5a6a7a">Управление API-ключами и подключениями сервисов. Ключи шифруются и хранятся в Supabase.</div>
+  <div class="data-header"><h2>🔗 Интеграции</h2><div class="data-count" id="intg-count">-</div></div>
   <div id="intgContent"></div>
 </div>
 
@@ -300,13 +301,11 @@
     <div>
       <h3 style="margin-top:0;color:var(--amber);font-size:14px;margin-bottom:12px">KPI Цели (на месяц)</h3>
       <div style="display:flex;flex-direction:column;gap:14px">
-        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📞 Лиды/месяц:</label><input id="strat-kpi-leads" type="number" value="45" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
-        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📧 Email/месяц:</label><input id="strat-kpi-emails" type="number" value="200" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
-        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📝 Контент/месяц:</label><input id="strat-kpi-content" type="number" value="20" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
-        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">💰 Выручка/месяц:</label><input id="strat-kpi-revenue" type="number" value="15000" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:100px"></div>
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📞 Лиды/месяц:</label><input id="kpi-leads" type="number" value="45" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📧 Email/месяц:</label><input id="kpi-emails" type="number" value="200" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">📝 Контент/месяц:</label><input id="kpi-content" type="number" value="20" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:80px"></div>
+        <div style="display:flex;align-items:center;gap:10px"><label style="width:140px;font-size:12px;color:var(--dim)">💰 Выручка/месяц:</label><input id="kpi-revenue" type="number" value="15000" style="flex:1;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#0f0;font-weight:700;width:100px"></div>
       </div>
-      <!-- KPI Progress: fact vs target -->
-      <div id="kpiProgressPanel" style="margin-top:16px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px"></div>
       <h3 style="margin-top:20px;color:#4aff00;font-size:14px;margin-bottom:12px">Декомпозиция стратегии</h3>
       <div style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;color:var(--dim);line-height:1.6;max-height:180px;overflow-y:auto">
         <p style="margin:0 0 8px 0"><b style="color:#00ff88">→ Coordinator</b> разбивает стратегию на неделю</p>
@@ -324,43 +323,9 @@
   <div class="data-header">
     <h2>📋 Задачи</h2>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="act-btn" onclick="toggleTaskView()" id="taskViewToggle" style="font-size:11px;padding:4px 12px">📊 Kanban</button>
-      <button class="act-btn success" onclick="openCreateTaskModal()" style="font-size:11px;padding:4px 12px">+ Новая задача</button>
+      <button class="act-btn" onclick="toggleTaskView()" id="taskViewToggle" style="font-size:11px;padding:3px 10px">📊 Kanban</button>
+      <button class="act-btn success" onclick="openCreateTaskModal()" style="font-size:11px;padding:3px 10px">➕ Новая задача</button>
     </div>
-  </div>
-  <!-- Task Stats Bar -->
-  <div id="taskStatsBar" class="task-stats-bar"></div>
-  <!-- Filters -->
-  <div class="task-filters">
-    <input type="text" id="taskSearch" placeholder="🔍 Поиск по задачам..." class="task-search-input" oninput="renderTasks()">
-    <select id="taskFilterStatus" class="task-filter-select" onchange="renderTasks()">
-      <option value="all">Все статусы</option>
-      <option value="backlog">📥 Бэклог</option>
-      <option value="decomposed">🧩 Декомпозиция</option>
-      <option value="planned">📋 Запланировано</option>
-      <option value="in_progress">🔧 В работе</option>
-      <option value="done">✅ Выполнено</option>
-      <option value="rework">🔄 Переработка</option>
-      <option value="cancelled">❌ Отменено</option>
-    </select>
-    <select id="taskFilterAgent" class="task-filter-select" onchange="renderTasks()">
-      <option value="all">Все агенты</option>
-      <option value="coordinator">🎯 Coordinator</option>
-      <option value="content">📱 SMM</option>
-      <option value="market">📊 Analyst</option>
-      <option value="leads">📧 BizDev</option>
-      <option value="outreach">🎯 Outreach</option>
-      <option value="social">👥 Community</option>
-      <option value="lead_finder">🔍 Lead Finder</option>
-      <option value="followup">📨 Follow-Up</option>
-    </select>
-    <select id="taskFilterPriority" class="task-filter-select" onchange="renderTasks()">
-      <option value="all">Все приоритеты</option>
-      <option value="critical">🚨 Critical</option>
-      <option value="high">🔴 High</option>
-      <option value="normal">🔵 Normal</option>
-      <option value="low">⚪ Low</option>
-    </select>
   </div>
   <!-- Quick create bar -->
   <div class="task-input-area">
@@ -368,13 +333,16 @@
     <select class="task-select" id="taskAgent">
       <option value="">Агент</option>
       <option value="coordinator">🎯 Coordinator</option>
-      <option value="content">📱 SMM</option>
+      <option value="content">📱 SMM Agent</option>
       <option value="market">📊 Analyst</option>
       <option value="leads">📧 BizDev</option>
       <option value="outreach">🎯 Outreach</option>
       <option value="social">👥 Community</option>
       <option value="lead_finder">🔍 Lead Finder</option>
       <option value="followup">📨 Follow-Up</option>
+      <option value="processor">⚙️ Processor</option>
+      <option value="watchdog">🛡️ Watchdog</option>
+      <option value="quality_controller">✅ QA</option>
     </select>
     <select class="task-select" id="taskPrioritySelect" style="max-width:100px">
       <option value="normal">🔵 Normal</option>
@@ -409,10 +377,6 @@
     <div class="kanban-col" data-status="rework">
       <div class="kanban-col-header" style="border-top:3px solid #f97316"><span>🔄 Переработка</span><span class="kanban-count" id="kc-rework">0</span></div>
       <div class="kanban-cards" id="kanban-rework"></div>
-    </div>
-    <div class="kanban-col" data-status="cancelled">
-      <div class="kanban-col-header" style="border-top:3px solid #ef4444"><span>❌ Отменено</span><span class="kanban-count" id="kc-cancelled">0</span></div>
-      <div class="kanban-cards" id="kanban-cancelled"></div>
     </div>
   </div>
   <!-- List view -->

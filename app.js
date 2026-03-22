@@ -21,8 +21,6 @@ let _currentSession = JSON.parse(localStorage.getItem('f2f_session')||'null');
 if(_currentSession){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').style.display='';
-  // Init Supabase for auto-login (same as manual login does)
-  if(typeof initSupabase==='function')setTimeout(initSupabase,500);
 }
 
 async function loginWithToken(){
@@ -113,7 +111,7 @@ function logoutUser(){
   SUPABASE_LIVE=false;
   window._sbTeam=null;window._sbPartners=null;window._sbContent=null;
   window._sbMemory=null;window._sbEvents=null;window._sbReports=null;
-  window._sbFeedLoaded=false;window._sbFeedLoadedIds=null;window._sbFeedEnriched=false;window._sbContentMerged=false;window._sbPartnersMerged=false;window._kpiDeficitAlerted=false;window._kpiProgress=null;window._kpiTargets=null;window._strategyText='';
+  window._sbFeedLoaded=false;window._sbContentMerged=false;window._sbPartnersMerged=false;
   if(typeof feedItems!=='undefined')feedItems.length=0;
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('app').style.display='none';
@@ -315,24 +313,11 @@ async function reactivateToken(id){
 }
 
 // ═══ DATA ═══
-// Start with empty data — Supabase will fill in real data. f2f_data.js only used as offline fallback.
-const _offlineFallback = window.F2F_DATA || {leads:[],posts:[],reports:[],tasks:[],companies:[],kpi:{},financeReports:[],hrReports:[],techReports:[]};
-const D = {leads:[],posts:[],reports:[],tasks:[],companies:[],kpi:{},financeReports:[],hrReports:[],techReports:[],team:_offlineFallback.team||[],companyDepts:_offlineFallback.companyDepts||[],dismissed:_offlineFallback.dismissed||[]};
-// Apply offline fallback after 5s if Supabase hasn't loaded
-setTimeout(function(){
-  if(!SUPABASE_LIVE&&_offlineFallback.leads&&_offlineFallback.leads.length>0){
-    if(D.leads.length===0)D.leads=_offlineFallback.leads;
-    if(D.posts.length===0)D.posts=_offlineFallback.posts||[];
-    if(D.companies.length===0)D.companies=_offlineFallback.companies||[];
-    if(_offlineFallback.financeReports)D.reports=D.reports.concat(_offlineFallback.financeReports);
-    if(_offlineFallback.hrReports)D.reports=D.reports.concat(_offlineFallback.hrReports);
-    if(_offlineFallback.techReports)D.reports=D.reports.concat(_offlineFallback.techReports);
-    if(_offlineFallback.companyDepts&&!D.companyDepts.length)D.companyDepts=_offlineFallback.companyDepts;
-    if(_offlineFallback.dismissed&&!D.dismissed.length)D.dismissed=_offlineFallback.dismissed;
-    renderLeads();renderPosts();renderTasks();updateKPI();if(typeof renderTeam==='function')renderTeam();
-    showToast('⚠️ Supabase не подключился — загружены офлайн-данные','warning');
-  }
-},5000);
+const D = window.F2F_DATA || {leads:[],posts:[],reports:[],tasks:[],companies:[],kpi:{},financeReports:[],hrReports:[],techReports:[]};
+// Merge all department reports into one unified reports array
+if(D.financeReports) D.reports = D.reports.concat(D.financeReports);
+if(D.hrReports) D.reports = D.reports.concat(D.hrReports);
+if(D.techReports) D.reports = D.reports.concat(D.techReports);
 
 const AGENTS = {
   // === РЕАЛЬНЫЕ AI АГЕНТЫ (Make.com) ===
@@ -385,10 +370,10 @@ document.querySelectorAll('.kpi[data-goto]').forEach(kpi=>{
 // Strategy & KPI Save Handler
 document.getElementById('stratSaveBtn').addEventListener('click',async function(){
   const strategyText=document.getElementById('strategyText').value;
-  const kpiLeads=parseInt(document.getElementById('strat-kpi-leads').value)||45;
-  const kpiEmails=parseInt(document.getElementById('strat-kpi-emails').value)||200;
-  const kpiContent=parseInt(document.getElementById('strat-kpi-content').value)||20;
-  const kpiRevenue=parseInt(document.getElementById('strat-kpi-revenue').value)||15000;
+  const kpiLeads=parseInt(document.getElementById('kpi-leads').value)||45;
+  const kpiEmails=parseInt(document.getElementById('kpi-emails').value)||200;
+  const kpiContent=parseInt(document.getElementById('kpi-content').value)||20;
+  const kpiRevenue=parseInt(document.getElementById('kpi-revenue').value)||15000;
 
   const strategyData={
     mission_vision:strategyText,
@@ -399,28 +384,15 @@ document.getElementById('stratSaveBtn').addEventListener('click',async function(
     updated_at:new Date().toISOString()
   };
 
-  // Save to Supabase directives — try PATCH first, then INSERT
-  var saveOk=false;
-  var saveData={value_json:strategyData,active:true,updated_at:new Date().toISOString()};
-  // 1. Try update existing row
-  var patchRes=await sbPatch('directives','key=eq.company_strategy',saveData);
-  if(patchRes&&patchRes.length>0){
-    saveOk=true;
-    console.log('✅ Strategy updated via PATCH');
-  }else{
-    // 2. Row doesn't exist — insert new
-    var insertRes=await sbInsert('directives',Object.assign({key:'company_strategy'},saveData));
-    if(insertRes&&insertRes.length>0){
-      saveOk=true;
-      console.log('✅ Strategy inserted via INSERT');
-    }
-  }
-  // Also update global targets immediately
-  window._kpiTargets={leads:kpiLeads,emails:kpiEmails,content:kpiContent,revenue:kpiRevenue};
-  window._strategyText=strategyText;
-  if(typeof updateKPI==='function')updateKPI();
+  // Save to Supabase directives table (upsert — update if key exists)
+  const result=await sbUpsert('directives',{
+    key:'company_strategy',
+    value_json:strategyData,
+    active:true,
+    updated_at:new Date().toISOString()
+  });
 
-  if(saveOk){
+  if(result){
     const btn=document.getElementById('stratSaveBtn');
     const origText=btn.textContent;
     btn.textContent='✅ Сохранено!';
@@ -431,10 +403,9 @@ document.getElementById('stratSaveBtn').addEventListener('click',async function(
       btn.style.background='var(--green)22';
       btn.style.color='var(--green)';
     },3000);
-    addFeed('coordinator','🎯 Стратегия обновлена — KPI: лиды='+kpiLeads+', контент='+kpiContent+', выручка=$'+kpiRevenue);
+    addFeed('coordinator','🎯 Стратегия обновлена — все цели пересчитаны');
   }else{
-    showToast('Ошибка сохранения. Проверь консоль браузера (F12).','error');
-    console.error('Strategy save failed — check directives table permissions and schema');
+    showToast('Ошибка сохранения. Проверь соединение с Supabase.','error');
   }
 });
 
@@ -458,7 +429,6 @@ function getLedgerBurn(){
 
 function updateKPI(){
   var burn=getLedgerBurn();
-  var targets=window._kpiTargets||{leads:1000,emails:3000,content:100,revenue:15000};
   // Leads: prefer live count from D.leads (already replaced by SB data in refreshAfterSync)
   var leadsCount=SUPABASE_LIVE&&window._sbPartners?window._sbPartners.length:D.leads.length;
   document.getElementById('kpi-leads').textContent=leadsCount;
@@ -487,95 +457,12 @@ function updateKPI(){
   document.getElementById('tab-posts-count').textContent=pendingCount>0?pendingCount+' ⏳':D.posts.length;
   document.getElementById('tab-reports-count').textContent=D.reports.length;
   // SyncBadge: don't override LIVE status if Supabase is connected
-  var _syncB=document.getElementById('syncBadge');
-  if(!SUPABASE_LIVE&&_syncB){
-    _syncB.textContent='● LOCAL '+new Date(D.lastUpdated||Date.now()).toLocaleDateString('ru');
-    _syncB.style.color='#ffb800';
+  if(!SUPABASE_LIVE){
+    document.getElementById('syncBadge').textContent='● LOCAL '+new Date(D.lastUpdated||Date.now()).toLocaleDateString('ru');
+    document.getElementById('syncBadge').style.color='#ffb800';
   }
-
-  // ═══ KPI PROGRESS vs TARGETS ═══
-  window._kpiProgress={
-    leads:{current:leadsCount,target:targets.leads,pct:Math.min(100,Math.round(leadsCount/targets.leads*100))},
-    content:{current:postsCount,target:targets.content,pct:Math.min(100,Math.round(postsCount/targets.content*100))},
-    partners:{current:partnerships,target:Math.round(targets.leads*0.05),pct:partnerships>0?Math.min(100,Math.round(partnerships/(targets.leads*0.05)*100)):0}
-  };
-  // Calculate days into month for pace check
-  var now=new Date();var dayOfMonth=now.getDate();var daysInMonth=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
-  var monthProgress=Math.round(dayOfMonth/daysInMonth*100);
-  window._kpiProgress.monthPct=monthProgress;
-
-  // Update KPI header items with progress indicators
-  _renderKpiProgress('kpi-leads',window._kpiProgress.leads,monthProgress);
-  _renderKpiProgress('kpi-posts',window._kpiProgress.content,monthProgress);
-  // Update Strategy panel progress
-  if(typeof _renderKpiStrategyPanel==='function')_renderKpiStrategyPanel();
-}
-// Render mini progress bar under KPI number
-function _renderKpiProgress(elId,kpiObj,monthPct){
-  var el=document.getElementById(elId);
-  if(!el||!kpiObj)return;
-  // Find or create progress bar
-  var bar=el.parentElement.querySelector('.kpi-progress-bar');
-  if(!bar){
-    bar=document.createElement('div');
-    bar.className='kpi-progress-bar';
-    bar.style.cssText='height:3px;background:#ffffff10;border-radius:2px;margin-top:2px;overflow:hidden;width:100%';
-    var fill=document.createElement('div');
-    fill.className='kpi-progress-fill';
-    fill.style.cssText='height:100%;border-radius:2px;transition:width .5s ease';
-    bar.appendChild(fill);
-    el.parentElement.appendChild(bar);
-  }
-  var fill=bar.querySelector('.kpi-progress-fill');
-  if(!fill)return;
-  var pct=kpiObj.pct;
-  // Color: green if on pace, amber if behind, red if way behind
-  var onPace=pct>=monthPct*0.7;
-  var wayBehind=pct<monthPct*0.4;
-  fill.style.width=pct+'%';
-  fill.style.background=wayBehind?'#ef4444':onPace?'#10b981':'#f59e0b';
-  // Tooltip
-  bar.title=kpiObj.current+' / '+kpiObj.target+' ('+pct+'% цели, '+monthPct+'% месяца)';
 }
 updateKPI();
-
-// ═══ KPI PROGRESS in STRATEGY PANEL ═══
-function _renderKpiStrategyPanel(){
-  var panel=document.getElementById('kpiProgressPanel');
-  if(!panel)return;
-  var p=window._kpiProgress;
-  if(!p){panel.innerHTML='<div style="font-size:11px;color:var(--dim)">Загрузка данных...</div>';return;}
-  var mp=p.monthPct||0;
-  function bar(label,emoji,obj,color){
-    var pct=obj?obj.pct:0;var cur=obj?obj.current:0;var tgt=obj?obj.target:0;
-    var onPace=pct>=mp*0.7;var wayBehind=pct<mp*0.4;
-    var barColor=wayBehind?'#ef4444':onPace?'#10b981':'#f59e0b';
-    var statusIcon=wayBehind?'🔴':onPace?'🟢':'🟡';
-    return '<div style="margin-bottom:10px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'+
-        '<span style="font-size:11px;color:var(--text)">'+emoji+' '+label+'</span>'+
-        '<span style="font-size:11px;font-weight:700;color:'+barColor+'">'+statusIcon+' '+cur+' / '+tgt+' ('+pct+'%)</span>'+
-      '</div>'+
-      '<div style="height:6px;background:#ffffff08;border-radius:3px;overflow:hidden">'+
-        '<div style="height:100%;width:'+pct+'%;background:'+barColor+';border-radius:3px;transition:width .5s"></div>'+
-      '</div>'+
-    '</div>';
-  }
-  var html='<div style="font-size:11px;font-weight:700;color:var(--amber);margin-bottom:8px">📊 Прогресс KPI ('+mp+'% месяца прошло)</div>';
-  html+=bar('Лиды','📞',p.leads,'#00e5ff');
-  html+=bar('Контент','📝',p.content,'#ff2d78');
-  html+=bar('Партнёры','🤝',p.partners,'#a78bfa');
-  // Deficit summary
-  var deficits=[];
-  if(p.leads&&p.leads.pct<mp-10)deficits.push('Лиды: нужно ещё ~'+Math.max(0,Math.round((p.leads.target*mp/100)-p.leads.current)));
-  if(p.content&&p.content.pct<mp-10)deficits.push('Контент: нужно ещё ~'+Math.max(0,Math.round((p.content.target*mp/100)-p.content.current)));
-  if(deficits.length){
-    html+='<div style="margin-top:6px;padding:6px 8px;background:#ef444412;border:1px solid #ef444433;border-radius:6px;font-size:10px;color:#ef4444">⚠️ '+deficits.join(' | ')+'</div>';
-  }else{
-    html+='<div style="margin-top:6px;padding:6px 8px;background:#10b98112;border:1px solid #10b98133;border-radius:6px;font-size:10px;color:#10b981">✅ Все KPI в темпе</div>';
-  }
-  panel.innerHTML=html;
-}
 
 // ═══ FINANCE PANEL ═══
 // ═══ FINANCE v2 — Immutable Ledger + Payroll ═══
@@ -596,18 +483,8 @@ function loadExchangeRateFromDirectives(){
   if(!window._sbDirectives)return;
   var exDir=window._sbDirectives.find(function(d){return d.key==='exchange_rate';});
   if(exDir&&exDir.value_json){
-    try{
-      var val=typeof exDir.value_json==='string'?JSON.parse(exDir.value_json):exDir.value_json;
-      if(val.rate){financeExchangeRate=parseFloat(val.rate);console.log('💱 Курс из directives: '+financeExchangeRate);}
-    }catch(e){console.warn('⚠️ Ошибка разбора exchange_rate:',e);}
-  }
-  // Also check intg_ keys from Integrations panel
-  var intgDir=window._sbDirectives.find(function(d){return d.key==='intg_EXCHANGE_RATE';});
-  if(intgDir&&intgDir.value_json){
-    try{
-      var v=typeof intgDir.value_json==='string'?JSON.parse(intgDir.value_json):intgDir.value_json;
-      if(v)financeExchangeRate=parseFloat(v);
-    }catch(e){}
+    var val=typeof exDir.value_json==='string'?JSON.parse(exDir.value_json):exDir.value_json;
+    if(val.rate)financeExchangeRate=parseFloat(val.rate);
   }
 }
 
@@ -762,7 +639,7 @@ function renderFinanceUnpaid(unpaid){
 
 // ═══ PAYMENT MODAL — mark as paid + upload screenshot ═══
 window.openPaymentModal=function(entryId){
-  var entry=(window._financeLedger||[]).find(function(e){return e.id===entryId;});
+  var entry=window._financeLedger.find(function(e){return e.id===entryId;});
   if(!entry)return;
   openModal(
     '<h2>💳 Оплата</h2>'+
@@ -823,7 +700,7 @@ window.confirmPayment=async function(entryId){
   await sbPatch('finance_ledger','id=eq.'+entryId, updateData);
 
   // Update local
-  var entry=(window._financeLedger||[]).find(function(e){return e.id===entryId;});
+  var entry=window._financeLedger.find(function(e){return e.id===entryId;});
   if(entry){entry.is_paid=true;entry.paid_at=updateData.paid_at;entry.payment_note=note;if(proofUrl)entry.payment_proof_url=proofUrl;}
 
   modal.classList.remove('open');
@@ -1090,12 +967,9 @@ renderFinance();
 
 // ═══ TEAM MANAGEMENT PANEL ═══
 let teamDeptFilter='all';
-// Dynamic getter — D.companyDepts loads after Supabase/offline fallback
-function getCDepts(){return D.companyDepts||[];}
-var CDepts=getCDepts();
+const CDepts=D.companyDepts||[];
 
 function renderTeamDeptTabs(){
-  CDepts=getCDepts(); // refresh from D
   const active=D.team.filter(t=>t.status==='active');
   let html='<button class="sub-tab '+(teamDeptFilter==='all'?'active':'')+'" data-dept="all">Все ('+active.length+')</button>';
   CDepts.forEach(d=>{
@@ -1107,7 +981,6 @@ function renderTeamDeptTabs(){
 }
 
 function renderTeam(){
-  if(!D.team||!Array.isArray(D.team)){D.team=[];}
   const active=D.team.filter(t=>t.status==='active');
   const dismissed=D.dismissed||[];
   renderTeamDeptTabs();
@@ -1116,7 +989,7 @@ function renderTeam(){
     document.getElementById('team-count').textContent=dismissed.length+' уволенных';
     document.getElementById('teamContent').innerHTML='<div class="team-grid">'+dismissed.map(t=>
       '<div class="team-card dismissed">'+
-        '<div class="t-top"><span class="t-name">'+t.name+'</span><span class="t-role">'+(t.reason||'—')+'</span></div>'+
+        '<div class="t-top"><span class="t-name">'+t.name+'</span><span class="t-role">'+t.reason+'</span></div>'+
         '<div class="t-dept">Уволен: '+t.dismissDate+' | Был: '+(CDepts.find(d=>d.id===t.dept)?.name||'—')+'</div>'+
       '</div>').join('')+'</div>';
     return;
@@ -1384,8 +1257,8 @@ function renderAgentsPanel(){
       // Truncate LIVE OUTPUT to 200 chars
       var liveOutput='';
       if(SUPABASE_LIVE&&sbMem&&sbMem.last_output){
-        var truncated=_escHtml(sbMem.last_output.length>200?sbMem.last_output.slice(0,200)+'…':sbMem.last_output);
-        liveOutput='<div style="font-size:11px;line-height:1.5;margin:8px 0;padding:8px 10px;background:#00ff8808;border:1px solid #00ff8822;border-radius:6px;max-height:80px;overflow-y:auto;scrollbar-width:thin" title="Кликни на агента для полного вида">'+
+        var truncated=sbMem.last_output.length>200?sbMem.last_output.slice(0,200)+'...':sbMem.last_output;
+        liveOutput='<div style="font-size:11px;line-height:1.5;margin:8px 0;padding:8px 10px;background:#00ff8808;border:1px solid #00ff8822;border-radius:6px;max-height:80px;overflow-y:auto">'+
           '<b style="color:#00ff88;font-size:9px;text-transform:uppercase">📡 Live Output:</b><br>'+truncated+
         '</div>';
       }
@@ -1411,8 +1284,8 @@ function renderAgentsPanel(){
             '</div>'+
           '</div>'+
         '</div>'+
-        '<div style="font-size:12px;line-height:1.6;margin-bottom:6px;color:#cbd5e1;padding:6px 8px;background:var(--bg);border-radius:6px;max-height:60px;overflow:hidden;position:relative" title="'+_escHtml(desc.purpose||m.purpose||'')+'">'+
-          '<b style="color:var(--cyan)">Роль:</b> '+_escHtml(_truncate(desc.purpose||m.purpose||AGENT_PROMPTS[id]||'Нет описания',150))+'</div>'+
+        '<div style="font-size:12px;line-height:1.6;margin-bottom:6px;color:#cbd5e1;padding:6px 8px;background:var(--bg);border-radius:6px">'+
+          '<b style="color:var(--cyan)">Роль:</b> '+(desc.purpose||m.purpose||AGENT_PROMPTS[id]||'Нет описания')+'</div>'+
         '<div style="font-size:11px;color:var(--amber);margin-bottom:4px">'+
           '<b>Заменяет:</b> '+(desc.replaces||m.replaces||'—')+'</div>'+
         liveOutput+
@@ -1603,7 +1476,7 @@ function renderChat(){
 const CHAT_EDGE_URL=SUPABASE_URL+'/functions/v1/agent-chat';
 let f2fApiKey=localStorage.getItem('f2f_api_key')||'';
 
-function closeModal(){var overlay=document.getElementById('modal');if(overlay){overlay.classList.remove('open');var mc=document.getElementById('modalContent');if(mc)setTimeout(function(){if(!overlay.classList.contains('open'))mc.innerHTML='';},300);}var m=document.querySelector('.modal');if(m){m.style.transform='';m.style.transition='';}}
+function closeModal(){modal.classList.remove('open');var m=document.querySelector('.modal');if(m){m.style.transform='';m.style.transition='';}}
 function openApiKeyModal(){
   var html='<h2 style="margin-bottom:16px">🔑 Anthropic API Key</h2>'+
     '<p style="color:var(--dim);margin-bottom:12px;font-size:13px">Для AI-ответов агентов нужен ключ Claude API. Он хранится только локально в вашем браузере.</p>'+
@@ -2028,885 +1901,103 @@ window.executeApprovedAction=async function(taskId){
 // ═══ INTEGRATIONS PANEL ═══
 // ═══ LIVE INTEGRATION STATUS ═══
 // Build integration list dynamically from real system state
-// ═══ INTEGRATIONS & API KEY MANAGEMENT ═══
-var INTEGRATIONS=[
-  // Core — always connected via architecture
-  {id:'supabase',name:'Supabase',icon:'🗄',purpose:'Database, Auth, Storage',category:'core',
-    type:'builtin',detail:function(){return SUPABASE_LIVE?'Подключен':'Ожидание...';},
-    status:function(){return SUPABASE_LIVE?'active':'pending';}},
-  {id:'github_pages',name:'GitHub Pages',icon:'🌐',purpose:'Хостинг дашборда',category:'core',
-    type:'builtin',detail:function(){return 'aiderd.github.io';},
-    status:function(){return 'active';}},
-  {id:'edge_functions',name:'Edge Functions',icon:'⚡',purpose:'Бэкенд AI-агентов (9 функций)',category:'core',
-    type:'builtin',detail:function(){
-      var lastCycle=null;
-      if(window._sbMemory&&window._sbMemory.length>0){
-        var times=window._sbMemory.map(function(m){return m.created_at;}).filter(Boolean).sort().reverse();
-        if(times[0])lastCycle=times[0];
-      }
-      if(!lastCycle)return 'Нет данных о циклах';
-      var mins=Math.round((Date.now()-new Date(lastCycle).getTime())/60000);
-      return mins<180?'Активен ('+mins+' мин назад)':'Последний цикл '+mins+' мин назад';
-    },status:function(){
-      if(!window._sbMemory||!window._sbMemory.length)return 'limited';
-      var times=window._sbMemory.map(function(m){return m.created_at;}).filter(Boolean).sort().reverse();
-      if(!times[0])return 'limited';
-      return (Date.now()-new Date(times[0]).getTime())<180*60000?'active':'limited';
-    }},
+function buildLiveIntegrations(){
+  var connected=[];var needed=[];
 
-  // API Keys — stored in Supabase directives, used by Edge Functions
-  {id:'anthropic',name:'Anthropic (Claude)',icon:'🧠',purpose:'LLM для всех агентов, чата, QA, генерации',category:'ai',
-    type:'secret',secretKey:'ANTHROPIC_API_KEY',required:true,
-    detail:function(){var c=window._sbCredits;return c&&c.length?'$'+creditsSpent.toFixed(2)+' потрачено':'Нет данных по расходам';},
-    status:function(){return _intgKeyExists('ANTHROPIC_API_KEY')?'active':'not_configured';},
-    docs:'https://console.anthropic.com/settings/keys'},
-  {id:'telegram',name:'Telegram Bot',icon:'📱',purpose:'Публикация постов, уведомления CEO',category:'publishing',
-    type:'secret',secretKey:'TELEGRAM_BOT_TOKEN',extraKeys:['TELEGRAM_CHANNEL_ID'],required:true,
-    detail:function(){
-      var ch=_intgGetKey('TELEGRAM_CHANNEL_ID');
-      return ch?'Канал: '+ch:'Не указан channel ID';
-    },
-    status:function(){return _intgKeyExists('TELEGRAM_BOT_TOKEN')&&_intgKeyExists('TELEGRAM_CHANNEL_ID')?'active':'not_configured';},
-    docs:'https://core.telegram.org/bots#botfather'},
-  {id:'replicate',name:'Replicate (Flux)',icon:'🎨',purpose:'AI-генерация картинок для постов',category:'ai',
-    type:'secret',secretKey:'REPLICATE_API_KEY',required:false,
-    detail:function(){var n=window._sbContent?window._sbContent.filter(function(c){return c.image_url;}).length:0;return n?n+' картинок сгенерировано':'Опционально';},
-    status:function(){return _intgKeyExists('REPLICATE_API_KEY')?'active':'not_configured';},
-    docs:'https://replicate.com/account/api-tokens'},
-  {id:'resend',name:'Resend',icon:'📧',purpose:'Отправка outreach-писем',category:'outreach',
-    type:'secret',secretKey:'RESEND_API_KEY',extraKeys:['FROM_EMAIL'],required:false,
-    detail:function(){var e=_intgGetKey('FROM_EMAIL');return e||'ai-office@f2f.vin (по умолчанию)';},
-    status:function(){return _intgKeyExists('RESEND_API_KEY')?'active':'not_configured';},
-    docs:'https://resend.com/api-keys'},
-  {id:'apollo',name:'Apollo.io',icon:'🔍',purpose:'Поиск и обогащение лидов',category:'outreach',
-    type:'secret',secretKey:'APOLLO_API_KEY',required:false,
-    detail:function(){return 'People & Company search API';},
-    status:function(){return _intgKeyExists('APOLLO_API_KEY')?'active':'not_configured';},
-    docs:'https://app.apollo.io/#/settings/integrations/api'},
-  {id:'brave',name:'Brave Search',icon:'🦁',purpose:'Веб-поиск для агентов',category:'ai',
-    type:'secret',secretKey:'BRAVE_SEARCH_API_KEY',required:false,
-    detail:function(){return '1000 req/мес бесплатно';},
-    status:function(){return _intgKeyExists('BRAVE_SEARCH_API_KEY')?'active':'not_configured';},
-    docs:'https://brave.com/search/api/'},
-  {id:'ahrefs',name:'Ahrefs',icon:'📊',purpose:'SEO-аналитика и ключевые слова',category:'analytics',
-    type:'secret',secretKey:'AHREFS_API_TOKEN',required:false,
-    detail:function(){return 'SERP & Keywords API';},
-    status:function(){return _intgKeyExists('AHREFS_API_TOKEN')?'active':'not_configured';},
-    docs:'https://ahrefs.com/api'},
-  {id:'hunter',name:'Hunter.io',icon:'🎯',purpose:'Верификация email по домену',category:'outreach',
-    type:'secret',secretKey:'HUNTER_API_KEY',required:false,
-    detail:function(){return 'Email verification';},
-    status:function(){return _intgKeyExists('HUNTER_API_KEY')?'active':'not_configured';},
-    docs:'https://hunter.io/api-keys'},
+  // 1. Supabase — check if SUPABASE_LIVE
+  connected.push({name:'Supabase',purpose:'Database & Auth',status:SUPABASE_LIVE?'active':'pending',
+    detail:SUPABASE_LIVE?Object.keys(window._sbAgents||{}).length+' agents synced':'Connecting...'});
 
-  // Future / Needed
-  {id:'twitter',name:'Twitter / X',icon:'🐦',purpose:'Публикация постов в X',category:'publishing',
-    type:'secret',secretKey:'TWITTER_API_KEY',extraKeys:['TWITTER_API_SECRET','TWITTER_ACCESS_TOKEN','TWITTER_ACCESS_SECRET'],required:false,
-    detail:function(){return 'Планируется';},
-    status:function(){return _intgKeyExists('TWITTER_API_KEY')?'active':'not_configured';},
-    docs:'https://developer.twitter.com/en/portal/dashboard'},
-  {id:'discord',name:'Discord Bot',icon:'💬',purpose:'Управление комьюнити',category:'community',
-    type:'secret',secretKey:'DISCORD_BOT_TOKEN',extraKeys:['DISCORD_CHANNEL_ID'],required:false,
-    detail:function(){return 'Community engagement';},
-    status:function(){return _intgKeyExists('DISCORD_BOT_TOKEN')?'active':'not_configured';},
-    docs:'https://discord.com/developers/applications'},
-  {id:'youtube',name:'YouTube API',icon:'▶️',purpose:'Аналитика видео-контента',category:'analytics',
-    type:'secret',secretKey:'YOUTUBE_API_KEY',required:false,
-    detail:function(){return 'Content analytics';},
-    status:function(){return _intgKeyExists('YOUTUBE_API_KEY')?'active':'not_configured';},
-    docs:'https://console.cloud.google.com/apis'}
-];
-
-// Integration key cache (loaded from directives)
-var _intgKeys={};
-var _intgSeeded=false;
-
-// Known keys configured in Supabase Vault secrets (used by Edge Functions)
-var _VAULT_KEYS={
-  'ANTHROPIC_API_KEY':'sk-ant-••••configured',
-  'TELEGRAM_BOT_TOKEN':'bot••••configured',
-  'TELEGRAM_CHANNEL_ID':'@f2f_arena',
-  'REPLICATE_API_KEY':'r8_••••configured',
-  'RESEND_API_KEY':'re_••••configured',
-  'FROM_EMAIL':'ai-office@f2f.vin',
-  'BRAVE_SEARCH_API_KEY':'BSA••••configured',
-  'AHREFS_API_TOKEN':'ahrefs_••••configured'
-};
-
-// Seed vault keys into directives if missing (runs once after Supabase loads)
-async function _intgSeedVaultKeys(){
-  if(_intgSeeded||!SUPABASE_LIVE||!window._sbDirectives)return;
-  _intgSeeded=true;
-  var existing={};
-  (window._sbDirectives||[]).forEach(function(d){
-    if(d.key&&d.key.startsWith('intg_'))existing[d.key]=d;
-  });
-  for(var secretKey in _VAULT_KEYS){
-    var dKey='intg_'+secretKey;
-    if(!existing[dKey]||existing[dKey].active===false){
-      try{
-        if(existing[dKey]){
-          await sbPatch('directives','key=eq.'+dKey,{value_json:JSON.stringify(_VAULT_KEYS[secretKey]),active:true,updated_at:new Date().toISOString()});
-          var idx=window._sbDirectives.findIndex(function(d){return d.key===dKey;});
-          if(idx>=0){window._sbDirectives[idx].value_json=JSON.stringify(_VAULT_KEYS[secretKey]);window._sbDirectives[idx].active=true;}
-        }else{
-          await sbInsert('directives',{key:dKey,value_json:JSON.stringify(_VAULT_KEYS[secretKey]),active:true});
-          window._sbDirectives.push({key:dKey,value_json:JSON.stringify(_VAULT_KEYS[secretKey]),active:true});
-        }
-      }catch(e){console.warn('Seed key error:',dKey,e);}
-    }
+  // 2. Edge Functions — check if agent cycles ran recently
+  var lastCycle=null;
+  if(window._sbMemory&&window._sbMemory.length>0){
+    var times=window._sbMemory.map(function(m){return m.created_at;}).filter(Boolean).sort().reverse();
+    if(times[0])lastCycle=times[0];
   }
-  _intgLoadKeys();
-  renderIntegrations();
-}
+  var cycleAge=lastCycle?Math.round((Date.now()-new Date(lastCycle).getTime())/60000):9999;
+  connected.push({name:'Edge Functions',purpose:'Agent AI cycles',status:cycleAge<180?'active':'limited',
+    detail:lastCycle?cycleAge+'мин назад':'Нет данных'});
 
-function _intgLoadKeys(){
-  _intgKeys={};
+  // 3. pg_cron — infer from regular execution pattern
+  var hasCron=lastCycle&&cycleAge<180;
+  connected.push({name:'pg_cron',purpose:'Auto scheduling',status:hasCron?'active':'limited',
+    detail:hasCron?'11 jobs active':'Check SQL console'});
+
+  // 4. Telegram Bot — check directives for bot token or check if any agent posted to TG
+  var tgActive=false;var tgDetail='Не настроен';
   if(window._sbDirectives){
-    window._sbDirectives.forEach(function(d){
-      if(d.key&&d.key.startsWith('intg_')&&d.active!==false){
-        try{
-          var val=typeof d.value_json==='string'?JSON.parse(d.value_json):d.value_json;
-          _intgKeys[d.key.replace('intg_','')]=val;
-        }catch(e){}
-      }
-    });
+    var tgDir=window._sbDirectives.find(function(d){return d.key==='telegram_bot_token'||d.key==='tg_bot_token'||d.key==='telegram_chat_id';});
+    if(tgDir){tgActive=true;tgDetail='Webhook active';}
   }
-  // Fallback: if Supabase loaded but no directives found, use vault keys directly
-  if(SUPABASE_LIVE&&Object.keys(_intgKeys).length===0){
-    for(var k in _VAULT_KEYS){
-      _intgKeys[k]=_VAULT_KEYS[k];
-    }
+  // Also check if content was posted to telegram
+  if(!tgActive&&window._sbContent){
+    var tgPosts=window._sbContent.filter(function(c){return (c.platform||'').toLowerCase()==='telegram';});
+    if(tgPosts.length>0){tgActive=true;tgDetail=tgPosts.length+' постов в TG';}
   }
-}
-function _intgKeyExists(key){return !!_intgKeys[key];}
-function _intgGetKey(key){return _intgKeys[key]||'';}
-function _intgMasked(key){
-  var v=_intgKeys[key];
-  if(!v)return '—';
-  var s=String(v);
-  if(s.length<=8)return '••••••••';
-  return s.slice(0,4)+'••••••'+s.slice(-4);
-}
+  connected.push({name:'Telegram Bot',purpose:'CEO commands & approvals',status:tgActive?'active':'limited',
+    detail:tgDetail});
 
-// Save a key to Supabase directives
-window.intgSaveKey=async function(secretKey,value){
-  if(!SUPABASE_LIVE){showToast('Supabase не подключен','error');return false;}
-  var directiveKey='intg_'+secretKey;
-  try{
-    // Upsert to directives
-    var existing=(window._sbDirectives||[]).find(function(d){return d.key===directiveKey;});
-    if(existing){
-      await sbPatch('directives','key=eq.'+directiveKey,{value_json:JSON.stringify(value),updated_at:new Date().toISOString()});
-    }else{
-      await sbInsert('directives',{key:directiveKey,value_json:JSON.stringify(value),active:true});
-    }
-    // Update local cache
-    _intgKeys[secretKey]=value;
-    // Update _sbDirectives cache
-    if(!window._sbDirectives)window._sbDirectives=[];
-    var idx=window._sbDirectives.findIndex(function(d){return d.key===directiveKey;});
-    if(idx>=0){window._sbDirectives[idx].value_json=JSON.stringify(value);}
-    else{window._sbDirectives.push({key:directiveKey,value_json:JSON.stringify(value),active:true});}
-    return true;
-  }catch(e){
-    showToast('Ошибка сохранения: '+e,'error');return false;
-  }
-};
+  // 5. AI Credits — check if ai_credits data loaded
+  var hasCredits=window._sbCredits&&window._sbCredits.length>0;
+  connected.push({name:'Claude AI (Anthropic)',purpose:'LLM for agents',status:hasCredits?'active':'limited',
+    detail:hasCredits?'$'+creditsSpent.toFixed(2)+' использовано':'Ожидание данных'});
 
-// Delete a key
-window.intgDeleteKey=async function(secretKey){
-  if(!SUPABASE_LIVE)return;
-  var directiveKey='intg_'+secretKey;
-  try{
-    await sbPatch('directives','key=eq.'+directiveKey,{active:false,updated_at:new Date().toISOString()});
-    delete _intgKeys[secretKey];
-    var idx=(window._sbDirectives||[]).findIndex(function(d){return d.key===directiveKey;});
-    if(idx>=0)window._sbDirectives[idx].active=false;
-  }catch(e){}
-};
+  // 6. GitHub Pages — always active (we're running on it)
+  connected.push({name:'GitHub Pages',purpose:'Dashboard hosting',status:'active',detail:'aiderd.github.io'});
 
-// Open edit dialog for an integration
-window.intgEdit=function(intgId){
-  var intg=INTEGRATIONS.find(function(i){return i.id===intgId;});
-  if(!intg||intg.type==='builtin')return;
-  var allKeys=[intg.secretKey].concat(intg.extraKeys||[]);
-  var fields=allKeys.map(function(k){
-    return {id:k,label:k,type:'text',value:_intgGetKey(k)||'',placeholder:'Вставьте ключ...'};
-  });
-  f2fPrompt({title:intg.icon+' '+intg.name,message:intg.purpose+(intg.docs?'\n<a href="'+intg.docs+'" target="_blank" style="color:#00e5ff;font-size:11px">Получить ключ →</a>':''),
-    fields:fields,submitText:'💾 Сохранить'}).then(async function(result){
-    if(result===null)return;
-    // Save each key
-    var keys=typeof result==='string'?{[allKeys[0]]:result}:result;
-    var ok=true;
-    for(var k of allKeys){
-      var val=(keys[k]||'').trim();
-      if(val){
-        var saved=await intgSaveKey(k,val);
-        if(!saved)ok=false;
-      }else if(_intgKeyExists(k)){
-        // Key was cleared — deactivate
-        await intgDeleteKey(k);
-      }
-    }
-    if(ok)showToast('✅ '+intg.name+' сохранён','success');
-    renderIntegrations();
-  });
-};
+  // 7. Brave Search API — for lead_finder web search
+  connected.push({name:'Brave Search API',purpose:'Web search for leads',status:'active',detail:'1000 req/мес бесплатно'});
 
-// Test connection for an integration
-window.intgTest=async function(intgId){
-  var intg=INTEGRATIONS.find(function(i){return i.id===intgId;});
-  if(!intg)return;
-  showToast('🔄 Проверяю '+intg.name+'...','info');
-  // Test via Edge Function proxy
-  try{
-    var res=await fetch(SUPABASE_URL+'/functions/v1/agent-chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
-      body:JSON.stringify({agent_id:'coordinator',message:'/test_integration '+intg.id,test_mode:true})
-    });
-    if(res.ok){
-      showToast('✅ '+intg.name+' подключён успешно','success');
-    }else{
-      showToast('⚠️ '+intg.name+': ответ '+res.status,'warning');
-    }
-  }catch(e){
-    showToast('❌ '+intg.name+': '+e,'error');
-  }
-};
+  // 8. Hunter.io — email verification
+  connected.push({name:'Hunter.io',purpose:'Email verification',status:'active',detail:'Верификация по домену'});
 
-function renderIntegrations(){
-  _intgLoadKeys();
-  var el=document.getElementById('intgContent');
-  if(!el)return;
-  var categories={core:'🏗 Инфраструктура',ai:'🧠 AI & Поиск',publishing:'📢 Публикация',outreach:'📧 Outreach & Лиды',analytics:'📊 Аналитика',community:'💬 Комьюнити'};
-  var byCategory={};
-  INTEGRATIONS.forEach(function(intg){
-    var cat=intg.category||'other';
-    if(!byCategory[cat])byCategory[cat]=[];
-    byCategory[cat].push(intg);
-  });
+  // 9. Replicate (Flux) — AI image generation
+  var hasImages=window._sbContent?window._sbContent.filter(function(c){return c.image_url;}).length:0;
+  connected.push({name:'Replicate (Flux)',purpose:'AI image generation',status:'active',detail:hasImages?hasImages+' картинок':'Готов к генерации'});
 
-  var activeCount=0;var totalConfigurable=0;
-  INTEGRATIONS.forEach(function(i){
-    if(i.type==='secret')totalConfigurable++;
-    var s=i.status();if(s==='active')activeCount++;
-  });
-  document.getElementById('intg-count').textContent=activeCount+' активно / '+INTEGRATIONS.length+' сервисов';
+  // 10. Apollo.io — lead enrichment
+  connected.push({name:'Apollo.io',purpose:'Lead enrichment & search',status:'active',detail:'People & Company search'});
 
-  var html='';
-  Object.keys(categories).forEach(function(catKey){
-    var items=byCategory[catKey];
-    if(!items||!items.length)return;
-    html+='<div style="margin:16px 0 8px;padding:0 16px"><h3 style="font-size:13px;color:#5a6a7a;margin:0;font-weight:600">'+categories[catKey]+'</h3></div>';
-    items.forEach(function(intg){
-      var st=intg.status();
-      var det=intg.detail();
-      var stClass=st==='active'?'active':st==='limited'?'limited':st==='pending'?'pending':'needed';
-      var stLabel=st==='active'?'Active':st==='limited'?'Limited':st==='pending'?'Pending':'Не настроен';
-      var isSecret=intg.type==='secret';
-      var masked=isSecret?_intgMasked(intg.secretKey):'';
-
-      html+='<div class="intg-row" style="cursor:'+(isSecret?'pointer':'default')+'" '+(isSecret?'onclick="intgEdit(\''+intg.id+'\')"':'')+'>';
-      html+='<div class="intg-dot '+stClass+'"></div>';
-      html+='<div style="flex:1;min-width:0">';
-      html+='<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px">'+intg.icon+'</span><span class="intg-name">'+intg.name+'</span>';
-      if(intg.required)html+='<span style="font-size:9px;color:#ff2d78;border:1px solid #ff2d7833;border-radius:3px;padding:0 4px">required</span>';
-      html+='</div>';
-      html+='<div class="intg-purpose">'+intg.purpose+'</div>';
-      if(isSecret&&masked!=='—')html+='<div style="font-size:10px;color:#384858;font-family:monospace;margin-top:2px">'+masked+'</div>';
-      html+='</div>';
-      html+='<div style="text-align:right;flex-shrink:0">';
-      html+='<div style="font-size:10px;color:#5a6a7a;margin-bottom:4px;white-space:nowrap">'+det+'</div>';
-      html+='<div class="intg-badge '+stClass+'">'+stLabel+'</div>';
-      html+='</div>';
-      if(isSecret){
-        html+='<div style="display:flex;flex-direction:column;gap:2px;margin-left:8px;flex-shrink:0">';
-        html+='<button onclick="event.stopPropagation();intgEdit(\''+intg.id+'\')" class="ctrl-btn" style="padding:3px 8px;font-size:10px" title="Настроить">⚙️</button>';
-        html+='</div>';
-      }
-      html+='</div>';
-    });
-  });
-  el.innerHTML=html;
-}
-renderIntegrations();
-
-// ═══ CALENDAR / EVENTS ═══
-var _calDate=new Date(); // currently viewed month
-var _calEvents=[]; // local cache
-
-// ═══ ESPORTS EVENT TYPES ═══
-var CAL_TYPES={
-  tournament:{label:'Турнир',color:'#a855f7',icon:'🏆'},
-  show_match:{label:'Шоу-матч',color:'#ec4899',icon:'⚔️'},
-  qualifier:{label:'Квалификация',color:'#f97316',icon:'🎯'},
-  league:{label:'Лига',color:'#06b6d4',icon:'🏅'},
-  lan:{label:'LAN / Офлайн',color:'#ef4444',icon:'🎮'},
-  community:{label:'Комьюнити',color:'#22c55e',icon:'👥'},
-  deadline:{label:'Дедлайн',color:'#ff4444',icon:'⏰'},
-  content:{label:'Контент / SMM',color:'#ffb800',icon:'✍️'},
-  meeting:{label:'Встреча',color:'#00e5ff',icon:'🤝'},
-  other:{label:'Другое',color:'#64748b',icon:'📌'}
-};
-
-var ESPORT_GAMES=[
-  {value:'cs2',label:'Counter-Strike 2',icon:'🔫'},
-  {value:'dota2',label:'Dota 2',icon:'⚔️'},
-  {value:'valorant',label:'Valorant',icon:'🎯'},
-  {value:'lol',label:'League of Legends',icon:'🏰'},
-  {value:'pubg',label:'PUBG',icon:'🪂'},
-  {value:'fortnite',label:'Fortnite',icon:'🏗'},
-  {value:'apex',label:'Apex Legends',icon:'🦾'},
-  {value:'overwatch',label:'Overwatch 2',icon:'🛡'},
-  {value:'rl',label:'Rocket League',icon:'🚗'},
-  {value:'fifa',label:'EA FC / FIFA',icon:'⚽'},
-  {value:'other',label:'Другая игра',icon:'🎮'}
-];
-
-var ESPORT_FORMATS=[
-  {value:'1v1',label:'1v1'},{value:'2v2',label:'2v2'},{value:'3v3',label:'3v3'},{value:'5v5',label:'5v5'},
-  {value:'ffa',label:'FFA / Battle Royale'},{value:'custom',label:'Кастомный'}
-];
-
-var MATCH_FORMATS=[
-  {value:'bo1',label:'BO1'},{value:'bo2',label:'BO2'},{value:'bo3',label:'BO3'},{value:'bo5',label:'BO5'},
-  {value:'round_robin',label:'Round Robin'},{value:'swiss',label:'Swiss'},{value:'double_elim',label:'Double Elimination'},
-  {value:'single_elim',label:'Single Elimination'},{value:'group_stage',label:'Групповой этап + плейофф'}
-];
-
-var EVENT_STATUSES=[
-  {value:'draft',label:'📝 Черновик',color:'#64748b'},
-  {value:'announced',label:'📢 Анонсирован',color:'#06b6d4'},
-  {value:'reg_open',label:'✅ Регистрация открыта',color:'#22c55e'},
-  {value:'reg_closed',label:'🔒 Регистрация закрыта',color:'#f97316'},
-  {value:'live',label:'🔴 LIVE',color:'#ef4444'},
-  {value:'completed',label:'🏁 Завершён',color:'#a855f7'},
-  {value:'cancelled',label:'❌ Отменён',color:'#6b7280'}
-];
-
-// SMM preparation checklist template
-var SMM_CHECKLIST=[
-  {id:'announce_post',label:'Анонс-пост'},
-  {id:'announce_graphic',label:'Графика анонса'},
-  {id:'reg_reminder',label:'Напоминание о регистрации'},
-  {id:'bracket_graphic',label:'Сетка / таблица'},
-  {id:'live_coverage',label:'Live-освещение'},
-  {id:'results_post',label:'Пост с результатами'},
-  {id:'highlights',label:'Хайлайты / клипы'},
-  {id:'social_stories',label:'Stories / Reels'}
-];
-
-function _calLoadFromSupabase(){
-  _calEvents=[];
-  if(window._sbEvents){
-    window._sbEvents.forEach(function(ev,i){
-      var meta={};
-      if(ev.metadata_json){
-        try{meta=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;}catch(e){}
-      }
-      // ═══ FILTER: only show user-created calendar events, NOT system/agent events ═══
-      // User events have cal_type in metadata (set by our create/edit forms)
-      // System events (agent reports, actions, notifications) do NOT have cal_type
-      if(!meta.cal_type)return;
-
-      var type=meta.cal_type||'other';
-      _calEvents.push({
-        id:9000+i, sbId:ev.id,
-        title:meta.title||'Мероприятие',
-        date:(ev.event_date||ev.created_at||'').slice(0,10),
-        time:meta.time||(ev.event_date||'').slice(11,16)||'',
-        endDate:meta.end_date||'',
-        type:type,
-        description:meta.description||'',
-        // Esports fields
-        game:meta.game||'',
-        teamFormat:meta.team_format||'',
-        matchFormat:meta.match_format||'',
-        isOnline:meta.is_online!==false,
-        prizePool:meta.prize_pool||'',
-        maxTeams:meta.max_teams||0,
-        regTeams:meta.reg_teams||0,
-        eventStatus:meta.event_status||'draft',
-        location:meta.location||'',
-        smmChecklist:meta.smm_checklist||{},
-        agentId:meta.agent_dash_id||'coordinator',
-        color:(CAL_TYPES[type]||CAL_TYPES.other).color
-      });
-    });
-  }
-  // Task deadlines (keep these — useful to see in calendar)
-  D.tasks.forEach(function(t){
-    if(!t.deadline)return;
-    _calEvents.push({
-      id:'task-'+t.id, isTask:true,
-      title:'📋 '+_truncate(t.title,40),
-      date:t.deadline,time:'',type:'deadline',
-      description:t.description||'',
-      game:'',teamFormat:'',matchFormat:'',isOnline:true,prizePool:'',maxTeams:0,regTeams:0,eventStatus:'',smmChecklist:{},
-      agentId:t.assignedTo||'coordinator',
-      color:CAL_TYPES.deadline.color
-    });
-  });
-  _calEvents.sort(function(a,b){return (a.date+a.time).localeCompare(b.date+b.time);});
-}
-
-window.calNavigate=function(dir){
-  _calDate.setMonth(_calDate.getMonth()+dir);
-  renderCalendar();
-};
-window.calGoToday=function(){
-  _calDate=new Date();
-  renderCalendar();
-};
-
-// ═══ CREATE ESPORTS EVENT ═══
-window.calCreateEvent=function(){
-  var today=new Date().toISOString().slice(0,10);
-  var typeOpts=Object.keys(CAL_TYPES).map(function(k){return{value:k,label:CAL_TYPES[k].icon+' '+CAL_TYPES[k].label};});
-  var gameOpts=ESPORT_GAMES.map(function(g){return{value:g.value,label:g.icon+' '+g.label};});
-  var fmtOpts=ESPORT_FORMATS.map(function(f){return{value:f.value,label:f.label};});
-  var matchOpts=MATCH_FORMATS.map(function(f){return{value:f.value,label:f.label};});
-  var statusOpts=EVENT_STATUSES.map(function(s){return{value:s.value,label:s.label};});
-
-  f2fPrompt({title:'🏆 Новое мероприятие',fields:[
-    {id:'title',label:'Название',type:'text',placeholder:'F2F Arena Cup Season 1...'},
-    {id:'type',label:'Тип мероприятия',type:'select',value:'tournament',options:typeOpts},
-    {id:'game',label:'Игра',type:'select',value:'cs2',options:gameOpts},
-    {id:'date',label:'Дата начала',type:'date',value:today},
-    {id:'end_date',label:'Дата окончания (опц.)',type:'date',value:''},
-    {id:'time',label:'Время старта',type:'text',placeholder:'18:00'},
-    {id:'team_format',label:'Формат команд',type:'select',value:'5v5',options:fmtOpts},
-    {id:'match_format',label:'Формат матчей',type:'select',value:'bo3',options:matchOpts},
-    {id:'is_online',label:'Место проведения',type:'select',value:'online',options:[{value:'online',label:'🌐 Онлайн'},{value:'offline',label:'🏟 Офлайн / LAN'}]},
-    {id:'location',label:'Площадка (если офлайн)',type:'text',placeholder:'Город, площадка...'},
-    {id:'prize_pool',label:'Призовой фонд',type:'text',placeholder:'$500 / 50,000₽...'},
-    {id:'max_teams',label:'Макс. команд / слотов',type:'text',placeholder:'16'},
-    {id:'event_status',label:'Статус',type:'select',value:'draft',options:statusOpts},
-    {id:'desc',label:'Описание / правила',type:'textarea',rows:3,placeholder:'Описание мероприятия, правила, ссылки...'}
-  ],submitText:'🏆 Создать мероприятие'}).then(async function(r){
-    if(!r||!r.title||!r.date)return;
-    var isOnline=r.is_online!=='offline';
-    var type=r.type||'tournament';
-    var ev={
-      id:Date.now(),
-      title:r.title.trim(),
-      date:r.date,
-      endDate:(r.end_date||'').trim(),
-      time:(r.time||'').trim(),
-      type:type,
-      game:r.game||'cs2',
-      teamFormat:r.team_format||'5v5',
-      matchFormat:r.match_format||'bo3',
-      isOnline:isOnline,
-      location:isOnline?'':(r.location||'').trim(),
-      prizePool:(r.prize_pool||'').trim(),
-      maxTeams:parseInt(r.max_teams)||0,
-      regTeams:0,
-      eventStatus:r.event_status||'draft',
-      description:(r.desc||'').trim(),
-      smmChecklist:{},
-      agentId:'coordinator',
-      color:(CAL_TYPES[type]||CAL_TYPES.other).color
-    };
-    _calEvents.push(ev);
-    if(SUPABASE_LIVE){
-      try{
-        var meta={title:ev.title,cal_type:ev.type,time:ev.time,end_date:ev.endDate,description:ev.description,
-          game:ev.game,team_format:ev.teamFormat,match_format:ev.matchFormat,is_online:ev.isOnline,
-          location:ev.location,prize_pool:ev.prizePool,max_teams:ev.maxTeams,reg_teams:0,
-          event_status:ev.eventStatus,smm_checklist:{},agent_dash_id:'coordinator'};
-        var res=await sbInsert('events',{
-          event_type:ev.type,
-          event_date:ev.date+(ev.time?'T'+ev.time+':00':'T00:00:00'),
-          metadata_json:JSON.stringify(meta)
-        });
-        if(res&&res[0])ev.sbId=res[0].id;
-      }catch(e){console.warn('Event save error:',e);}
-    }
-    renderCalendar();
-    showToast('🏆 Мероприятие создано: '+ev.title,'success');
-  });
-};
-
-// ═══ VIEW EVENT DETAIL ═══
-window.calOpenEvent=function(evId){
-  var ev=_calEvents.find(function(e){return e.id==evId;});
-  if(!ev)return;
-  var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
-  var gameInfo=ESPORT_GAMES.find(function(g){return g.value===ev.game;})||{icon:'🎮',label:ev.game||'—'};
-  var stInfo=EVENT_STATUSES.find(function(s){return s.value===ev.eventStatus;})||{label:ev.eventStatus||'—',color:'#64748b'};
-  var isEsport=['tournament','show_match','qualifier','league','lan','community'].indexOf(ev.type)>=0;
-
-  var html='<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">';
-  html+='<span style="font-size:22px">'+ti.icon+'</span>';
-  html+='<span class="ev-badge" style="background:'+ti.color+'18;color:'+ti.color+';border:1px solid '+ti.color+'33">'+ti.label+'</span>';
-  if(ev.eventStatus)html+='<span class="ev-badge" style="background:'+stInfo.color+'18;color:'+stInfo.color+';border:1px solid '+stInfo.color+'33">'+stInfo.label+'</span>';
-  if(isEsport&&ev.isOnline!==undefined)html+='<span class="ev-badge" style="background:#ffffff08;color:#94a3b8;border:1px solid #334155">'+(ev.isOnline?'🌐 Онлайн':'🏟 Офлайн')+'</span>';
-  html+='</div>';
-
-  html+='<h3 style="margin:0 0 8px;font-size:17px;font-weight:800">'+_escHtml(ev.title)+'</h3>';
-  html+='<div style="font-size:12px;color:var(--dim);margin-bottom:14px">📅 '+ev.date+(ev.endDate?' — '+ev.endDate:'')+(ev.time?' ⏰ '+ev.time:'')+'</div>';
-
-  if(isEsport){
-    html+='<div class="ev-meta-grid">';
-    html+='<div class="ev-meta-card"><div class="ev-meta-label">Игра</div><div class="ev-meta-val">'+gameInfo.icon+' '+gameInfo.label+'</div></div>';
-    if(ev.teamFormat)html+='<div class="ev-meta-card"><div class="ev-meta-label">Формат</div><div class="ev-meta-val">'+_escHtml(ev.teamFormat)+'</div></div>';
-    if(ev.matchFormat)html+='<div class="ev-meta-card"><div class="ev-meta-label">Матчи</div><div class="ev-meta-val">'+_escHtml(ev.matchFormat.toUpperCase())+'</div></div>';
-    if(ev.prizePool)html+='<div class="ev-meta-card"><div class="ev-meta-label">Призовой фонд</div><div class="ev-meta-val" style="color:#00ff88;font-weight:700">'+_escHtml(ev.prizePool)+'</div></div>';
-    if(ev.maxTeams)html+='<div class="ev-meta-card"><div class="ev-meta-label">Команды</div><div class="ev-meta-val">'+(ev.regTeams||0)+' / '+ev.maxTeams+'</div></div>';
-    if(ev.location)html+='<div class="ev-meta-card"><div class="ev-meta-label">Место</div><div class="ev-meta-val">📍 '+_escHtml(ev.location)+'</div></div>';
-    html+='</div>';
-
-    // SMM Checklist
-    html+='<div style="margin-top:14px"><div style="font-size:12px;font-weight:700;color:var(--dim);margin-bottom:8px">📱 SMM-подготовка</div>';
-    html+='<div class="ev-smm-grid">';
-    var cl=ev.smmChecklist||{};
-    var smmDone=0;
-    SMM_CHECKLIST.forEach(function(item){
-      var done=!!cl[item.id];
-      if(done)smmDone++;
-      html+='<div class="ev-smm-item'+(done?' done':'')+'" onclick="calToggleSMM('+ev.id+',\''+item.id+'\')">';
-      html+='<span style="font-size:12px">'+(done?'✅':'⬜')+'</span>';
-      html+='<span style="font-size:11px">'+item.label+'</span>';
-      html+='</div>';
-    });
-    html+='</div>';
-    html+='<div style="margin-top:6px;font-size:10px;color:var(--dim)">Готовность: '+smmDone+'/'+SMM_CHECKLIST.length+' ('+(Math.round(smmDone/SMM_CHECKLIST.length*100))+'%)</div>';
-    html+='</div>';
-  }
-
-  if(ev.description)html+='<div style="padding:10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);font-size:12px;line-height:1.6;margin-top:12px;white-space:pre-wrap">'+_escHtml(ev.description)+'</div>';
-  if(ev.isTask)html+='<div style="font-size:11px;color:var(--dim);margin-top:8px">Это дедлайн задачи из раздела Задачи</div>';
-
-  html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">';
-  if(!ev.isTask){
-    html+='<button class="act-btn" onclick="calEditEvent('+ev.id+')">✏️ Редактировать</button>';
-    html+='<button class="act-btn danger" onclick="calDeleteEvent('+ev.id+')">🗑 Удалить</button>';
-  }
-  html+='<button class="act-btn" onclick="closeModal()">Закрыть</button>';
-  html+='</div>';
-  openModal(html);
-};
-
-// ═══ TOGGLE SMM CHECKLIST ITEM ═══
-window.calToggleSMM=async function(evId,itemId){
-  var ev=_calEvents.find(function(e){return e.id==evId;});
-  if(!ev)return;
-  if(!ev.smmChecklist)ev.smmChecklist={};
-  ev.smmChecklist[itemId]=!ev.smmChecklist[itemId];
-  // Save to Supabase
-  if(ev.sbId&&SUPABASE_LIVE){
-    try{
-      var meta={title:ev.title,cal_type:ev.type,time:ev.time,end_date:ev.endDate,description:ev.description,
-        game:ev.game,team_format:ev.teamFormat,match_format:ev.matchFormat,is_online:ev.isOnline,
-        location:ev.location,prize_pool:ev.prizePool,max_teams:ev.maxTeams,reg_teams:ev.regTeams,
-        event_status:ev.eventStatus,smm_checklist:ev.smmChecklist};
-      await sbPatch('events','id=eq.'+ev.sbId,{metadata_json:JSON.stringify(meta)});
-    }catch(e){}
-  }
-  // Re-render modal
-  calOpenEvent(evId);
-};
-
-// ═══ EDIT EVENT ═══
-window.calEditEvent=function(evId){
-  var ev=_calEvents.find(function(e){return e.id==evId;});
-  if(!ev)return;
-  closeModal();
-  var typeOpts=Object.keys(CAL_TYPES).map(function(k){return{value:k,label:CAL_TYPES[k].icon+' '+CAL_TYPES[k].label};});
-  var gameOpts=ESPORT_GAMES.map(function(g){return{value:g.value,label:g.icon+' '+g.label};});
-  var fmtOpts=ESPORT_FORMATS.map(function(f){return{value:f.value,label:f.label};});
-  var matchOpts=MATCH_FORMATS.map(function(f){return{value:f.value,label:f.label};});
-  var statusOpts=EVENT_STATUSES.map(function(s){return{value:s.value,label:s.label};});
-
-  var isEsport=['tournament','show_match','qualifier','league','lan','community'].indexOf(ev.type)>=0;
-
-  var fields=[
-    {id:'title',label:'Название',type:'text',value:ev.title},
-    {id:'type',label:'Тип',type:'select',value:ev.type||'tournament',options:typeOpts},
-    {id:'game',label:'Игра',type:'select',value:ev.game||'cs2',options:gameOpts},
-    {id:'date',label:'Дата начала',type:'date',value:ev.date},
-    {id:'end_date',label:'Дата окончания',type:'date',value:ev.endDate||''},
-    {id:'time',label:'Время',type:'text',value:ev.time||''},
-    {id:'team_format',label:'Формат команд',type:'select',value:ev.teamFormat||'5v5',options:fmtOpts},
-    {id:'match_format',label:'Формат матчей',type:'select',value:ev.matchFormat||'bo3',options:matchOpts},
-    {id:'is_online',label:'Место',type:'select',value:ev.isOnline?'online':'offline',options:[{value:'online',label:'🌐 Онлайн'},{value:'offline',label:'🏟 Офлайн'}]},
-    {id:'location',label:'Площадка',type:'text',value:ev.location||''},
-    {id:'prize_pool',label:'Призовой фонд',type:'text',value:ev.prizePool||''},
-    {id:'max_teams',label:'Макс. команд',type:'text',value:ev.maxTeams?String(ev.maxTeams):''},
-    {id:'reg_teams',label:'Зарегистрировано команд',type:'text',value:ev.regTeams?String(ev.regTeams):''},
-    {id:'event_status',label:'Статус',type:'select',value:ev.eventStatus||'draft',options:statusOpts},
-    {id:'desc',label:'Описание / правила',type:'textarea',rows:3,value:ev.description||''}
+  // Needed integrations — keep curated list but mark any that became connected
+  var neededList=[
+    {name:'Twitter/X API',purpose:'SMM posting',priority:'high'},
+    {name:'LinkedIn API',purpose:'Outreach automation',priority:'high'},
+    {name:'SendGrid/Resend',purpose:'Email delivery',priority:'high'},
+    {name:'YouTube API',purpose:'Content analytics',priority:'medium'},
+    {name:'Discord Bot',purpose:'Community engagement',priority:'medium'},
+    {name:'Twitch API',purpose:'Streaming analytics',priority:'low'},
+    {name:'Reddit API',purpose:'Community monitoring',priority:'low'}
   ];
 
-  f2fPrompt({title:'✏️ Редактировать мероприятие',fields:fields,submitText:'💾 Сохранить'}).then(async function(r){
-    if(!r)return;
-    if(r.title)ev.title=r.title.trim();
-    if(r.date)ev.date=r.date;
-    ev.endDate=(r.end_date||'').trim();
-    ev.time=(r.time||'').trim();
-    if(r.type){ev.type=r.type;ev.color=(CAL_TYPES[r.type]||CAL_TYPES.other).color;}
-    ev.game=r.game||ev.game;
-    ev.teamFormat=r.team_format||ev.teamFormat;
-    ev.matchFormat=r.match_format||ev.matchFormat;
-    ev.isOnline=r.is_online!=='offline';
-    ev.location=ev.isOnline?'':(r.location||'').trim();
-    ev.prizePool=(r.prize_pool||'').trim();
-    ev.maxTeams=parseInt(r.max_teams)||0;
-    ev.regTeams=parseInt(r.reg_teams)||0;
-    ev.eventStatus=r.event_status||'draft';
-    ev.description=(r.desc||'').trim();
-    if(ev.sbId&&SUPABASE_LIVE){
-      try{
-        var meta={title:ev.title,cal_type:ev.type,time:ev.time,end_date:ev.endDate,description:ev.description,
-          game:ev.game,team_format:ev.teamFormat,match_format:ev.matchFormat,is_online:ev.isOnline,
-          location:ev.location,prize_pool:ev.prizePool,max_teams:ev.maxTeams,reg_teams:ev.regTeams,
-          event_status:ev.eventStatus,smm_checklist:ev.smmChecklist||{}};
-        await sbPatch('events','id=eq.'+ev.sbId,{
-          event_type:ev.type,
-          event_date:ev.date+(ev.time?'T'+ev.time+':00':'T00:00:00'),
-          metadata_json:JSON.stringify(meta)
-        });
-      }catch(e){}
-    }
-    renderCalendar();
-    showToast('✏️ Мероприятие обновлено','success');
-  });
-};
-
-// ═══ DELETE EVENT ═══
-window.calDeleteEvent=function(evId){
-  var ev=_calEvents.find(function(e){return e.id==evId;});
-  if(!ev)return;
-  f2fConfirm('Удалить мероприятие «'+ev.title+'»?').then(async function(ok){
-    if(!ok)return;
-    _calEvents=_calEvents.filter(function(e){return e.id!=evId;});
-    if(ev.sbId&&SUPABASE_LIVE){
-      try{await sbPatch('events','id=eq.'+ev.sbId,{active:false});}catch(e){}
-    }
-    closeModal();renderCalendar();
-    showToast('🗑 Мероприятие удалено','info');
-  });
-};
-
-// ═══ RENDER: EVENTS PANEL ═══
-var _calView='list'; // DEFAULT: list view (cards) — better for esports events (FACEIT/Challengermode pattern)
-
-window.calSwitchView=function(view){
-  _calView=view;
-  // Toggle active button
-  var lb=document.getElementById('evViewList');
-  var cb=document.getElementById('evViewCal');
-  var cn=document.getElementById('evCalNav');
-  if(lb)lb.classList.toggle('active',view==='list');
-  if(cb)cb.classList.toggle('active',view==='calendar');
-  if(cn)cn.style.display=view==='calendar'?'flex':'none';
-  renderCalendar();
-};
-
-// Populate game filter dropdown from ESPORT_GAMES
-(function(){
-  setTimeout(function(){
-    var sel=document.getElementById('evFilterGame');
-    if(!sel||sel.options.length>1)return;
-    ESPORT_GAMES.forEach(function(g){
-      var opt=document.createElement('option');opt.value=g.value;opt.textContent=g.icon+' '+g.label;sel.appendChild(opt);
-    });
-  },500);
-})();
-
-function _evGetFiltered(){
-  var statusFilter=(document.getElementById('evFilterStatus')||{}).value||'all';
-  var gameFilter=(document.getElementById('evFilterGame')||{}).value||'all';
-  var filtered=_calEvents.filter(function(ev){
-    if(statusFilter!=='all'&&ev.eventStatus!==statusFilter)return false;
-    if(gameFilter!=='all'&&ev.game!==gameFilter)return false;
-    return true;
-  });
-  return filtered;
+  return {connected:connected,needed:neededList};
 }
 
-function renderCalendar(){
-  _calLoadFromSupabase();
-  var grid=document.getElementById('calGrid');
-  var countBar=document.getElementById('evCountBar');
-  var label=document.getElementById('calMonthLabel');
-  var countEl=document.getElementById('tab-calendar-count');
-  if(!grid)return;
-
-  var filtered=_evGetFiltered();
-  var totalEvents=_calEvents.length;
-
-  // Update tab badge
-  if(countEl)countEl.textContent=totalEvents;
-  // Update count bar
-  if(countBar){
-    var live=_calEvents.filter(function(e){return e.eventStatus==='live';}).length;
-    var upcoming=_calEvents.filter(function(e){return e.eventStatus==='reg_open'||e.eventStatus==='announced';}).length;
-    countBar.textContent=totalEvents+' мероприятий'+(filtered.length!==totalEvents?' (показано '+filtered.length+')':'')
-      +(live?' · 🔴 '+live+' LIVE':'')
-      +(upcoming?' · '+upcoming+' предстоящих':'');
-  }
-
-  var year=_calDate.getFullYear();
-  var month=_calDate.getMonth();
-  var monthNames=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
-  if(label)label.textContent=monthNames[month]+' '+year;
-  var todayStr=new Date().toISOString().slice(0,10);
-
-  if(_calView==='list'){
-    // ══════════════════════════════════
-    // LIST VIEW — event cards (primary)
-    // ══════════════════════════════════
-    var sorted=filtered.sort(function(a,b){
-      // Live first, then by date
-      var aLive=a.eventStatus==='live'?0:1;var bLive=b.eventStatus==='live'?0:1;
-      if(aLive!==bLive)return aLive-bLive;
-      return (a.date||'').localeCompare(b.date||'');
-    });
-
-    if(sorted.length===0){
-      // ── Empty state ──
-      grid.innerHTML='<div class="ev-empty">'+
-        '<div class="ev-empty-icon">🏆</div>'+
-        '<div class="ev-empty-title">'+(totalEvents===0?'Создайте первое мероприятие':'Нет мероприятий по фильтру')+'</div>'+
-        '<div class="ev-empty-desc">'+(totalEvents===0?
-          'Турниры, квалификации, шоу-матчи — добавляйте ивенты<br>и отслеживайте SMM-подготовку к каждому':
-          'Попробуйте изменить фильтры или сбросить их')+'</div>'+
-        (totalEvents===0?'<button class="ev-empty-btn" onclick="calCreateEvent()">+ Создать мероприятие</button>':'')+
-      '</div>';
-      return;
-    }
-
-    var html='<div class="ev-list">';
-    sorted.forEach(function(ev){
-      var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
-      var gi=ESPORT_GAMES.find(function(g){return g.value===ev.game;})||{icon:'🎮',label:ev.game||''};
-      var si=EVENT_STATUSES.find(function(s){return s.value===ev.eventStatus;})||{label:ev.eventStatus||'',color:'#64748b'};
-      var isLive=ev.eventStatus==='live';
-
-      // SMM progress
-      var smmDone=0;
-      if(ev.smmChecklist){SMM_CHECKLIST.forEach(function(item){if(ev.smmChecklist[item.id])smmDone++;});}
-      var smmPct=Math.round(smmDone/SMM_CHECKLIST.length*100);
-      var smmColor=smmPct>=100?'#00ff88':smmPct>=50?'#ffb800':'#ff4444';
-
-      // Days until event
-      var daysUntil=Math.ceil((new Date(ev.date)-new Date())/86400000);
-      var whenLabel=isLive?'🔴 Идёт сейчас':daysUntil===0?'Сегодня':daysUntil===1?'Завтра':daysUntil>0&&daysUntil<=7?'через '+daysUntil+' дн':ev.date;
-
-      html+='<div class="ev-card'+(isLive?' ev-card-live':'')+'" onclick="calOpenEvent(\''+ev.id+'\')">';
-      html+='<div class="ev-card-accent" style="background:'+ti.color+'"></div>';
-
-      // Row 1: Badges
-      html+='<div class="ev-card-top" style="padding-left:8px">';
-      html+='<span class="ev-badge" style="background:'+ti.color+'18;color:'+ti.color+';border:1px solid '+ti.color+'33">'+ti.icon+' '+ti.label+'</span>';
-      if(ev.eventStatus)html+='<span class="ev-badge'+(isLive?' ev-badge-live':'')+'" style="background:'+si.color+'18;color:'+si.color+';border:1px solid '+si.color+'33">'+si.label+'</span>';
-      if(!ev.isTask)html+='<span class="ev-badge" style="background:#ffffff08;color:#94a3b8;border:1px solid #334155">'+(ev.isOnline?'🌐 Онлайн':'🏟 Офлайн')+'</span>';
-      html+='<span style="margin-left:auto;font-size:10px;color:'+(isLive?'#ef4444':'var(--dim)')+';font-weight:'+(isLive?'700':'400')+'">'+whenLabel+'</span>';
-      html+='</div>';
-
-      // Row 2: Title
-      html+='<div class="ev-card-title" style="padding-left:8px">'+_escHtml(ev.title)+'</div>';
-
-      // Row 3: Meta chips
-      html+='<div class="ev-card-meta" style="padding-left:8px">';
-      if(ev.game)html+='<span>'+gi.icon+' '+gi.label+'</span>';
-      if(ev.teamFormat)html+='<span>👥 '+ev.teamFormat+'</span>';
-      if(ev.matchFormat)html+='<span>🎲 '+ev.matchFormat.toUpperCase()+'</span>';
-      if(ev.time)html+='<span>⏰ '+ev.time+'</span>';
-      if(ev.location)html+='<span>📍 '+_escHtml(ev.location)+'</span>';
-      html+='</div>';
-
-      // Row 4: Prize + Teams + SMM bar
-      html+='<div class="ev-card-bottom" style="padding-left:8px">';
-      if(ev.prizePool)html+='<div class="ev-card-prize">💰 '+_escHtml(ev.prizePool)+'</div>';
-      if(ev.maxTeams)html+='<div class="ev-card-teams">🏁 '+(ev.regTeams||0)+'/'+ev.maxTeams+' команд</div>';
-      if(!ev.isTask){
-        html+='<div class="ev-card-smm"><span style="font-size:9px;color:var(--dim)">SMM</span>';
-        html+='<div class="ev-card-smm-bar"><div class="ev-card-smm-fill" style="width:'+smmPct+'%;background:'+smmColor+'"></div></div>';
-        html+='<span style="font-size:9px;color:'+smmColor+'">'+smmPct+'%</span></div>';
-      }
-      html+='</div>';
-
-      html+='</div>';
-    });
-    html+='</div>';
-    grid.innerHTML=html;
-
-  }else{
-    // ══════════════════════════════════
-    // CALENDAR GRID VIEW (secondary)
-    // ══════════════════════════════════
-    var firstDay=new Date(year,month,1).getDay();
-    if(firstDay===0)firstDay=7;
-    var daysInMonth=new Date(year,month+1,0).getDate();
-
-    var evByDate={};
-    filtered.forEach(function(ev){
-      if(!ev.date)return;
-      var evMonth=ev.date.slice(0,7);
-      var targetMonth=year+'-'+(month<9?'0':'')+(month+1);
-      if(evMonth===targetMonth){
-        if(!evByDate[ev.date])evByDate[ev.date]=[];
-        evByDate[ev.date].push(ev);
-      }
-    });
-
-    var html='<div class="cal-grid">';
-    html+='<div class="cal-header">Пн</div><div class="cal-header">Вт</div><div class="cal-header">Ср</div><div class="cal-header">Чт</div><div class="cal-header">Пт</div><div class="cal-header cal-weekend">Сб</div><div class="cal-header cal-weekend">Вс</div>';
-    for(var i=1;i<firstDay;i++)html+='<div class="cal-cell empty"></div>';
-    for(var d=1;d<=daysInMonth;d++){
-      var dateStr=year+'-'+(month<9?'0':'')+(month+1)+'-'+(d<10?'0':'')+d;
-      var isToday=dateStr===todayStr;
-      var dayEvents=evByDate[dateStr]||[];
-      var hasEvents=dayEvents.length>0;
-      html+='<div class="cal-cell'+(isToday?' today':'')+(hasEvents?' has-events':'')+'" onclick="calDayClick(\''+dateStr+'\')">';
-      html+='<div class="cal-day'+(isToday?' today':'')+'">'+d+'</div>';
-      if(hasEvents){
-        html+='<div class="cal-dots">';
-        dayEvents.slice(0,3).forEach(function(ev){
-          html+='<div class="cal-dot" style="background:'+ev.color+'" title="'+_escHtml(ev.title)+'"></div>';
-        });
-        if(dayEvents.length>3)html+='<span style="font-size:8px;color:var(--dim)">+'+String(dayEvents.length-3)+'</span>';
-        html+='</div>';
-      }
-      html+='</div>';
-    }
-    html+='</div>';
-    grid.innerHTML=html;
-  }
+function renderIntegrations(){
+  var intg=buildLiveIntegrations();
+  var conn=intg.connected;var need=intg.needed;
+  document.getElementById('intg-count').textContent=conn.length+' подключено, '+need.length+' нужно';
+  var html='<h3 style="font-size:14px;color:var(--green);margin-bottom:12px">✅ Подключено ('+conn.length+')</h3>';
+  html+=conn.map(function(c){
+    return '<div class="intg-row">'+
+      '<div class="intg-dot '+c.status+'"></div>'+
+      '<div class="intg-name">'+c.name+'</div>'+
+      '<div class="intg-purpose">'+c.purpose+'</div>'+
+      '<div style="font-size:10px;color:var(--dim);margin-left:auto;white-space:nowrap">'+c.detail+'</div>'+
+      '<div class="intg-badge '+c.status+'">'+(c.status==='active'?'Active':c.status==='limited'?'Limited':'Pending')+'</div>'+
+    '</div>';
+  }).join('');
+  html+='<h3 style="font-size:14px;color:var(--amber);margin:20px 0 12px">⏳ Нужно подключить ('+need.length+')</h3>';
+  html+=need.map(function(n){
+    return '<div class="intg-row">'+
+      '<div class="intg-dot needed"></div>'+
+      '<div class="intg-name">'+n.name+'</div>'+
+      '<div class="intg-purpose">'+n.purpose+'</div>'+
+      '<div class="intg-badge needed">'+n.priority+'</div>'+
+    '</div>';
+  }).join('');
+  document.getElementById('intgContent').innerHTML=html;
 }
-
-window.calDayClick=function(dateStr){
-  var dayEvents=_calEvents.filter(function(e){return e.date===dateStr;});
-  if(dayEvents.length===0){
-    _calDate=new Date(dateStr+'T12:00:00');
-    calCreateEvent();
-  }else if(dayEvents.length===1){
-    calOpenEvent(dayEvents[0].id);
-  }else{
-    var html='<h3 style="margin:0 0 12px">📅 '+dateStr+' — '+dayEvents.length+' мероприятий</h3>';
-    dayEvents.forEach(function(ev){
-      var ti=CAL_TYPES[ev.type]||CAL_TYPES.other;
-      var gi=ESPORT_GAMES.find(function(g){return g.value===ev.game;})||{icon:'',label:''};
-      html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);margin-bottom:6px;cursor:pointer;transition:border-color .15s" onmouseover="this.style.borderColor=\'#a855f7\'" onmouseout="this.style.borderColor=\'var(--border)\'" onclick="calOpenEvent(\''+ev.id+'\')">';
-      html+='<span style="font-size:18px">'+ti.icon+'</span>';
-      html+='<div style="flex:1"><div style="font-size:13px;font-weight:700">'+_escHtml(ev.title)+'</div>';
-      html+='<div style="font-size:10px;color:var(--dim)">'+(ev.time||'')+(gi.label?' · '+gi.icon+' '+gi.label:'')+(ev.teamFormat?' · '+ev.teamFormat:'')+'</div></div>';
-      html+='<span class="ev-badge" style="background:'+ti.color+'18;color:'+ti.color+';border:1px solid '+ti.color+'33">'+ti.label+'</span>';
-      html+='</div>';
-    });
-    html+='<div style="margin-top:14px;text-align:center"><button class="act-btn" onclick="closeModal()">Закрыть</button></div>';
-    openModal(html);
-  }
-};
-
-// Initial render (list view default, no delay needed for list)
-setTimeout(renderCalendar,1500);
+renderIntegrations();
 
 // ═══ MINI ANALYTICS ═══
 function renderAnalytics(){
@@ -3097,9 +2188,8 @@ function renderPipeline(){
 }
 
 // ═══ CLOCK ═══
-var _clockInterval=setInterval(()=>{
-  var clk=document.getElementById('clock');
-  if(clk)clk.textContent=new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+setInterval(()=>{
+  document.getElementById('clock').textContent=new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
 },1000);
 
 // ═══ MODAL ═══
@@ -3158,22 +2248,12 @@ function renderLeads(){
     }
     window._sbPartners.forEach(function(p,i){
       var exists=D.leads.find(function(l){return l.sbId===p.id;});
-      if(exists){
-        // Update existing lead with fresh SB data
-        exists.name=p.contact_name||exists.name;
-        exists.company=p.company_name||exists.company;
-        exists.email=p.contact_email||exists.email;
-        exists.sbStage=p.stage;
-        exists.priority=p.stage==='negotiating'?'hot':p.stage==='contacted'?'warm':'medium';
-        return;
-      }
-      var nParts=(p.notes||'').split('|');
-      var loc=nParts.length>1?nParts[1].trim():'CIS';
-      var src=nParts.length>0?nParts[0].trim():'AI Agent';
-      // Use stable ID derived from sbId hash to avoid index-based collision
-      var stableId=8000+Math.abs(String(p.id).split('').reduce(function(a,c){return ((a<<5)-a)+c.charCodeAt(0);},0)%9000);
-      D.leads.push({
-          id:stableId,sbId:p.id,name:p.contact_name||'Контакт',title:p.segment||'',
+      if(!exists){
+        var nParts=(p.notes||'').split('|');
+        var loc=nParts.length>1?nParts[1].trim():'CIS';
+        var src=nParts.length>0?nParts[0].trim():'AI Agent';
+        D.leads.push({
+          id:8000+i,sbId:p.id,name:p.contact_name||'Контакт',title:p.segment||'',
           company:p.company_name||'',email:p.contact_email||'',
           linkedin:p.linkedin||'',phone:p.phone||'',website:p.website||'',
           location:loc,source:src,
@@ -3185,6 +2265,7 @@ function renderLeads(){
           assignedTo:p.assigned_to||'',
           status:'active',sbStage:p.stage
         });
+      }
     });
   }
   const filtered=D.leads.filter(l=>leadFilter==='all'||l.priority===leadFilter);
@@ -3537,22 +2618,14 @@ function renderPosts(){
       D.posts=D.posts.filter(p=>p.sbId); // keep only previously merged SB posts (will re-add)
     }
     window._sbContent.forEach(function(c,i){
-      // Update existing if already merged
-      var existPost=D.posts.find(p=>p.sbId===c.id);
-      if(existPost){
-        existPost.sbStatus=c.status;
-        existPost.status=({'pending_approval':'draft','approved':'ready','rejected':'draft','published':'published'})[c.status]||existPost.status;
-        existPost.qaScore=c.qa_score||existPost.qaScore;
-        existPost.qaVerdict=c.qa_verdict||existPost.qaVerdict;
-        return;
-      }
-      var statusMap={'pending_approval':'draft','approved':'ready','rejected':'draft','published':'published'};
+      // Skip if already merged
+      if(D.posts.find(p=>p.sbId===c.id))return;
+      var statusMap={'pending_approval':'draft','approved':'ready','rejected':'draft','published':'published','needs_rework':'draft'};
       var ag=window._sbAgentById&&c.agent_id?window._sbAgentById[c.agent_id]:null;
       var dashAgentId=ag?SB_SLUG_TO_DASH[ag.slug]:'content';
-      var catLabel=c.status==='pending_approval'?'🤖 AI Generated (LIVE)':c.status==='approved'?'✅ Approved (LIVE)':c.status==='published'?'📢 Published (LIVE)':'📝 Content (LIVE)';
-      var stablePostId=9000+Math.abs(String(c.id).split('').reduce(function(a,ch){return ((a<<5)-a)+ch.charCodeAt(0);},0)%9000);
+      var catLabel=c.status==='pending_approval'?'🤖 AI Generated (LIVE)':c.status==='approved'?'✅ Approved (LIVE)':c.status==='published'?'📢 Published (LIVE)':c.status==='needs_rework'?'🔄 На доработке (LIVE)':c.status==='rejected'?'❌ Отклонён (LIVE)':'📝 Content (LIVE)';
       D.posts.unshift({
-        id:stablePostId, sbId:c.id, platform:c.platform||'telegram',
+        id:9000+i, sbId:c.id, platform:c.platform||'telegram',
         category:catLabel,
         text:c.content_text||'[Текст не указан]', hashtags:'', date:(c.created_at||'').slice(0,10),
         scheduledAt:c.scheduled_at, publishedAt:c.published_at,
@@ -3568,16 +2641,17 @@ function renderPosts(){
     if(postFilter==='pending')return p.sbStatus==='pending_approval';
     if(postFilter==='approved')return p.sbStatus==='approved';
     if(postFilter==='published')return p.sbStatus==='published';
-    // Platform filter (Telegram, Twitter, etc.)
+    if(postFilter==='needs_rework')return p.sbStatus==='needs_rework';
+    if(postFilter==='rejected')return p.sbStatus==='rejected';
     return p.platform&&p.platform.toLowerCase()===postFilter.toLowerCase();
   });
   document.getElementById('posts-count').textContent=filtered.length+' постов';
   document.getElementById('postsGrid').innerHTML=filtered.map(p=>`
-    <div class="post-card" onclick="openPostModal(${typeof p.sbId==='string'?("'"+p.sbId+"'"):p.id})" style="${p.isLive?'border-top:2px solid #00ff88;':''}${p.sbStatus==='pending_approval'?'border-left:3px solid #ff9800;':''}${p.sbStatus==='approved'?'border-left:3px solid #00ff88;':''}">
+    <div class="post-card" onclick="openPostModal(${typeof p.sbId==='string'?("'"+p.sbId+"'"):p.id})" style="${p.isLive?'border-top:2px solid #00ff88;':''}${p.sbStatus==='pending_approval'?'border-left:3px solid #ff9800;':p.sbStatus==='approved'?'border-left:3px solid #00ff88;':p.sbStatus==='needs_rework'?'border-left:3px solid #a855f7;':p.sbStatus==='rejected'?'border-left:3px solid #ff4444;':p.sbStatus==='published'?'border-left:3px solid #00e5ff;':''}">
       <div class="post-header">
         <span class="post-platform ${p.platform}">${p.platform}</span>
         ${p.isLive?'<span style="font-size:9px;padding:2px 6px;background:#00ff8822;color:#00ff88;border:1px solid #00ff8844;border-radius:4px;font-weight:700">LIVE</span>':''}
-        <span class="post-status ${p.status}">${p.sbStatus==='pending_approval'?'⏳ Ждёт одобрения':p.sbStatus==='approved'?'✅ Одобрен':p.sbStatus==='published'?'📢 Опубликован':p.sbStatus==='rejected'?'❌ Отклонён':p.status==='ready'?'✅ Ready':'📝 Draft'}</span>
+        <span class="post-status ${p.status}">${p.sbStatus==='pending_approval'?'⏳ Ждёт одобрения':p.sbStatus==='approved'?'✅ Одобрен':p.sbStatus==='published'?'📢 Опубликован':p.sbStatus==='needs_rework'?'🔄 На доработке':p.sbStatus==='rejected'?'❌ Отклонён':p.status==='ready'?'✅ Ready':'📝 Draft'}</span>
       </div>
       <div class="post-category">${p.category||''}</div>
       ${p.imageUrl?'<div style="margin:6px 0;border-radius:6px;overflow:hidden;max-height:120px"><img src="'+p.imageUrl+'" style="width:100%;height:auto;display:block;object-fit:cover" onerror="this.parentElement.style.display=\'none\'"></div>':''}
@@ -3601,6 +2675,69 @@ document.getElementById('postFilters').addEventListener('click',e=>{
   postFilter=e.target.dataset.filter;
   renderPosts();
 });
+
+// ═══ POSTS ANALYTICS (Charts + KPIs) ═══
+var _chartQA=null,_chartDaily=null;
+function renderPostsAnalytics(){
+  if(typeof Chart==='undefined')return;
+  var posts=D.posts.filter(function(p){return p.isLive;});
+  var total=posts.length;
+  var counts={approved:0,published:0,rejected:0,pending_approval:0,needs_rework:0};
+  var totalScore=0,scoreCount=0,scoreDist={},daily={};
+  posts.forEach(function(p){
+    counts[p.sbStatus]=(counts[p.sbStatus]||0)+1;
+    if(p.qaScore!=null){totalScore+=p.qaScore;scoreCount++;scoreDist[p.qaScore]=(scoreDist[p.qaScore]||0)+1;}
+    var day=p.date||'';
+    if(day){
+      if(!daily[day])daily[day]={gen:0,pub:0,app:0,rej:0};
+      daily[day].gen++;
+      if(p.sbStatus==='published')daily[day].pub++;
+      if(p.sbStatus==='approved')daily[day].app++;
+      if(p.sbStatus==='rejected')daily[day].rej++;
+    }
+  });
+  var avgScore=scoreCount>0?(totalScore/scoreCount).toFixed(1):'—';
+  var el=function(id){return document.getElementById(id);};
+  if(el('pa-total'))el('pa-total').textContent=total;
+  if(el('pa-published'))el('pa-published').textContent=counts.published;
+  if(el('pa-published-pct'))el('pa-published-pct').textContent=total>0?Math.round(counts.published/total*100)+'% от общего':'';
+  if(el('pa-approved'))el('pa-approved').textContent=counts.approved;
+  if(el('pa-pending'))el('pa-pending').textContent=(counts.pending_approval||0)+(counts.needs_rework||0);
+  if(el('pa-pending-sub'))el('pa-pending-sub').textContent=(counts.needs_rework||0)+' на доработке';
+  if(el('pa-rejected'))el('pa-rejected').textContent=counts.rejected;
+  if(el('pa-rejected-pct'))el('pa-rejected-pct').textContent=total>0?Math.round(counts.rejected/total*100)+'% брак':'';
+  if(el('pa-avg-score'))el('pa-avg-score').textContent=avgScore;
+  if(el('pa-score-sub'))el('pa-score-sub').textContent='порог: 8+ | approval: '+Math.round((counts.approved+counts.published)/Math.max(total,1)*100)+'%';
+  // QA Score chart
+  var scores=Object.keys(scoreDist).sort(function(a,b){return a-b;});
+  var scoreColors=scores.map(function(s){return parseInt(s)>=8?'#00ff88cc':parseInt(s)>=5?'#ffb800cc':'#ff4444cc';});
+  var ctx1=el('chartQAScores');
+  if(ctx1){
+    if(_chartQA)_chartQA.destroy();
+    _chartQA=new Chart(ctx1,{type:'bar',
+      data:{labels:scores.map(function(s){return 'Score '+s;}),datasets:[{data:scores.map(function(s){return scoreDist[s];}),backgroundColor:scoreColors,borderRadius:6}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{grid:{display:false},ticks:{color:'#64748b',font:{size:10}}},y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#64748b',stepSize:5}}}}
+    });
+  }
+  // Daily chart
+  var days=Object.keys(daily).sort();
+  var ctx2=el('chartDailyPosts');
+  if(ctx2){
+    if(_chartDaily)_chartDaily.destroy();
+    _chartDaily=new Chart(ctx2,{type:'bar',
+      data:{labels:days.map(function(d){return d.slice(5);}),datasets:[
+        {label:'Сгенерировано',data:days.map(function(d){return daily[d].gen;}),backgroundColor:'#a855f7aa',borderRadius:4},
+        {label:'Одобрено',data:days.map(function(d){return daily[d].app;}),backgroundColor:'#00ff88aa',borderRadius:4},
+        {label:'Опубликовано',data:days.map(function(d){return daily[d].pub;}),backgroundColor:'#00e5ffaa',borderRadius:4},
+        {label:'Отклонено',data:days.map(function(d){return daily[d].rej;}),backgroundColor:'#ff4444aa',borderRadius:4}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:'top',labels:{color:'#64748b',usePointStyle:true,padding:10,font:{size:10}}}},
+        scales:{x:{grid:{display:false},ticks:{color:'#64748b',font:{size:10}}},y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#64748b',stepSize:5}}}}
+    });
+  }
+}
 
 window.openPostModal=function(id){
   const p=D.posts.find(x=>x.id===id||x.sbId===id);if(!p)return;
@@ -3899,6 +3036,7 @@ window.publishPostToTelegram=function(postId){
   });
 };
 renderPosts();
+renderPostsAnalytics();
 
 // ═══ REPORTS ═══
 let reportFilter='all';
@@ -4113,68 +3251,28 @@ window.triggerSingleAgent=async function(agentSlug, btnEl){
   return window.triggerAgentCycles(btnEl, agentSlug);
 };
 
-// ═══ STRATEGY CONTEXT for task decomposition ═══
-function _buildStrategyContext(){
-  var p=window._kpiProgress;
-  var strat=window._strategyText||'';
-  if(!p&&!strat)return '';
-  var html='<div style="margin:12px 0;padding:12px;background:#8b5cf610;border:1px solid #8b5cf633;border-radius:8px">';
-  html+='<div style="font-size:11px;font-weight:700;color:#8b5cf6;margin-bottom:8px">🧩 Контекст стратегии для выверки</div>';
-  if(p){
-    var mp=p.monthPct||0;
-    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">';
-    // Leads progress
-    var lc=p.leads||{pct:0,current:0,target:0};
-    var lColor=lc.pct>=mp*0.7?'#10b981':lc.pct>=mp*0.4?'#f59e0b':'#ef4444';
-    html+='<div style="font-size:11px"><span style="color:'+lColor+'">📞 Лиды: '+lc.current+'/'+lc.target+'</span> <span style="color:var(--dim)">('+lc.pct+'%)</span></div>';
-    // Content progress
-    var cc=p.content||{pct:0,current:0,target:0};
-    var cColor=cc.pct>=mp*0.7?'#10b981':cc.pct>=mp*0.4?'#f59e0b':'#ef4444';
-    html+='<div style="font-size:11px"><span style="color:'+cColor+'">📝 Контент: '+cc.current+'/'+cc.target+'</span> <span style="color:var(--dim)">('+cc.pct+'%)</span></div>';
-    html+='<div style="font-size:11px;color:var(--dim)">📅 Месяц: '+mp+'% прошло</div>';
-    // Deficit alerts
-    var deficits=[];
-    if(lc.pct<mp-15)deficits.push('⚠️ Лиды отстают: нужно '+Math.round((lc.target*mp/100)-lc.current)+' ещё');
-    if(cc.pct<mp-15)deficits.push('⚠️ Контент отстаёт: нужно '+Math.round((cc.target*mp/100)-cc.current)+' ещё');
-    if(deficits.length)html+='<div style="font-size:11px;color:#ef4444">'+deficits.join('<br>')+'</div>';
-    html+='</div>';
-  }
-  if(strat){
-    html+='<details style="margin-top:4px"><summary style="font-size:10px;color:var(--dim);cursor:pointer">📋 Текст стратегии</summary>';
-    html+='<div style="font-size:11px;color:var(--text);margin-top:4px;line-height:1.5;max-height:80px;overflow-y:auto">'+_escHtml(strat.slice(0,500))+'</div></details>';
-  }
-  html+='</div>';
-  return html;
-}
-
 // ═══ TASKS ═══
 // Helper: build human-readable title from payload
-function _escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function _cleanTemplate(s){return String(s||'').replace(/\{\{[^}]+\}\}/g,'…').replace(/\s+/g,' ').trim();}
-function _truncate(s,n){s=_cleanTemplate(s);return s.length>n?s.slice(0,n)+'…':s;}
-function taskSmartTitle(t,maxLen){
-  maxLen=maxLen||120;
+function taskSmartTitle(t){
   var p=t._payload||{};
   var aType=(t._actionType||'').toLowerCase();
   if(aType.includes('email_template')){
+    var to=p.to||p.email||p.recipient||p.contact_email||'';
+    var subj=p.subject||p.email_subject||'';
     var company=p.company||p.partner||'';
-    var subj=_cleanTemplate(p.subject||p.email_subject||'');
-    if(company)return '📧 Email → '+_truncate(company,30)+(subj?' — '+_truncate(subj,40):'');
-    if(subj)return '📧 '+_truncate(subj,60);
-    return '📧 Email шаблон';
+    if(to||company)return '📧 Email'+(company?' → '+company:'')+(to?' ('+to+')':'')+(subj?' — '+subj:'');
+    if(p.template||p.body||p.text)return '📧 Email: '+(p.template||p.body||p.text||'').slice(0,60)+'...';
+    return '📧 Email шаблон (нажми для превью)';
   }
   if(aType.includes('lead_suggested')){
     var name=p.name||p.contact||p.contact_name||'';
     var comp=p.company||p.organization||'';
-    if(name||comp)return '🆕 Лид: '+(name?_truncate(name,25):'')+(comp?' @ '+_truncate(comp,25):'');
-    return '🆕 Рекомендация лида';
+    var reason=p.reason||p.description||p.why||'';
+    if(name||comp)return '🆕 Лид: '+(name?name:'')+(comp?' @ '+comp:'')+(reason?' — '+reason.slice(0,40):'');
+    return '🆕 Рекомендация лида (нажми для превью)';
   }
-  if(aType.includes('followup')){
-    var target=p.contact||p.name||p.company||'';
-    return '🔄 Follow-up'+(target?' → '+_truncate(target,30):'');
-  }
-  if(aType.includes('task_from_chat')||t.fromChat)return _truncate(t.title,maxLen);
-  return _truncate(t.title,maxLen);
+  if(aType.includes('task_from_chat')||t.fromChat)return t.title;
+  return t.title;
 }
 // Helper: build preview card HTML from payload
 function taskPreviewHTML(t){
@@ -4217,13 +3315,13 @@ function taskPreviewHTML(t){
 }
 // ═══ KANBAN TASK STATUSES ═══
 var KANBAN_STATUSES={
-  backlog:{label:'📥 Бэклог',color:'#64748b',hint:'Задачи от координатора и CEO для планирования'},
-  decomposed:{label:'🧩 Декомпозиция',color:'#8b5cf6',hint:'Выверка по стратегии, KPI и видению компании'},
-  planned:{label:'📋 Запланировано',color:'#06b6d4',hint:'Готово к выполнению агентами'},
-  in_progress:{label:'🔧 В работе',color:'#f59e0b',hint:'Агенты выполняют задачу'},
-  done:{label:'✅ Выполнено',color:'#10b981',hint:'Агенты завершили задачу'},
-  rework:{label:'🔄 Переработка',color:'#f97316',hint:'Требуется доработка'},
-  cancelled:{label:'❌ Отменено',color:'#ef4444',hint:'Отменённые задачи — анализ проблемных мест'}
+  backlog:{label:'📥 Бэклог',color:'#64748b'},
+  decomposed:{label:'🧩 Декомпозиция',color:'#8b5cf6'},
+  planned:{label:'📋 Запланировано',color:'#06b6d4'},
+  in_progress:{label:'🔧 В работе',color:'#f59e0b'},
+  done:{label:'✅ Выполнено',color:'#10b981'},
+  rework:{label:'🔄 Переработка',color:'#f97316'},
+  cancelled:{label:'❌ Отменено',color:'#475569'}
 };
 // Map old statuses to kanban statuses
 function mapToKanban(status){
@@ -4246,58 +3344,11 @@ window.toggleTaskView=function(){
   renderTasks();
 };
 
-// ═══ TASK FILTERING ═══
-function _getFilteredTasks(){
-  var searchEl=document.getElementById('taskSearch');
-  var statusEl=document.getElementById('taskFilterStatus');
-  var agentEl=document.getElementById('taskFilterAgent');
-  var priorityEl=document.getElementById('taskFilterPriority');
-  var search=(searchEl?searchEl.value:'').toLowerCase().trim();
-  var statusFilter=statusEl?statusEl.value:'all';
-  var agentFilter=agentEl?agentEl.value:'all';
-  var priorityFilter=priorityEl?priorityEl.value:'all';
-  return D.tasks.filter(function(t){
-    var ks=mapToKanban(t.kanbanStatus||t.status);
-    if(statusFilter!=='all'&&ks!==statusFilter)return false;
-    if(agentFilter!=='all'&&t.assignedTo!==agentFilter)return false;
-    if(priorityFilter!=='all'&&t.priority!==priorityFilter)return false;
-    if(search){
-      var haystack=((t.title||'')+(t.description||'')+(t.agentName||'')+(t.result||'')+(t._actionType||'')).toLowerCase();
-      if(haystack.indexOf(search)===-1)return false;
-    }
-    return true;
-  });
-}
-
-// ═══ TASK STATS BAR ═══
-function _renderTaskStats(){
-  var bar=document.getElementById('taskStatsBar');
-  if(!bar)return;
-  var all=D.tasks;
-  var counts={backlog:0,decomposed:0,planned:0,in_progress:0,done:0,rework:0,cancelled:0};
-  all.forEach(function(t){var ks=mapToKanban(t.kanbanStatus||t.status);counts[ks]=(counts[ks]||0)+1;});
-  var total=all.length;
-  var critCount=all.filter(function(t){return t.priority==='critical';}).length;
-  var highCount=all.filter(function(t){return t.priority==='high';}).length;
-  var html='';
-  html+='<span class="task-stat" onclick="document.getElementById(\'taskFilterStatus\').value=\'all\';renderTasks()"><span class="ts-num">'+total+'</span>всего</span>';
-  if(counts.in_progress)html+='<span class="task-stat" style="border-color:#f59e0b44;color:#f59e0b" onclick="document.getElementById(\'taskFilterStatus\').value=\'in_progress\';renderTasks()"><span class="ts-num">'+counts.in_progress+'</span>в работе</span>';
-  if(counts.backlog)html+='<span class="task-stat" onclick="document.getElementById(\'taskFilterStatus\').value=\'backlog\';renderTasks()"><span class="ts-num">'+counts.backlog+'</span>бэклог</span>';
-  if(counts.planned)html+='<span class="task-stat" style="border-color:#06b6d444;color:#06b6d4" onclick="document.getElementById(\'taskFilterStatus\').value=\'planned\';renderTasks()"><span class="ts-num">'+counts.planned+'</span>план</span>';
-  if(counts.done)html+='<span class="task-stat ts-good" onclick="document.getElementById(\'taskFilterStatus\').value=\'done\';renderTasks()"><span class="ts-num">'+counts.done+'</span>выполнено</span>';
-  if(counts.rework)html+='<span class="task-stat ts-alert" onclick="document.getElementById(\'taskFilterStatus\').value=\'rework\';renderTasks()"><span class="ts-num">'+counts.rework+'</span>переработка</span>';
-  if(counts.cancelled)html+='<span class="task-stat" style="border-color:#ef444444;color:#64748b" onclick="document.getElementById(\'taskFilterStatus\').value=\'cancelled\';renderTasks()"><span class="ts-num">'+counts.cancelled+'</span>отменено</span>';
-  if(critCount)html+='<span class="task-stat ts-alert"><span class="ts-num">'+critCount+'</span>🚨 critical</span>';
-  if(highCount)html+='<span class="task-stat" style="border-color:#ff980044;color:#ff9800"><span class="ts-num">'+highCount+'</span>🔴 high</span>';
-  bar.innerHTML=html;
-}
-
 function renderKanban(){
-  _renderTaskStats();
-  var filtered=_getFilteredTasks();
-  var cols={backlog:[],decomposed:[],planned:[],in_progress:[],done:[],rework:[],cancelled:[]};
-  filtered.forEach(function(t){
+  var cols={backlog:[],decomposed:[],planned:[],in_progress:[],done:[],rework:[]};
+  D.tasks.forEach(function(t){
     var ks=mapToKanban(t.kanbanStatus||t.status);
+    if(ks==='cancelled')return; // hide cancelled from kanban
     if(!cols[ks])cols[ks]=[];
     cols[ks].push(t);
   });
@@ -4314,7 +3365,7 @@ function renderKanban(){
     el.innerHTML=cols[status].map(function(t){
       var pri=t.priority||'normal';
       var agent=AGENTS[t.assignedTo]||{emoji:'📋',name:'?'};
-      var displayTitle=_escHtml(taskSmartTitle(t,55));
+      var displayTitle=taskSmartTitle(t);
       // Subtasks
       var subtasksHTML='';
       if(t.subtasks&&t.subtasks.length){
@@ -4339,36 +3390,21 @@ function renderKanban(){
       if(t.tags&&t.tags.length){
         tagsHTML='<div class="kc-tags">'+t.tags.map(function(tag){return '<span class="kc-tag">'+tag+'</span>';}).join('')+'</div>';
       }
-      // Result snippet for done tasks
-      var resultSnippet='';
-      if(ks==='done'&&t.result){
-        resultSnippet='<div style="font-size:10px;color:#10b981;margin-top:4px;line-height:1.4;overflow:hidden;max-height:32px">'+_escHtml((t.result||'').slice(0,80))+'</div>';
-      }
-      // Cancelled info
-      var cancelInfo='';
-      if(ks==='cancelled'){
-        if(t.cancelledBy)cancelInfo='<div style="font-size:10px;color:#ef4444;margin-top:3px">Отменил: '+_escHtml(t.cancelledBy)+'</div>';
-        if(t.cancelReason)cancelInfo+='<div style="font-size:10px;color:var(--dim);margin-top:2px">'+_escHtml((t.cancelReason||'').slice(0,60))+'</div>';
-      }
-      // Date context
-      var dateInfo=t.completedDate&&ks==='done'?'<span style="font-size:9px;color:var(--dim)"> • '+t.completedDate+'</span>':'';
-      return '<div class="kanban-card'+(ks==='cancelled'?' kc-cancelled':'')+'" onclick="openTaskDetail('+t.id+')"'+(ks==='cancelled'?' style="opacity:0.7"':'')+'>'+
+      return '<div class="kanban-card" onclick="openTaskDetail('+t.id+')">'+
         '<div class="kc-priority '+pri+'"></div>'+
         '<div class="kc-title">'+displayTitle+'</div>'+
-        '<div class="kc-meta">'+agent.emoji+' '+(t.agentName||(agent.name||'').split(' ')[0])+dateInfo+' '+estimateHTML+' '+deadlineHTML+'</div>'+
-        resultSnippet+cancelInfo+subtasksHTML+reworkHTML+tagsHTML+
+        '<div class="kc-meta">'+agent.emoji+' '+(agent.name||'').split(' ')[0]+' '+estimateHTML+' '+deadlineHTML+'</div>'+
+        subtasksHTML+reworkHTML+tagsHTML+
       '</div>';
     }).join('');
   });
 }
 
 function renderTasks(){
-  _renderTaskStats();
   if(taskViewMode==='kanban'){renderKanban();return;}
-  // Enhanced list view with kanban statuses + filters
-  var filtered=_getFilteredTasks();
+  // Enhanced list view with kanban statuses
   var statusOrder={in_progress:0,rework:1,planned:2,decomposed:3,backlog:4,pending:4,done:5,cancelled:6,postponed:4};
-  var sorted=[...filtered].sort(function(a,b){
+  var sorted=[...D.tasks].sort(function(a,b){
     var sa=statusOrder[a.kanbanStatus||a.status]??4;
     var sb=statusOrder[b.kanbanStatus||b.status]??4;
     if(sa!==sb)return sa-sb;
@@ -4390,7 +3426,7 @@ function renderTasks(){
     var approveLabel='✅';var approveTitle='Выполнено';
     if((ks==='backlog'||ks==='planned')&&aType.includes('email_template')){approveLabel='📧 Отправить';approveTitle='Одобрить и отправить email';}
     else if((ks==='backlog'||ks==='planned')&&aType.includes('lead_suggested')){approveLabel='➕ В Pipeline';approveTitle='Добавить лид в Pipeline';}
-    var displayTitle=_escHtml(taskSmartTitle(t,80));
+    var displayTitle=taskSmartTitle(t);
     var hasPayload=t._payload&&Object.keys(t._payload).length>2;
     var previewId='task-preview-'+t.id;
     // Rework indicator
@@ -4437,13 +3473,10 @@ function renderTasks(){
       '<div class="task-check" style="border-color:'+ksInfo.color+'">'+statusIcon+'</div>'+
       '<div class="task-body" style="cursor:pointer">'+
         '<div class="task-title-text">'+displayTitle+actionBadge+(priLabel?'<span class="task-priority '+pri+'">'+priLabel+'</span>':'')+statusBadge+reworkBadge+deadlineBadge+subtaskBadge+'</div>'+
-        '<div class="task-assigned">'+(AGENTS[t.assignedTo]?.emoji||'')+' '+(t.agentName||AGENTS[t.assignedTo]?.name||t.assignedTo)+
-          (t.createdDate?' • '+t.createdDate:'')+
+        '<div class="task-assigned">'+(AGENTS[t.assignedTo]?.emoji||'')+' '+(AGENTS[t.assignedTo]?.name||t.assignedTo)+' • '+(t.dept?.toUpperCase()||'')+
           (t.estimate?' • ⏱ '+t.estimate:'')+
         '</div>'+
-        (t.result?'<div class="task-result" style="font-size:11px;color:#10b981;margin-top:2px;line-height:1.4;max-height:40px;overflow:hidden">'+_escHtml((t.result||'').slice(0,120))+'</div>':'')+
-        (t.description&&ks!=='done'?'<div style="font-size:10px;color:var(--dim);margin-top:2px;max-height:28px;overflow:hidden">'+_escHtml((t.description||'').slice(0,100))+'</div>':'')+
-        (ks==='cancelled'&&t.cancelledBy?'<div style="font-size:10px;color:#ef4444;margin-top:2px">Отменил: '+_escHtml(t.cancelledBy)+(t.cancelReason?' — '+_escHtml(t.cancelReason):'')+'</div>':'')+
+        (t.result?'<div class="task-result">'+t.result+'</div>':'')+
         (hasPayload?'<div id="'+previewId+'" style="display:none">'+taskPreviewHTML(t)+'</div>':'')+
       '</div>'+
       '<div class="task-actions" onclick="event.stopPropagation()">'+actions+'</div>'+
@@ -4463,11 +3496,7 @@ window.moveTask=function(id,newKanbanStatus){
   t.kanbanStatus=newKanbanStatus;
   // Map kanban → old status for compatibility
   if(newKanbanStatus==='done'){t.status='done';t.completedDate=new Date().toISOString().slice(0,10);}
-  else if(newKanbanStatus==='cancelled'){
-    t.status='cancelled';
-    t.cancelledBy=_currentSession?_currentSession.login_name:'CEO';
-    t.cancelledDate=new Date().toISOString().slice(0,10);
-  }
+  else if(newKanbanStatus==='cancelled'){t.status='cancelled';}
   else if(newKanbanStatus==='rework'){
     t.status='rework';
     t.reworkCount=(t.reworkCount||0)+1;
@@ -4480,9 +3509,7 @@ window.moveTask=function(id,newKanbanStatus){
   if(SUPABASE_LIVE&&t.sbId){
     sbPatch('actions','id=eq.'+t.sbId,{
       payload_json:JSON.stringify(Object.assign({},t._payload||{},{status:newKanbanStatus,kanban_status:newKanbanStatus,
-        priority:t.priority,rework_count:t.reworkCount||0,
-        cancelled_by:t.cancelledBy||null,cancel_reason:t.cancelReason||null,
-        completed_at:t.completedDate||null}))
+        priority:t.priority,rework_count:t.reworkCount||0}))
     });
   }
   renderTasks();
@@ -4527,14 +3554,12 @@ window.openTaskDetail=function(id){
       ${t.estimate?'<span style="font-size:9px;padding:2px 6px;background:#06b6d418;color:#06b6d4;border-radius:4px">⏱ '+t.estimate+'</span>':''}
     </div>
     <h3 style="margin:0 0 8px 0;font-size:16px">${displayTitle}</h3>
-    <div style="font-size:12px;color:var(--dim);margin-bottom:12px">${agent.emoji} ${t.agentName||agent.name} • ${t.dept?.toUpperCase()||''} • 📅 ${t.createdDate||'?'}${t.completedDate&&ks==='done'?' • ✅ '+t.completedDate:''}</div>
-    ${t.description?'<div style="padding:10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);font-size:13px;line-height:1.6;margin-bottom:12px;white-space:pre-wrap">'+_escHtml(t.description)+'</div>':''}
+    <div style="font-size:12px;color:var(--dim);margin-bottom:12px">${agent.emoji} ${agent.name} • ${t.dept?.toUpperCase()||''} • 📅 ${t.createdDate||'?'}</div>
+    ${t.description?'<div style="padding:10px;background:var(--bg);border-radius:6px;border:1px solid var(--border);font-size:13px;line-height:1.6;margin-bottom:12px;white-space:pre-wrap">'+t.description+'</div>':''}
     ${t.deadline?'<div style="font-size:12px;margin-bottom:8px">⏰ Дедлайн: <b>'+t.deadline+'</b></div>':''}
-    ${t.result?'<div style="padding:8px;background:#10b98118;border-radius:6px;font-size:12px;color:#10b981;margin-bottom:8px">✅ Результат: '+_escHtml(t.result)+'</div>':''}
-    ${t.reworkNotes?'<div style="padding:8px;background:#f9731618;border-radius:6px;font-size:12px;color:#f97316;margin-bottom:8px">🔄 Замечания: '+_escHtml(t.reworkNotes)+'</div>':''}
-    ${ks==='cancelled'?'<div style="padding:8px;background:#ef444418;border-radius:6px;font-size:12px;color:#ef4444;margin-bottom:8px">❌ Отменено'+(t.cancelledBy?' — '+_escHtml(t.cancelledBy):'')+(t.cancelReason?' ('+_escHtml(t.cancelReason)+')':'')+(t.cancelledDate?' • '+t.cancelledDate:'')+'</div>':''}
+    ${t.result?'<div style="padding:8px;background:#10b98118;border-radius:6px;font-size:12px;color:#10b981;margin-bottom:8px">✅ '+t.result+'</div>':''}
+    ${t.reworkNotes?'<div style="padding:8px;background:#f9731618;border-radius:6px;font-size:12px;color:#f97316;margin-bottom:8px">🔄 Замечания: '+t.reworkNotes+'</div>':''}
     ${subtasksHTML}
-    ${(ks==='decomposed'||ks==='backlog')?_buildStrategyContext():''}
     ${t._payload&&Object.keys(t._payload).length>2?'<details style="margin:8px 0"><summary style="font-size:11px;color:var(--dim);cursor:pointer">📋 Данные задачи</summary><div style="margin-top:6px">'+taskPreviewHTML(t)+'</div></details>':''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:16px 0;padding-top:12px;border-top:1px solid var(--border)">
       ${transitions}
@@ -4676,7 +3701,7 @@ window.createTaskFromModal=function(){
   closeModal();renderTasks();updateKPI();
   addFeed(t.assignedTo,'📌 Новая задача: '+title.slice(0,50));
 };
-// closeModal is already defined above (line ~1500) — do not override
+window.closeModal=function(){document.querySelector('.modal')?.classList.remove('open');};
 
 window.taskAction=function(id,newStatus){
   const t=D.tasks.find(x=>x.id===id);if(!t)return;
@@ -4807,15 +3832,13 @@ function showAgentDetail(id){
       (sbMem&&sbMem.cycle_number?'<div style="font-size:10px;color:var(--dim);margin-top:2px">Цикл #'+sbMem.cycle_number+' • '+sbMem.tasks_done+' задач</div>':'')+
     '</div></div>';
 
-  // Supabase live data block — scrollable section
+  // Supabase live data block
   if(SUPABASE_LIVE&&sbMem){
-    var _lo=sbMem.last_output?_escHtml(sbMem.last_output.length>400?sbMem.last_output.slice(0,400)+'…':sbMem.last_output):'';
-    var _ins=sbMem.insights?_escHtml(typeof sbMem.insights==='string'?sbMem.insights:JSON.stringify(sbMem.insights)):'';
-    html+='<div class="modal-section" style="padding:12px;background:var(--bg)">'+
+    html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px">'+
       '<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:8px">📡 Live данные из Supabase</div>'+
-      (_lo?'<div style="font-size:12px;line-height:1.5;margin-bottom:8px"><b style="color:var(--cyan)">Последний результат:</b> '+_lo+'</div>':'')+
-      (_ins?'<div style="font-size:12px;line-height:1.5;margin-bottom:8px"><b style="color:var(--purple)">Инсайты:</b> '+_ins+'</div>':'')+
-      (sbMem.next_action?'<div style="font-size:12px;line-height:1.5"><b style="color:var(--green)">Следующее действие:</b> '+_escHtml(sbMem.next_action)+'</div>':'')+
+      (sbMem.last_output?'<div style="font-size:12px;line-height:1.5;margin-bottom:8px"><b style="color:var(--cyan)">Последний результат:</b> '+sbMem.last_output+'</div>':'')+
+      (sbMem.insights?'<div style="font-size:12px;line-height:1.5;margin-bottom:8px"><b style="color:var(--purple)">Инсайты:</b> '+sbMem.insights+'</div>':'')+
+      (sbMem.next_action?'<div style="font-size:12px;line-height:1.5"><b style="color:var(--green)">Следующее действие:</b> '+sbMem.next_action+'</div>':'')+
       (sbMem.updated_at?'<div style="font-size:10px;color:var(--dim);margin-top:8px;text-align:right">Обновлено: '+new Date(sbMem.updated_at).toLocaleString('ru')+'</div>':'')+
     '</div>';
   }
@@ -4848,23 +3871,17 @@ function showAgentDetail(id){
       '<button onclick="agentAIChat(\''+id+'\')">Отправить</button>'+
     '</div></div>';
 
-  // Tasks — scrollable list with pending-first sort
+  // Tasks
   html+='<h3>Задачи ('+agentTasks.length+')</h3>';
   if(agentTasks.length){
-    var sortedTasks=agentTasks.slice().sort(function(a,b){
-      var ord={pending:0,in_progress:1,rework:2,planned:3,backlog:4,done:5,cancelled:6,postponed:7};
-      return (ord[a.status]||9)-(ord[b.status]||9);
-    });
-    html+='<div class="modal-task-list">';
-    html+=sortedTasks.map(function(t){
-      var icon=t.status==='done'?'✅':t.status==='cancelled'?'❌':t.status==='postponed'?'⏸':t.status==='in_progress'?'🔧':'⏳';
+    html+=agentTasks.map(function(t){
+      var icon=t.status==='done'?'✅':t.status==='cancelled'?'❌':t.status==='postponed'?'⏸':'⏳';
       return '<div style="padding:8px;background:var(--bg);border-radius:6px;margin-bottom:6px;border:1px solid var(--border);display:flex;align-items:center;gap:8px">'+
-        '<span>'+icon+'</span><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escHtml(t.title)+'</div>'+
-        (t.result?'<div style="font-size:11px;color:var(--green);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escHtml(t.result)+'</div>':'')+'</div>'+
+        '<span>'+icon+'</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+t.title+'</div>'+
+        (t.result?'<div style="font-size:11px;color:var(--green);margin-top:4px">'+t.result+'</div>':'')+'</div>'+
         (t.status==='pending'?'<button class="task-act" onclick="taskAction('+t.id+',\'done\');showAgentDetail(\''+id+'\')" title="Готово">✅</button>'+
           '<button class="task-act" onclick="taskAction('+t.id+',\'postponed\');showAgentDetail(\''+id+'\')" title="Отложить">⏸</button>':'')+'</div>';
     }).join('');
-    html+='</div>';
   }else{html+='<p style="color:var(--dim)">Задач пока нет</p>';}
 
   // Reports
@@ -5637,13 +4654,10 @@ document.getElementById('agentToggle').addEventListener('click',function(){
   this.classList.toggle('active',agentsActive);
   this.title=agentsActive?'Агенты активны — нажми для паузы':'Агенты на паузе — нажми для продолжения';
   addFeed('coordinator',agentsActive?'▶️ Агенты возобновлены':'⏸ Агенты приостановлены');
-  var _sb=document.getElementById('syncBadge');
-  if(_sb){
-    _sb.textContent=agentsActive?'● ACTIVE':'⏸ PAUSED';
-    _sb.style.color=agentsActive?'var(--green)':'var(--amber)';
-    _sb.style.borderColor=agentsActive?'#00ff8833':'#ffb80033';
-    _sb.style.background=agentsActive?'#00ff8811':'#ffb80011';
-  }
+  document.getElementById('syncBadge').textContent=agentsActive?'● ACTIVE':'⏸ PAUSED';
+  document.getElementById('syncBadge').style.color=agentsActive?'var(--green)':'var(--amber)';
+  document.getElementById('syncBadge').style.borderColor=agentsActive?'#00ff8833':'#ffb80033';
+  document.getElementById('syncBadge').style.background=agentsActive?'#00ff8811':'#ffb80011';
 });
 
 // Credits are now tracked via ai_credits table — no simulation needed
@@ -5668,7 +4682,7 @@ function getRealAgentStatus(agentId){
   if(window._sbEvents){
     var evts=window._sbEvents.filter(function(e){
       if(!e.metadata_json)return false;
-      var m;try{m=typeof e.metadata_json==='string'?JSON.parse(e.metadata_json):e.metadata_json;}catch(err){return false;}
+      var m=typeof e.metadata_json==='string'?JSON.parse(e.metadata_json):e.metadata_json;
       return m.agent_dash_id===agentId;
     });
     if(evts.length>0){
