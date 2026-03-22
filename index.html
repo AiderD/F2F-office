@@ -120,10 +120,41 @@
         <button class="filter-btn" data-filter="hot">🔥 Hot</button>
         <button class="filter-btn" data-filter="warm">⭐ Warm</button>
         <button class="filter-btn" data-filter="medium">💡 Medium</button>
+        <button class="filter-btn" data-filter="identified" style="border-color:#64748b44;color:#64748b">🔍 Найден</button>
+        <button class="filter-btn" data-filter="contacted" style="border-color:#00e5ff44;color:#00e5ff">📧 Контакт</button>
+        <button class="filter-btn" data-filter="negotiating" style="border-color:#ffb80044;color:#ffb800">🤝 Переговоры</button>
+        <button class="filter-btn" data-filter="no_followup" style="border-color:#ff2d7844;color:#ff2d78">⏰ Без follow-up</button>
       </div>
       <button class="filter-btn" id="leadViewToggle" onclick="toggleLeadView()" style="background:#a855f712;color:#a855f7;border:1px solid #a855f733;font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer">📊 Pipeline</button>
       <button onclick="openAddLeadModal()" style="background:#00ff8812;color:#00ff88;border:1px solid #00ff8833;font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;font-weight:600">➕ Добавить лид</button>
       <div class="data-count" id="leads-count">0 контактов</div>
+    </div>
+  </div>
+  <!-- Leads Analytics -->
+  <div id="leadsAnalytics" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid var(--cyan)">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">Всего лидов</div>
+      <div id="la-total" style="font-size:22px;font-weight:700">—</div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid #64748b">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">🔍 Найдено</div>
+      <div id="la-identified" style="font-size:22px;font-weight:700;color:#64748b">—</div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid var(--cyan)">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">📧 Контакт</div>
+      <div id="la-contacted" style="font-size:22px;font-weight:700;color:var(--cyan)">—</div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid var(--amber)">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">🤝 Переговоры</div>
+      <div id="la-negotiating" style="font-size:22px;font-weight:700;color:var(--amber)">—</div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid var(--green)">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">✅ Закрыто</div>
+      <div id="la-closed" style="font-size:22px;font-weight:700;color:var(--green)">—</div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;border-top:3px solid var(--hot)">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">🔥 Hot лиды</div>
+      <div id="la-hot" style="font-size:22px;font-weight:700;color:var(--hot)">—</div>
     </div>
   </div>
   <!-- Pipeline Funnel View -->
@@ -144,7 +175,9 @@
         <button class="filter-btn" data-filter="needs_rework">🔄 Доработка</button>
         <button class="filter-btn" data-filter="published">📢 Опубликован</button>
         <button class="filter-btn" data-filter="rejected">❌ Отклонён</button>
+        <button class="filter-btn" data-filter="no_ceo_score" style="border-color:#f59e0b44;color:#f59e0b">⭐ Не оценено</button>
       </div>
+      <button onclick="bulkApprovePosts()" id="btnBulkApprove" style="padding:6px 14px;background:#00ff8812;color:#00ff88;border:1px solid #00ff8833;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;display:none">✅ Одобрить все</button>
       <button onclick="generatePostsBatch()" id="btnGenPosts" style="padding:6px 14px;background:#00e5ff22;color:#00e5ff;border:1px solid #00e5ff44;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">🤖 Сгенерировать посты</button>
       <div class="data-count" id="posts-count">0 постов</div>
     </div>
@@ -180,8 +213,13 @@
       <div id="pa-avg-score" style="font-size:26px;font-weight:700;color:var(--purple)">—</div>
       <div id="pa-score-sub" style="font-size:10px;color:var(--dim)">порог: 8+</div>
     </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;border-top:3px solid #f59e0b">
+      <div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">CEO оценено</div>
+      <div id="pa-ceo-scored" style="font-size:26px;font-weight:700;color:#f59e0b">—</div>
+      <div id="pa-ceo-avg" style="font-size:10px;color:var(--dim)"></div>
+    </div>
   </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
     <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px">
       <div style="font-size:12px;font-weight:600;margin-bottom:10px">📊 Распределение QA Score</div>
       <canvas id="chartQAScores" style="max-height:180px"></canvas>
@@ -189,6 +227,10 @@
     <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px">
       <div style="font-size:12px;font-weight:600;margin-bottom:10px">📈 Генерация по дням</div>
       <canvas id="chartDailyPosts" style="max-height:180px"></canvas>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:10px">🔄 Воронка контента</div>
+      <canvas id="chartFunnel" style="max-height:180px"></canvas>
     </div>
   </div>
   <div class="data-grid" id="postsGrid"></div>

@@ -2268,11 +2268,18 @@ function renderLeads(){
       }
     });
   }
-  const filtered=D.leads.filter(l=>leadFilter==='all'||l.priority===leadFilter);
+  const filtered=D.leads.filter(function(l){
+    if(leadFilter==='all')return true;
+    if(leadFilter==='identified')return l.sbStage==='identified';
+    if(leadFilter==='contacted')return l.sbStage==='contacted';
+    if(leadFilter==='negotiating')return l.sbStage==='negotiating';
+    if(leadFilter==='no_followup')return !l.nextFollowup&&l.sbStage!=='closed_won'&&l.sbStage!=='closed_lost';
+    return l.priority===leadFilter;
+  });
   document.getElementById('leads-count').textContent=filtered.length+' контактов';
   document.getElementById('leadsGrid').innerHTML=filtered.map(l=>`
     <div class="lead-card" onclick="openLeadModal(${l.id})">
-      <div class="priority ${l.priority}">${l.priority}</div>
+      <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"><div class="priority ${l.priority}">${l.priority}</div>${l.sbStage?`<span style="font-size:9px;padding:1px 6px;border-radius:3px;background:${l.sbStage==='negotiating'?'#ffb80018;color:#ffb800':l.sbStage==='contacted'?'#00e5ff18;color:#00e5ff':l.sbStage==='closed_won'?'#00ff8818;color:#00ff88':'#64748b18;color:#64748b'}">${l.sbStage==='identified'?'🔍':l.sbStage==='contacted'?'📧':l.sbStage==='negotiating'?'🤝':l.sbStage==='closed_won'?'✅':'❌'} ${l.sbStage}</span>`:''}</div>
       <div class="lead-name">${l.name}</div>
       <div class="lead-title">${l.title}</div>
       <div class="lead-company">${l.company}</div>
@@ -2282,9 +2289,35 @@ function renderLeads(){
         <span>📍 ${l.location}</span>
       </div>
       <div class="lead-notes">${l.notes}</div>
+      ${l.sbStage==='identified'?`<div style="display:flex;gap:4px;margin-top:6px;border-top:1px solid var(--border);padding-top:6px" onclick="event.stopPropagation()">
+        <button onclick="quickLeadStage(${l.id},'contacted')" style="flex:1;padding:4px;background:#00e5ff12;color:#00e5ff;border:1px solid #00e5ff33;border-radius:4px;cursor:pointer;font-size:10px">📧 Связаться</button>
+        <button onclick="quickLeadStage(${l.id},'closed_lost')" style="padding:4px 8px;background:#ff2d7808;color:#ff2d78;border:1px solid #ff2d7822;border-radius:4px;cursor:pointer;font-size:10px">✕</button>
+      </div>`:''}
+      ${l.sbStage==='contacted'?`<div style="display:flex;gap:4px;margin-top:6px;border-top:1px solid var(--border);padding-top:6px" onclick="event.stopPropagation()">
+        <button onclick="quickLeadStage(${l.id},'negotiating')" style="flex:1;padding:4px;background:#ffb80012;color:#ffb800;border:1px solid #ffb80033;border-radius:4px;cursor:pointer;font-size:10px">🤝 В переговоры</button>
+        <button onclick="addLeadInteraction(${l.id},'follow_up')" style="flex:1;padding:4px;background:#a855f712;color:#a855f7;border:1px solid #a855f733;border-radius:4px;cursor:pointer;font-size:10px">⏰ Follow-up</button>
+      </div>`:''}
     </div>`).join('');
   // Also re-render pipeline if in pipeline view
   if(leadViewMode==='pipeline') renderPipeline();
+  // Leads analytics KPIs
+  renderLeadsAnalytics();
+}
+function renderLeadsAnalytics(){
+  var leads=D.leads;
+  var stageCounts={identified:0,contacted:0,negotiating:0,closed_won:0,closed_lost:0};
+  var hotCount=0;
+  leads.forEach(function(l){
+    stageCounts[l.sbStage||'identified']=(stageCounts[l.sbStage||'identified']||0)+1;
+    if(l.priority==='hot')hotCount++;
+  });
+  var el=function(id){return document.getElementById(id);};
+  if(el('la-total'))el('la-total').textContent=leads.length;
+  if(el('la-identified'))el('la-identified').textContent=stageCounts.identified;
+  if(el('la-contacted'))el('la-contacted').textContent=stageCounts.contacted;
+  if(el('la-negotiating'))el('la-negotiating').textContent=stageCounts.negotiating;
+  if(el('la-closed'))el('la-closed').textContent=stageCounts.closed_won;
+  if(el('la-hot'))el('la-hot').textContent=hotCount;
 }
 document.getElementById('leadFilters').addEventListener('click',e=>{
   if(!e.target.classList.contains('filter-btn'))return;
@@ -2470,6 +2503,20 @@ window.changeLeadStage=function(id,newStage){
   openLeadModal(id);
   addFeed('leads','🔄 '+l.name+': '+oldStage+' → '+newStage);
 };
+// Quick stage change from card (no modal)
+window.quickLeadStage=function(id,newStage){
+  var l=D.leads.find(function(x){return x.id===id;});if(!l)return;
+  var oldStage=l.sbStage||'identified';
+  l.sbStage=newStage;
+  l.priority=newStage==='negotiating'?'hot':newStage==='contacted'?'warm':'medium';
+  if(l.sbId&&SUPABASE_LIVE){
+    sbPatch('partner_pipeline','id=eq.'+l.sbId,{stage:newStage,updated_at:new Date().toISOString()});
+    sbInsert('lead_interactions',{lead_id:l.sbId,interaction_type:'stage_change',content:oldStage+' → '+newStage,created_by:'ceo'});
+  }
+  renderLeads();
+  showToast('🔄 '+l.name+': '+oldStage+' → '+newStage,'success');
+  addFeed('leads','🔄 '+l.name+': '+oldStage+' → '+newStage);
+};
 
 // CRM: Change lead contact type
 window.changeLeadType=function(id,newType){
@@ -2643,6 +2690,7 @@ function renderPosts(){
     if(postFilter==='published')return p.sbStatus==='published';
     if(postFilter==='needs_rework')return p.sbStatus==='needs_rework';
     if(postFilter==='rejected')return p.sbStatus==='rejected';
+    if(postFilter==='no_ceo_score')return p.isLive&&!p.ceoScore&&(p.sbStatus==='published'||p.sbStatus==='approved');
     return p.platform&&p.platform.toLowerCase()===postFilter.toLowerCase();
   });
   document.getElementById('posts-count').textContent=filtered.length+' постов';
@@ -2674,6 +2722,9 @@ document.getElementById('postFilters').addEventListener('click',e=>{
   e.target.classList.add('active');
   postFilter=e.target.dataset.filter;
   renderPosts();
+  // Show bulk approve button only for pending filter
+  var bulkBtn=document.getElementById('btnBulkApprove');
+  if(bulkBtn)bulkBtn.style.display=(postFilter==='pending')?'':'none';
 });
 
 // ═══ POSTS ANALYTICS (Charts + KPIs) ═══
@@ -2720,6 +2771,12 @@ function renderPostsAnalytics(){
         scales:{x:{grid:{display:false},ticks:{color:'#64748b',font:{size:10}}},y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#64748b',stepSize:5}}}}
     });
   }
+  // CEO score analytics
+  var ceoScored=0,ceoTotal=0;
+  posts.forEach(function(p){if(p.ceoScore!=null){ceoScored++;ceoTotal+=p.ceoScore;}});
+  var ceoAvg=ceoScored>0?(ceoTotal/ceoScored).toFixed(1):'—';
+  if(el('pa-ceo-scored'))el('pa-ceo-scored').textContent=ceoScored+'/'+total;
+  if(el('pa-ceo-avg'))el('pa-ceo-avg').textContent=ceoScored>0?'avg: '+ceoAvg+'/10':'ожидает оценок';
   // Daily chart
   var days=Object.keys(daily).sort();
   var ctx2=el('chartDailyPosts');
@@ -2737,7 +2794,45 @@ function renderPostsAnalytics(){
         scales:{x:{grid:{display:false},ticks:{color:'#64748b',font:{size:10}}},y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#64748b',stepSize:5}}}}
     });
   }
+  // Funnel chart
+  var ctx3=el('chartFunnel');
+  if(ctx3){
+    if(window._chartFunnel)window._chartFunnel.destroy();
+    var funnelData=[total,counts.pending_approval+counts.needs_rework+counts.approved+counts.published,counts.approved+counts.published,counts.published];
+    var funnelLabels=['Создано','Прошло QA','Одобрено','Опубликовано'];
+    var funnelColors=['#a855f7cc','#ffb800cc','#00ff88cc','#00e5ffcc'];
+    window._chartFunnel=new Chart(ctx3,{type:'bar',
+      data:{labels:funnelLabels,datasets:[{data:funnelData,backgroundColor:funnelColors,borderRadius:6}]},
+      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#64748b',font:{size:10}}},y:{grid:{display:false},ticks:{color:'#94a3b8',font:{size:11,weight:'600'}}}}}
+    });
+  }
 }
+
+// ═══ BULK APPROVE pending posts ═══
+window.bulkApprovePosts=async function(){
+  var pending=D.posts.filter(function(p){return p.isLive&&p.sbStatus==='pending_approval'&&p.qaScore>=8;});
+  if(pending.length===0){showToast('Нет постов с QA 8+ для одобрения','info');return;}
+  var ok=confirm('Одобрить '+pending.length+' постов с QA score 8+?');
+  if(!ok)return;
+  showToast('✅ Одобряю '+pending.length+' постов...','info');
+  var done=0;
+  for(var i=0;i<pending.length;i++){
+    var p=pending[i];
+    if(SUPABASE_LIVE&&p.sbId){
+      try{
+        await fetch(SUPABASE_URL+'/rest/v1/content_queue?id=eq.'+p.sbId,{
+          method:'PATCH',headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json'},
+          body:JSON.stringify({status:'approved'})
+        });
+        p.sbStatus='approved';p.status='ready';done++;
+      }catch(e){console.warn('Bulk approve error:',e);}
+    }
+  }
+  renderPosts();renderPostsAnalytics();
+  showToast('✅ Одобрено: '+done+' постов','success');
+  addFeed('quality_controller','✅ Массовое одобрение: '+done+' постов с QA 8+');
+};
 
 window.openPostModal=function(id){
   const p=D.posts.find(x=>x.id===id||x.sbId===id);if(!p)return;
