@@ -14,42 +14,67 @@ Object.keys(SB_SLUG_TO_DASH).forEach(k=>{DASH_TO_SB_SLUG[SB_SLUG_TO_DASH[k]]=k;}
 // Store Supabase agents by slug for UUID lookup
 window._sbAgents={};
 
+// ═══ ERROR TRACKING ═══
+var _sbErrors={count:0,last:null,tables:{}};
+function _sbLogError(op,table,err){
+  _sbErrors.count++;
+  _sbErrors.last={op:op,table:table,error:String(err),time:new Date().toISOString()};
+  _sbErrors.tables[table]=(_sbErrors.tables[table]||0)+1;
+  console.warn('Supabase '+op+' error ('+table+'):',err);
+  // Show toast only for write operations (not reads) and max 1 per 10s
+  if(op!=='fetch'&&typeof showToast==='function'){
+    if(!window._sbLastErrToast||Date.now()-window._sbLastErrToast>10000){
+      window._sbLastErrToast=Date.now();
+      showToast('⚠️ Ошибка сохранения ('+table+'). Данные могут быть не сохранены.','error');
+    }
+  }
+}
+// Fetch with timeout (10s)
+function _sbFetchWithTimeout(url,opts,timeoutMs){
+  timeoutMs=timeoutMs||10000;
+  return Promise.race([
+    fetch(url,opts),
+    new Promise(function(_,reject){setTimeout(function(){reject(new Error('timeout'));},timeoutMs);})
+  ]);
+}
+
 // Generic Supabase REST fetch
-async function sbFetch(table,params=''){
+async function sbFetch(table,params){
+  params=params||'';
   try{
-    const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+(params?'?'+params:''),{
+    const r=await _sbFetchWithTimeout(SUPABASE_URL+'/rest/v1/'+table+(params?'?'+params:''),{
       headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json'}
-    });
-    if(!r.ok)throw new Error(r.status);
+    },12000);
+    if(!r.ok)throw new Error('HTTP '+r.status);
     return await r.json();
-  }catch(e){console.warn('Supabase fetch error ('+table+'):',e);return null;}
+  }catch(e){_sbLogError('fetch',table,e);return null;}
 }
 async function sbPatch(table,filter,data){
   try{
-    const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
+    const r=await _sbFetchWithTimeout(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
       method:'PATCH',
       headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'},
       body:JSON.stringify(data)
     });
-    if(!r.ok)throw new Error(r.status);
+    if(!r.ok)throw new Error('HTTP '+r.status);
     return await r.json();
-  }catch(e){console.warn('Supabase patch error ('+table+'):',e);return null;}
+  }catch(e){_sbLogError('patch',table,e);return null;}
 }
 async function sbInsert(table,data){
   try{
-    const r=await fetch(SUPABASE_URL+'/rest/v1/'+table,{
+    const r=await _sbFetchWithTimeout(SUPABASE_URL+'/rest/v1/'+table,{
       method:'POST',
       headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'},
       body:JSON.stringify(data)
     });
-    if(!r.ok)throw new Error(r.status);
+    if(!r.ok)throw new Error('HTTP '+r.status);
     return await r.json();
-  }catch(e){console.warn('Supabase insert error ('+table+'):',e);return null;}
+  }catch(e){_sbLogError('insert',table,e);return null;}
 }
 // Upsert — insert or update on conflict
 async function sbUpsert(table,data,onConflict){
   try{
-    const r=await fetch(SUPABASE_URL+'/rest/v1/'+table,{
+    const r=await _sbFetchWithTimeout(SUPABASE_URL+'/rest/v1/'+table,{
       method:'POST',
       headers:{
         'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,
@@ -58,20 +83,20 @@ async function sbUpsert(table,data,onConflict){
       },
       body:JSON.stringify(data)
     });
-    if(!r.ok)throw new Error(r.status);
+    if(!r.ok)throw new Error('HTTP '+r.status);
     return await r.json();
-  }catch(e){console.warn('Supabase upsert error ('+table+'):',e);return null;}
+  }catch(e){_sbLogError('upsert',table,e);return null;}
 }
 // Delete row
 async function sbDelete(table,filter){
   try{
-    const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
+    const r=await _sbFetchWithTimeout(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
       method:'DELETE',
       headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'}
     });
-    if(!r.ok)throw new Error(r.status);
+    if(!r.ok)throw new Error('HTTP '+r.status);
     return await r.json();
-  }catch(e){console.warn('Supabase delete error ('+table+'):',e);return null;}
+  }catch(e){_sbLogError('delete',table,e);return null;}
 }
 
 // Fetch and merge Supabase data
@@ -161,8 +186,8 @@ function refreshAfterSync(){
     // Reset merge flag so renderLeads re-processes
     window._sbPartnersMerged=false;
     // Remove ALL mock leads (keep only those with sbId from previous merge)
-    D.leads=D.leads.filter(function(l){return l.sbId;});
-    // Re-merge from Supabase (renderLeads will add them)
+    // Keep SB-sourced AND manually created local leads (localCreated flag)
+    D.leads=D.leads.filter(function(l){return l.sbId||l.localCreated;});
   }
 
   // ═══ 2. POSTS: Reset merge flag so renderPosts re-merges fresh SB data ═══
@@ -173,8 +198,7 @@ function refreshAfterSync(){
 
   // ═══ 3. REPORTS: Merge Supabase reports into D.reports ═══
   if(window._sbReports&&window._sbReports.length>0){
-    // Remove mock reports, keep only SB-sourced
-    D.reports=D.reports.filter(function(r){return r.sbId;});
+    D.reports=D.reports.filter(function(r){return r.sbId||r.localCreated;});
     window._sbReports.forEach(function(r,i){
       if(D.reports.find(function(x){return x.sbId===r.id;}))return;
       var ag=window._sbAgentById&&r.agent_id?window._sbAgentById[r.agent_id]:null;
@@ -229,7 +253,7 @@ function refreshAfterSync(){
 
   // ═══ 4. TASKS: Merge Supabase actions into D.tasks ═══
   if(window._sbActions&&window._sbActions.length>0){
-    D.tasks=D.tasks.filter(function(t){return t.sbId;});
+    D.tasks=D.tasks.filter(function(t){return t.sbId||t.localCreated;});
     window._sbActions.forEach(function(a,i){
       if(D.tasks.find(function(x){return x.sbId===a.id;}))return;
       var ag=window._sbAgentById&&a.agent_id?window._sbAgentById[a.agent_id]:null;
@@ -364,6 +388,8 @@ function refreshAfterSync(){
   if(window._sbEvents&&window._sbEvents.length>0&&typeof feedItems!=='undefined'){
     // Track loaded event IDs to avoid duplicates but allow new events on refresh
     if(!window._sbFeedLoadedIds)window._sbFeedLoadedIds=new Set();
+    // Cap memory: keep only last 200 event IDs
+    if(window._sbFeedLoadedIds.size>200){var arr=[...window._sbFeedLoadedIds];window._sbFeedLoadedIds=new Set(arr.slice(-100));}
     var feedAdded=false;
     window._sbEvents.forEach(function(ev){
       if(!ev.id||window._sbFeedLoadedIds.has(ev.id))return;
@@ -486,6 +512,8 @@ async function initSupabase(){
       SUPABASE_LIVE=true;
       console.log('✅ Supabase LIVE — agents: '+Object.keys(window._sbAgents).join(', '));
       refreshAfterSync();
+      // Check Edge Functions health (non-blocking)
+      _checkEdgeFunctions();
     }else{
       console.warn('⚠️ Supabase not reachable or empty — using f2f_data.js fallback');
       if(_sb){_sb.textContent='● LOCAL DATA';_sb.style.color='#ffb800';}
@@ -527,3 +555,26 @@ window.addEventListener('load',()=>{
   // Clean up on page unload
   window.addEventListener('beforeunload',function(){clearInterval(_autoRefreshInterval);});
 });
+
+// ═══ EDGE FUNCTION HEALTH CHECK ═══
+async function _checkEdgeFunctions(){
+  var funcs=['agent-chat','quality-review','smm-generate','coordinator-briefing','agent-autonomous-cycle'];
+  var results={ok:[],fail:[]};
+  for(var i=0;i<funcs.length;i++){
+    try{
+      var r=await _sbFetchWithTimeout(SUPABASE_URL+'/functions/v1/'+funcs[i],{
+        method:'OPTIONS',
+        headers:{'Authorization':'Bearer '+SUPABASE_ANON}
+      },5000);
+      if(r.status<500)results.ok.push(funcs[i]);
+      else results.fail.push(funcs[i]);
+    }catch(e){results.fail.push(funcs[i]);}
+  }
+  window._edgeFuncStatus=results;
+  if(results.fail.length>0){
+    console.warn('⚠️ Edge Functions недоступны: '+results.fail.join(', '));
+    if(typeof addFeed==='function')addFeed('watchdog','⚠️ '+results.fail.length+' Edge Functions недоступны: '+results.fail.join(', ')+'. Чат с агентами и автогенерация могут не работать.');
+  }else{
+    console.log('✅ Все '+results.ok.length+' Edge Functions доступны');
+  }
+}
