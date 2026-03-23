@@ -673,12 +673,12 @@ function setupRealtimeNotifications(){
       }
 
       // 2. ЛИДЫ — новые лиды в pipeline
-      var leads=await sbFetch('partner_pipeline','select=id,company,name,stage,created_at&created_at=gt.'+lc+'&order=created_at.desc&limit=5');
+      var leads=await sbFetch('partner_pipeline','select=id,company_name,contact_name,stage,created_at&created_at=gt.'+lc+'&order=created_at.desc&limit=5');
       if(leads&&leads.length>0){
         leads.forEach(function(l){
           if(window._notifiedIds.has('l_'+l.id))return;
           window._notifiedIds.add('l_'+l.id);
-          var comp=l.company||l.name||'Unknown';
+          var comp=l.company_name||l.contact_name||'Unknown';
           var stg=l.stage||'found';
           toast('🎯 Новый лид: '+comp+' ('+stg+')','info');
         });
