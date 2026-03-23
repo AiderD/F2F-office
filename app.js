@@ -142,7 +142,7 @@ function updateUserBadge(){
   const adminTab = document.getElementById('tabAdmin');
   const financeTab = document.querySelector('.tab[data-panel="finance"]');
   if(!_currentSession){ if(el) el.textContent=''; return; }
-  const roleLabels = {admin:'👑',pm:'📋',editor:'✏️',viewer:'👁️'};
+  const roleLabels = {admin:'👑',pm:'📋',editor:'✏️',viewer:'👁️',bizdev:'🔥',community:'💜',referee:'🏆'};
   if(el) el.textContent = (roleLabels[_currentSession.role]||'')+ ' ' + _currentSession.login_name;
   // Show admin tab only for admin role
   if(adminTab) adminTab.style.display = isAdmin() ? '' : 'none';
@@ -731,7 +731,7 @@ function renderFinanceOverview(entries,totalSalary,totalSubs,totalEvents,totalOt
     salaryEntries.map(function(e){
       var paid=e.is_paid?'<span style="color:var(--green)">✅</span>':'<span style="color:var(--hot)">⏳</span>';
       var daysInfo=e.days_worked&&e.working_days_in_month?' ('+e.days_worked+'/'+e.working_days_in_month+' дн)':'';
-      return '<div class="fin-row"><span class="label">'+paid+' '+e.description+daysInfo+'</span><span class="val">'+fmtUSD(parseFloat(e.amount_usdt)||0)+'</span></div>';
+      return '<div class="fin-row"><span class="label">'+paid+' '+esc(e.description)+daysInfo+'</span><span class="val">'+fmtUSD(parseFloat(e.amount_usdt)||0)+'</span></div>';
     }).join('')+'</div></div>';
   // Subscriptions
   var subEntries=entries.filter(function(e){return e.type==='subscription'||e.type==='infrastructure';});
@@ -741,7 +741,7 @@ function renderFinanceOverview(entries,totalSalary,totalSubs,totalEvents,totalOt
     '<div style="margin-top:12px">'+
     subEntries.map(function(e){
       var paid=e.is_paid?'<span style="color:var(--green)">✅</span>':'<span style="color:var(--hot)">⏳</span>';
-      return '<div class="fin-row"><span class="label">'+paid+' '+e.description+' <span style="font-size:10px;color:var(--dim)">['+e.type+']</span></span><span class="val">'+fmtUSD(parseFloat(e.amount_usdt)||0)+'</span></div>';
+      return '<div class="fin-row"><span class="label">'+paid+' '+esc(e.description)+' <span style="font-size:10px;color:var(--dim)">['+esc(e.type)+']</span></span><span class="val">'+fmtUSD(parseFloat(e.amount_usdt)||0)+'</span></div>';
     }).join('')+'</div></div>';
   // Payment status
   html+='<div class="fin-card" style="border-top:3px solid var(--amber)">'+
@@ -750,7 +750,7 @@ function renderFinanceOverview(entries,totalSalary,totalSubs,totalEvents,totalOt
     html+='<div class="fin-big" style="color:var(--hot)">'+unpaid.length+' неоплаченных</div>'+
     '<div style="margin-top:12px">'+unpaid.map(function(e){
       return '<div class="fin-row" style="cursor:pointer" onclick="openPaymentModal(\''+e.id+'\')">'+
-        '<span class="label" style="color:var(--hot)">⚠️ '+e.description+'</span>'+
+        '<span class="label" style="color:var(--hot)">⚠️ '+esc(e.description)+'</span>'+
         '<span class="val red">'+fmtUSD(parseFloat(e.amount_usdt)||0)+'</span></div>';
     }).join('')+'</div>';
   }else{
@@ -782,7 +782,7 @@ function renderFinanceLedger(entries){
     html+='<tr style="border-bottom:1px solid var(--border)11">'+
       '<td style="padding:6px 8px;color:var(--dim)">'+(e.created_at?(new Date(e.created_at)).toLocaleDateString('ru'):'—')+'</td>'+
       '<td style="padding:6px 8px"><span style="color:'+typeColor+';font-weight:600">'+typeLabel+'</span></td>'+
-      '<td style="padding:6px 8px">'+e.description+'</td>'+
+      '<td style="padding:6px 8px">'+esc(e.description)+'</td>'+
       '<td style="padding:6px 8px;text-align:right;font-family:monospace">$'+(parseFloat(e.amount_usdt)||0).toLocaleString('ru')+'</td>'+
       '<td style="padding:6px 8px;text-align:right;font-family:monospace;color:var(--dim)">₽'+(parseFloat(e.amount_rub)||0).toLocaleString('ru')+'</td>'+
       '<td style="padding:6px 8px;text-align:center;color:var(--dim)">'+daysInfo+'</td>'+
@@ -807,8 +807,8 @@ function renderFinanceUnpaid(unpaid){
     '<span style="color:var(--dim);margin-left:12px">('+unpaid.length+' записей)</span></div>';
   unpaid.forEach(function(e){
     html+='<div style="background:var(--hot)08;border:1px solid var(--hot)22;border-radius:8px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">'+
-      '<div><div style="font-weight:600">'+e.description+'</div>'+
-      '<div style="font-size:11px;color:var(--dim);margin-top:4px">'+e.type+' • '+(e.created_at?(new Date(e.created_at)).toLocaleDateString('ru'):'—')+'</div></div>'+
+      '<div><div style="font-weight:600">'+esc(e.description)+'</div>'+
+      '<div style="font-size:11px;color:var(--dim);margin-top:4px">'+esc(e.type)+' • '+(e.created_at?(new Date(e.created_at)).toLocaleDateString('ru'):'—')+'</div></div>'+
       '<div style="display:flex;align-items:center;gap:12px">'+
         '<span style="font-size:16px;font-weight:700;color:var(--hot)">'+fmtUSD(parseFloat(e.amount_usdt)||0)+'</span>'+
         '<button class="act-btn success" onclick="openPaymentModal(\''+e.id+'\')" style="font-size:11px;padding:4px 12px">💳 Отметить оплату</button>'+
@@ -916,9 +916,9 @@ window.openPaymentModal=function(entryId){
   openModal(
     '<h2>💳 Оплата</h2>'+
     '<div style="margin:12px 0;padding:12px;background:var(--bg);border-radius:8px">'+
-      '<div style="font-weight:600;font-size:16px">'+entry.description+'</div>'+
+      '<div style="font-weight:600;font-size:16px">'+esc(entry.description)+'</div>'+
       '<div style="font-size:22px;font-weight:700;color:var(--cyan);margin-top:8px">'+fmtUSD(parseFloat(entry.amount_usdt)||0)+'</div>'+
-      '<div style="color:var(--dim);font-size:12px">'+fmtRUB(parseFloat(entry.amount_rub)||0)+' • '+entry.type+'</div>'+
+      '<div style="color:var(--dim);font-size:12px">'+fmtRUB(parseFloat(entry.amount_rub)||0)+' • '+esc(entry.type)+'</div>'+
     '</div>'+
     '<div style="margin:16px 0">'+
       '<label style="font-size:12px;color:var(--dim);display:block;margin-bottom:6px">Комментарий к оплате:</label>'+
@@ -1357,6 +1357,8 @@ window.openTeamMemberModal=function(id){
       '<button class="act-btn success" onclick="teamSaveSalary('+t.id+')" style="padding:6px 16px;font-size:12px">💾 Сохранить ЗП</button>'+
     '</div>'
     ) : '') +
+    // ═══ EMPLOYEE EXPENSES ═══
+    buildEmployeeExpensesHtml(t)+
     // ═══ DEPARTMENT & ROLE ═══
     '<h3>Управление</h3>'+
     '<div style="margin-bottom:12px">'+
@@ -3849,12 +3851,15 @@ window.openExpenseForm=function(){
   var catOpts=categories.map(function(c){return '<option value="'+c.v+'">'+c.l+'</option>';}).join('');
   var evtOpts='<option value="">— не привязан —</option>';
   (window._sbEvents||[]).forEach(function(e){evtOpts+='<option value="'+e.id+'">'+esc(e.title||'Event #'+e.id)+'</option>';});
+  var empOpts='<option value="">— не привязан —</option>';
+  (D.team||[]).filter(function(t){return t.status==='active';}).forEach(function(t){empOpts+='<option value="'+t.id+'">'+esc(t.name)+' ('+esc(t.role||'')+')</option>';});
   openModal('<h3 style="margin-bottom:16px">➕ Добавить расход</h3>'+
     '<div style="display:flex;flex-direction:column;gap:12px">'+
     '<div><label style="font-size:12px;color:var(--dim)">Категория</label><select id="expCat" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px">'+catOpts+'</select></div>'+
     '<div><label style="font-size:12px;color:var(--dim)">Сумма (₽)</label><input id="expAmount" type="number" step="0.01" placeholder="0.00" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;box-sizing:border-box"></div>'+
     '<div><label style="font-size:12px;color:var(--dim)">Описание</label><input id="expDesc" placeholder="На что потрачено..." style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;box-sizing:border-box"></div>'+
     '<div><label style="font-size:12px;color:var(--dim)">Мероприятие (если связано)</label><select id="expEvent" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px">'+evtOpts+'</select></div>'+
+    '<div><label style="font-size:12px;color:var(--dim)">Сотрудник (если связано)</label><select id="expEmployee" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px">'+empOpts+'</select></div>'+
     '<button onclick="submitExpense()" class="act-btn success" style="padding:10px;font-size:14px;width:100%">💾 Сохранить расход</button></div>');
 };
 window.submitExpense=async function(){
@@ -3862,12 +3867,15 @@ window.submitExpense=async function(){
   var amount=parseFloat(document.getElementById('expAmount').value);
   var desc=document.getElementById('expDesc').value.trim();
   var eventId=document.getElementById('expEvent').value;
+  var employeeEl=document.getElementById('expEmployee');
+  var employeeId=employeeEl?employeeEl.value:'';
   if(!amount||!desc){showToast('Заполни сумму и описание','error');return;}
   var entry={category:cat,amount:amount,currency:'RUB',description:desc,
     related_event_id:eventId?parseInt(eventId):null,
+    related_employee_id:employeeId?parseInt(employeeId):null,
     author:_currentSession.login_name,author_role:_currentSession.role,status:'pending'};
   await sbInsert('expense_entries',entry);
-  logAudit('expense_add','expense',null,{amount:amount,category:cat,description:desc});
+  logAudit('expense_add','expense',null,{amount:amount,category:cat,description:desc,employee_id:employeeId||null});
   showToast('✅ Расход добавлен ('+amount+' ₽)','success');
   closeModal();
   await loadExpenses();
@@ -3891,7 +3899,10 @@ function renderExpenses(){
     html+='<div style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px">'+
       '<span style="font-size:20px">'+icon+'</span>'+
       '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">'+esc(e.description)+'</div>'+
-      '<div style="font-size:11px;color:var(--dim);margin-top:2px">'+esc(e.author)+' • '+(e.created_at?timeSince(e.created_at):'—')+'</div></div>'+
+      '<div style="font-size:11px;color:var(--dim);margin-top:2px">'+esc(e.author)+' • '+(e.created_at?timeSince(e.created_at):'—')+
+      (e.related_event_id?(function(){var ev=(window._sbEvents||F2F_EVENTS||[]).find(function(x){return String(x.id)===String(e.related_event_id);});return ev?' • 🎮 '+esc(ev.title||'Event #'+ev.id):'';})():'')+
+      (e.related_employee_id?(function(){var emp=(D.team||[]).find(function(x){return x.id===e.related_employee_id;});return emp?' • 👤 '+esc(emp.name):'';})():'')+
+      '</div></div>'+
       '<div style="text-align:right"><div style="font-weight:700;font-size:14px;color:var(--cyan)">₽'+(parseFloat(e.amount)||0).toLocaleString('ru')+'</div>'+
       '<div style="font-size:10px;color:'+stColor+';margin-top:2px">'+(e.status==='pending'?'⏳ Ожидает':e.status==='approved'?'✅ Одобрено':'❌ Отклонено')+'</div></div>'+
       (canSeeExpenseTotal()&&e.status==='pending'?'<div style="display:flex;flex-direction:column;gap:4px;margin-left:8px"><button onclick="approveExpense('+e.id+')" style="padding:3px 8px;background:#10b98118;color:#10b981;border:1px solid #10b98133;border-radius:4px;cursor:pointer;font-size:10px">✅</button><button onclick="rejectExpense('+e.id+')" style="padding:3px 8px;background:#ef444418;color:#ef4444;border:1px solid #ef444433;border-radius:4px;cursor:pointer;font-size:10px">❌</button></div>':'')+
@@ -3901,12 +3912,14 @@ function renderExpenses(){
   c.innerHTML=html;
 }
 window.approveExpense=async function(id){
+  if(!isAdmin()){showToast('Только админ может одобрять расходы','error');return;}
   await sbPatch('expense_entries','id=eq.'+id,{status:'approved',approved_by:_currentSession.login_name,updated_at:new Date().toISOString()});
   logAudit('expense_approve','expense',id,{});
   showToast('✅ Расход одобрен','success');
   await loadExpenses();renderExpenses();
 };
 window.rejectExpense=async function(id){
+  if(!isAdmin()){showToast('Только админ может отклонять расходы','error');return;}
   await sbPatch('expense_entries','id=eq.'+id,{status:'rejected',approved_by:_currentSession.login_name,updated_at:new Date().toISOString()});
   logAudit('expense_reject','expense',id,{});
   showToast('❌ Расход отклонён','info');
@@ -4527,10 +4540,10 @@ function taskPreviewHTML(t){
   } else if(aType.includes('lead_suggested')){
     html+='<div style="color:var(--green);margin-bottom:4px">🆕 Детали лида</div>';
     if(p.name||p.contact||p.contact_name)html+='<div><b style="color:var(--dim)">Имя:</b> '+(p.name||p.contact||p.contact_name)+'</div>';
-    if(p.company||p.organization)html+='<div><b style="color:var(--dim)">Компания:</b> '+(p.company||p.organization)+'</div>';
-    if(p.email||p.contact_email)html+='<div><b style="color:var(--dim)">Email:</b> '+(p.email||p.contact_email)+'</div>';
-    if(p.role||p.position||p.title)html+='<div><b style="color:var(--dim)">Роль:</b> '+(p.role||p.position||p.title)+'</div>';
-    if(p.reason||p.description||p.why)html+='<div style="margin-top:4px"><b style="color:var(--dim)">Почему:</b> '+(p.reason||p.description||p.why)+'</div>';
+    if(p.company||p.organization)html+='<div><b style="color:var(--dim)">Компания:</b> '+esc(p.company||p.organization)+'</div>';
+    if(p.email||p.contact_email)html+='<div><b style="color:var(--dim)">Email:</b> '+esc(p.email||p.contact_email)+'</div>';
+    if(p.role||p.position||p.title)html+='<div><b style="color:var(--dim)">Роль:</b> '+esc(p.role||p.position||p.title)+'</div>';
+    if(p.reason||p.description||p.why)html+='<div style="margin-top:4px"><b style="color:var(--dim)">Почему:</b> '+esc(p.reason||p.description||p.why)+'</div>';
     if(!p.name&&!p.company){
       html+='<div style="color:var(--dim)">'+JSON.stringify(p,null,2).slice(0,400)+'</div>';
     }
@@ -5704,7 +5717,7 @@ window.doUploadReferences=async function(){
   var ok=0,fail=0;
   for(var i=0;i<files.length;i++){
     var file=files[i];
-    log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:var(--dim)">⏳ '+(i+1)+'/'+files.length+': '+file.name+'</div>';
+    log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:var(--dim)">⏳ '+(i+1)+'/'+files.length+': '+esc(file.name)+'</div>';
     log.scrollTop=log.scrollHeight;
     var formData=new FormData();
     formData.append('file',file);
@@ -5721,9 +5734,9 @@ window.doUploadReferences=async function(){
       var data=await res.json();
       if(data.success){
         ok++;
-        log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:#00ff88">✅ '+file.name+'</div>';
-      }else{fail++;log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:#ff4444">❌ '+file.name+': '+(data.error||'Ошибка')+'</div>';}
-    }catch(e){fail++;log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:#ff4444">❌ '+file.name+': '+e.message+'</div>';}
+        log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:#00ff88">✅ '+esc(file.name)+'</div>';
+      }else{fail++;log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:#ff4444">❌ '+esc(file.name)+': '+esc(data.error||'Ошибка')+'</div>';}
+    }catch(e){fail++;log.innerHTML+='<div style="padding:4px 8px;font-size:12px;color:#ff4444">❌ '+esc(file.name)+': '+esc(e.message)+'</div>';}
     log.scrollTop=log.scrollHeight;
   }
   log.innerHTML+='<div style="padding:6px 8px;font-size:12px;font-weight:600;color:#00ff88;border-top:1px solid var(--border);margin-top:4px">📊 Готово: ✅ '+ok+(fail?' | ❌ '+fail:'')+'</div>';
@@ -6600,6 +6613,7 @@ function renderEventCard(e,today){
       '<span style="font-size:11px;color:'+(daysUntil<=3&&daysUntil>=0?'#f59e0b':'var(--dim)')+'">'+daysLabel+'</span>'+
       (e.venue?'<span style="font-size:11px;color:var(--dim)">📍 '+esc(e.venue)+'</span>':'')+
       (e.budget?'<span style="font-size:11px;color:var(--dim)">💰 '+esc(e.budget)+'</span>':'')+
+      (function(){var exCnt=(window._expenses||[]).filter(function(x){return x.related_event_id&&String(x.related_event_id)===String(e.id);});if(!exCnt.length)return '';var exTot=0;exCnt.forEach(function(x){exTot+=parseFloat(x.amount)||0;});return '<span style="font-size:11px;color:var(--hot)">🧾 ₽'+Math.round(exTot).toLocaleString('ru')+' ('+exCnt.length+')</span>';})()+
     '</div>'+
     (prog.total>0?'<div style="margin-top:8px;display:flex;align-items:center;gap:8px">'+
       '<div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden">'+
@@ -6681,6 +6695,92 @@ window.showDayEvents=function(dateStr){
   openModal(html);
 };
 
+// ── Event Expenses helpers ──
+function buildEventExpensesHtml(ev){
+  var exps=(window._expenses||[]).filter(function(e){return e.related_event_id&&String(e.related_event_id)===String(ev.id);});
+  if(!exps.length&&!canAddExpense())return '';
+  var catIcons={event:'🎮',merch:'👕',service:'💻',judge_labor:'⚖️',other:'📦'};
+  var statusColors={pending:'var(--amber)',approved:'var(--green)',rejected:'var(--hot)'};
+  var total=0;exps.forEach(function(e){total+=parseFloat(e.amount)||0;});
+  var html='<div style="margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+    '<div style="font-size:13px;font-weight:600;color:var(--text)">💰 Расходы'+(exps.length?' ('+exps.length+')':'')+'</div>';
+  if(canSeeExpenseTotal()&&total>0)html+='<div style="font-size:13px;font-weight:700;color:var(--hot)">₽'+Math.round(total).toLocaleString('ru')+'</div>';
+  html+='</div>';
+  if(!exps.length){
+    html+='<div style="padding:16px;text-align:center;background:var(--bg);border:1px dashed var(--border);border-radius:8px;font-size:12px;color:var(--dim)">Нет расходов по этому мероприятию</div>';
+  }else{
+    exps.forEach(function(e){
+      var icon=catIcons[e.category]||'📦';
+      var stColor=statusColors[e.status]||'var(--dim)';
+      var stLabel=e.status==='pending'?'⏳':e.status==='approved'?'✅':'❌';
+      html+='<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:4px">'+
+        '<span style="font-size:16px">'+icon+'</span>'+
+        '<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(e.description)+'</div>'+
+        '<div style="font-size:10px;color:var(--dim)">'+esc(e.author||'')+' • '+(e.created_at?timeSince(e.created_at):'—')+'</div></div>'+
+        '<div style="text-align:right;white-space:nowrap"><div style="font-weight:700;font-size:13px;color:var(--cyan)">₽'+(parseFloat(e.amount)||0).toLocaleString('ru')+'</div>'+
+        '<div style="font-size:10px;color:'+stColor+'">'+stLabel+'</div></div>'+
+        (canSeeExpenseTotal()&&e.status==='pending'?'<div style="display:flex;flex-direction:column;gap:2px;margin-left:4px">'+
+          '<button onclick="event.stopPropagation();approveExpense('+e.id+')" style="padding:2px 6px;background:#10b98118;color:#10b981;border:1px solid #10b98133;border-radius:3px;cursor:pointer;font-size:9px">✅</button>'+
+          '<button onclick="event.stopPropagation();rejectExpense('+e.id+')" style="padding:2px 6px;background:#ef444418;color:#ef4444;border:1px solid #ef444433;border-radius:3px;cursor:pointer;font-size:9px">❌</button></div>':'')+
+      '</div>';
+    });
+  }
+  html+='</div>';
+  return html;
+}
+
+window.openExpenseFormForEvent=function(eventId,eventTitle){
+  if(!canAddExpense()){showToast('Нет доступа','error');return;}
+  var categories=[{v:'event',l:'🎮 Мероприятие'},{v:'merch',l:'👕 Мерч'},{v:'service',l:'💻 Сервис/подписка'},{v:'judge_labor',l:'⚖️ Трудозатраты судей'},{v:'other',l:'📦 Прочее'}];
+  var catOpts=categories.map(function(c){return '<option value="'+c.v+'">'+c.l+'</option>';}).join('');
+  openModal('<h3 style="margin-bottom:16px">💰 Расход → '+esc(eventTitle)+'</h3>'+
+    '<div style="display:flex;flex-direction:column;gap:12px">'+
+    '<div><label style="font-size:12px;color:var(--dim)">Категория</label><select id="expCat" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px">'+catOpts+'</select></div>'+
+    '<div><label style="font-size:12px;color:var(--dim)">Сумма (₽)</label><input id="expAmount" type="number" step="0.01" placeholder="0.00" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;box-sizing:border-box"></div>'+
+    '<div><label style="font-size:12px;color:var(--dim)">Описание</label><input id="expDesc" placeholder="На что потрачено..." style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;box-sizing:border-box"></div>'+
+    '<input type="hidden" id="expEvent" value="'+eventId+'">'+
+    '<button onclick="submitExpenseAndReturn(\''+eventId+'\')" class="act-btn success" style="padding:10px;font-size:14px;width:100%">💾 Сохранить расход</button></div>');
+};
+
+window.submitExpenseAndReturn=async function(eventId){
+  var cat=document.getElementById('expCat').value;
+  var amount=parseFloat(document.getElementById('expAmount').value);
+  var desc=document.getElementById('expDesc').value.trim();
+  if(!amount||!desc){showToast('Заполни сумму и описание','error');return;}
+  var entry={category:cat,amount:amount,currency:'RUB',description:desc,
+    related_event_id:parseInt(eventId),
+    author:_currentSession.login_name,author_role:_currentSession.role,status:'pending'};
+  await sbInsert('expense_entries',entry);
+  logAudit('expense_add','expense',null,{amount:amount,category:cat,description:desc,event_id:eventId});
+  showToast('✅ Расход добавлен ('+amount+' ₽)','success');
+  await loadExpenses();
+  closeModal();
+  setTimeout(function(){openEventDetail(eventId);},150);
+};
+
+function buildEmployeeExpensesHtml(member){
+  var exps=(window._expenses||[]).filter(function(e){
+    return e.author===member.name||e.related_employee_id===member.id;
+  });
+  if(!exps.length)return '';
+  var catIcons={event:'🎮',merch:'👕',service:'💻',judge_labor:'⚖️',other:'📦'};
+  var total=0;exps.forEach(function(e){total+=parseFloat(e.amount)||0;});
+  var html='<h3>💰 Расходы сотрудника'+(canSeeExpenseTotal()?' (₽'+Math.round(total).toLocaleString('ru')+')':'')+'</h3>'+
+    '<div style="max-height:200px;overflow-y:auto;margin-bottom:12px">';
+  exps.slice(0,20).forEach(function(e){
+    var icon=catIcons[e.category]||'📦';
+    var stLabel=e.status==='pending'?'⏳':e.status==='approved'?'✅':'❌';
+    html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;margin-bottom:3px">'+
+      '<span>'+icon+'</span>'+
+      '<span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.description)+'</span>'+
+      '<span style="font-size:12px;font-weight:600;color:var(--cyan);white-space:nowrap">₽'+(parseFloat(e.amount)||0).toLocaleString('ru')+'</span>'+
+      '<span style="font-size:10px">'+stLabel+'</span></div>';
+  });
+  if(exps.length>20)html+='<div style="text-align:center;font-size:11px;color:var(--dim);padding:4px">...ещё '+(exps.length-20)+'</div>';
+  html+='</div>';
+  return html;
+}
+
 window.openEventDetail=function(id){
   var e=F2F_EVENTS.find(function(ev){return ev.id===id;});
   if(!e)return;
@@ -6750,8 +6850,10 @@ window.openEventDetail=function(id){
     (e.goals?'<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:8px"><div style="font-size:10px;color:var(--dim);margin-bottom:4px">🎯 Цель</div><div style="font-size:12px;color:var(--text);line-height:1.5">'+esc(e.goals)+'</div></div>':'')+
     (e.desc?'<div style="margin-top:8px;padding:10px;background:var(--bg);border-radius:8px;font-size:12px;color:#8892a4;line-height:1.5">'+esc(e.desc)+'</div>':'')+
     taskHtml+
+    buildEventExpensesHtml(e)+
     '<div style="margin-top:16px;display:flex;gap:8px">'+
       '<button onclick="openEventForm(null,\''+e.id+'\')" style="flex:1;padding:8px;background:#3b82f622;color:#3b82f6;border:1px solid #3b82f644;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;min-height:40px">✏️ Редактировать</button>'+
+      (canAddExpense()?'<button onclick="openExpenseFormForEvent(\''+e.id+'\',\''+esc(e.title).replace(/'/g,"\\'")+'\');return false;" style="flex:1;padding:8px;background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;min-height:40px">💰 +Расход</button>':'')+
       '<button onclick="deleteEvent(\''+e.id+'\')" style="padding:8px 16px;background:#ef444422;color:#ef4444;border:1px solid #ef444444;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;min-height:40px">🗑</button>'+
     '</div>'
   );
