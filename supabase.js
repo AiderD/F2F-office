@@ -107,11 +107,11 @@ async function syncSupabaseData(){
   }
 
   // Partner pipeline
-  const partners=await sbFetch('partner_pipeline','select=*&order=created_at.desc&limit=20');
+  const partners=await sbFetch('partner_pipeline','select=*&order=created_at.desc&limit=500');
   if(partners)window._sbPartners=partners;
 
   // Events
-  const events=await sbFetch('events','select=*&order=created_at.desc&limit=50');
+  const events=await sbFetch('events','select=*&order=created_at.desc&limit=500');
   if(events)window._sbEvents=events;
 
   // Metrics
@@ -126,7 +126,7 @@ async function syncSupabaseData(){
   if(dirs)window._sbDirectives=dirs;
 
   // Reports
-  const reports=await sbFetch('reports','select=id,agent_id,type_ab,summary,results,theses,metrics_json,approved_by_ceo,created_at&order=created_at.desc&limit=50');
+  const reports=await sbFetch('reports','select=id,agent_id,type_ab,summary,results,theses,metrics_json,approved_by_ceo,created_at&order=created_at.desc&limit=500');
   if(reports)window._sbReports=reports;
 
   // Actions (tasks)
@@ -134,7 +134,7 @@ async function syncSupabaseData(){
   if(actions)window._sbActions=actions;
 
   // Finance (legacy)
-  const finance=await sbFetch('finance','select=*&order=created_at.desc&limit=50');
+  const finance=await sbFetch('finance','select=*&order=created_at.desc&limit=500');
   if(finance)window._sbFinance=finance;
 
   // Finance Ledger v2 (new immutable ledger)
@@ -142,7 +142,7 @@ async function syncSupabaseData(){
   if(ledger)window._financeLedger=ledger;
 
   // AI Credits
-  const credits=await sbFetch('ai_credits','select=agent_id,tokens_input,tokens_output,cost_usd,model,task_type,created_at&order=created_at.desc&limit=30');
+  const credits=await sbFetch('ai_credits','select=agent_id,tokens_input,tokens_output,cost_usd,model,task_type,created_at&order=created_at.desc&limit=500');
   if(credits)window._sbCredits=credits;
 
   // Team (only active — dismissed filtered on server side)
