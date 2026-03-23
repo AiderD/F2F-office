@@ -459,6 +459,7 @@ function switchTab(panelId){
   if(panelId==='office'){resizeCanvas();if(typeof updateOfficeStatuses==='function')updateOfficeStatuses();}
   if(panelId==='admin') renderAdmin();
   if(panelId==='expenses'&&typeof renderExpenses==='function') renderExpenses();
+  if(panelId==='teams'&&typeof renderTeams==='function') renderTeams();
 }
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>switchTab(tab.dataset.panel));
@@ -3876,6 +3877,287 @@ window.rejectExpense=async function(id){
   await loadExpenses();renderExpenses();
 };
 
+// ═══ TEAMS (REFEREE MODULE) ═══
+var _teamsFilter='all';
+function filterTeams(game,btn){
+  _teamsFilter=game;
+  document.querySelectorAll('[data-teams-filter]').forEach(function(b){b.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  renderTeams();
+}
+function renderTeams(){
+  var c=document.getElementById('teamsContent');if(!c)return;
+  var teams=(window._esTeams||[]).slice();
+  if(_teamsFilter!=='all')teams=teams.filter(function(t){return t.game===_teamsFilter;});
+  var cnt=document.getElementById('teams-count');if(cnt)cnt.textContent=teams.length;
+  var tabCnt=document.getElementById('tab-teams-count');if(tabCnt)tabCnt.textContent=(window._esTeams||[]).length;
+  if(!teams.length){c.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim)">Нет команд. Нажмите ➕ чтобы добавить первую.</div>';return;}
+  var html='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px">';
+  teams.forEach(function(t){
+    var rosters=(window._rosters||[]).filter(function(r){return r.team_id===t.id&&r.is_active;});
+    var tourneys=(window._tournaments||[]).filter(function(tr){return tr.team_id===t.id;});
+    var tierColor=t.tier==='T1'?'#ffb800':t.tier==='T2'?'#2cff80':t.tier==='T3'?'#00e5ff':'#666';
+    var gameEmoji=t.game==='DOTA2'?'🗡️':'🔫';
+    html+='<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer" onclick="openTeamDetail('+t.id+')">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+    html+='<div style="display:flex;align-items:center;gap:8px">';
+    if(t.logo_url)html+='<img src="'+esc(t.logo_url)+'" style="width:32px;height:32px;border-radius:6px;object-fit:cover" onerror="this.style.display=\'none\'">';
+    html+='<div><div style="font-weight:700;font-size:15px;color:var(--text)">'+esc(t.name)+'</div>';
+    if(t.tag)html+='<div style="font-size:11px;color:var(--dim)">['+esc(t.tag)+']</div>';
+    html+='</div></div>';
+    html+='<div style="display:flex;gap:4px">';
+    html+='<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:'+tierColor+'22;color:'+tierColor+';font-weight:600">'+(t.tier||'?')+'</span>';
+    html+='<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--surface-hover)">'+gameEmoji+' '+esc(t.game)+'</span>';
+    html+='</div></div>';
+    // Region + manager
+    html+='<div style="font-size:11px;color:var(--dim);margin-bottom:6px">';
+    if(t.region)html+='🌍 '+esc(t.region)+' ';
+    if(t.manager_name)html+='👤 '+esc(t.manager_name);
+    html+='</div>';
+    // Stats row
+    html+='<div style="display:flex;gap:12px;font-size:11px;color:var(--dim)">';
+    html+='<span>👥 '+rosters.length+' игроков</span>';
+    html+='<span>🏅 '+tourneys.length+' турниров</span>';
+    if(t.avg_rating)html+='<span>⭐ '+Number(t.avg_rating).toFixed(1)+'</span>';
+    html+='</div>';
+    html+='</div>';
+  });
+  html+='</div>';
+  c.innerHTML=html;
+}
+
+function openTeamForm(editId){
+  var t=editId?(window._esTeams||[]).find(function(x){return x.id===editId;}):null;
+  var html='<div style="display:grid;gap:10px">';
+  html+='<input id="tf-name" placeholder="Название команды *" value="'+esc(t?t.name:'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  html+='<input id="tf-tag" placeholder="Тег (NAVI, G2)" value="'+esc(t?t.tag||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<select id="tf-game" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)"><option value="CS2"'+(t&&t.game==='CS2'?' selected':'')+'>CS2</option><option value="DOTA2"'+(t&&t.game==='DOTA2'?' selected':'')+'>DOTA2</option></select>';
+  html+='</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  html+='<select id="tf-tier" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)"><option value="">Тир</option><option value="T1"'+(t&&t.tier==='T1'?' selected':'')+'>T1</option><option value="T2"'+(t&&t.tier==='T2'?' selected':'')+'>T2</option><option value="T3"'+(t&&t.tier==='T3'?' selected':'')+'>T3</option><option value="amateur"'+(t&&t.tier==='amateur'?' selected':'')+'>Amateur</option></select>';
+  html+='<select id="tf-region" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)"><option value="">Регион</option><option value="CIS"'+(t&&t.region==='CIS'?' selected':'')+'>CIS</option><option value="EU"'+(t&&t.region==='EU'?' selected':'')+'>EU</option><option value="NA"'+(t&&t.region==='NA'?' selected':'')+'>NA</option><option value="ASIA"'+(t&&t.region==='ASIA'?' selected':'')+'>ASIA</option><option value="SA"'+(t&&t.region==='SA'?' selected':'')+'>SA</option></select>';
+  html+='</div>';
+  html+='<input id="tf-manager" placeholder="Менеджер" value="'+esc(t?t.manager_name||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<input id="tf-contact" placeholder="Контакт менеджера (email/tg)" value="'+esc(t?t.manager_contact||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<input id="tf-website" placeholder="Сайт" value="'+esc(t?t.website||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<textarea id="tf-notes" placeholder="Заметки" rows="2" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);resize:vertical">'+esc(t?t.notes||'':'')+'</textarea>';
+  html+='<button class="act-btn success" onclick="submitTeam('+(editId||'null')+')">💾 '+(editId?'Обновить':'Создать')+'</button>';
+  html+='</div>';
+  showModal('🏆 '+(editId?'Редактировать':'Новая команда'),html);
+}
+
+async function submitTeam(editId){
+  var name=document.getElementById('tf-name').value.trim();
+  if(!name){showToast('Введите название','error');return;}
+  var obj={
+    name:name,
+    tag:document.getElementById('tf-tag').value.trim()||null,
+    game:document.getElementById('tf-game').value,
+    tier:document.getElementById('tf-tier').value||null,
+    region:document.getElementById('tf-region').value||null,
+    manager_name:document.getElementById('tf-manager').value.trim()||null,
+    manager_contact:document.getElementById('tf-contact').value.trim()||null,
+    website:document.getElementById('tf-website').value.trim()||null,
+    notes:document.getElementById('tf-notes').value.trim()||null
+  };
+  if(editId){
+    await sbPatch('esports_teams','id=eq.'+editId,obj);
+    logAudit('team_update','team',editId,{name:name});
+    showToast('✅ Команда обновлена','success');
+  }else{
+    obj.created_by=_currentSession.login_name||'admin';
+    await sbInsert('esports_teams',obj);
+    logAudit('team_create','team',null,{name:name});
+    showToast('✅ Команда создана','success');
+  }
+  closeModal();
+  var fresh=await sbFetch('esports_teams','select=*&order=created_at.desc&limit=500');
+  if(fresh)window._esTeams=fresh;
+  renderTeams();
+}
+
+function openTeamDetail(teamId){
+  var t=(window._esTeams||[]).find(function(x){return x.id===teamId;});
+  if(!t)return;
+  var rosters=(window._rosters||[]).filter(function(r){return r.team_id===teamId;});
+  var activeRosters=rosters.filter(function(r){return r.is_active;});
+  var inactiveRosters=rosters.filter(function(r){return !r.is_active;});
+  var tourneys=(window._tournaments||[]).filter(function(tr){return tr.team_id===teamId;});
+  var gameEmoji=t.game==='DOTA2'?'🗡️':'🔫';
+
+  var html='<div style="display:grid;gap:14px">';
+  // Header info
+  html+='<div style="display:flex;justify-content:space-between;align-items:center">';
+  html+='<div>';
+  if(t.tag)html+='<span style="color:var(--dim);font-size:13px">['+esc(t.tag)+']</span> ';
+  html+=gameEmoji+' '+esc(t.game)+' • '+(t.tier||'?')+' • '+(t.region||'N/A');
+  html+='</div>';
+  html+='<div style="display:flex;gap:6px">';
+  html+='<button class="act-btn" onclick="closeModal();openTeamForm('+t.id+')" style="font-size:11px;padding:3px 8px">✏️ Изменить</button>';
+  html+='</div></div>';
+  // Contact
+  if(t.manager_name||t.manager_contact||t.website){
+    html+='<div style="font-size:12px;color:var(--dim);padding:8px;background:var(--surface);border-radius:6px">';
+    if(t.manager_name)html+='👤 '+esc(t.manager_name);
+    if(t.manager_contact)html+=' • 📧 '+esc(t.manager_contact);
+    if(t.website)html+='<br>🌐 '+esc(t.website);
+    html+='</div>';
+  }
+  if(t.notes)html+='<div style="font-size:12px;color:var(--dim);padding:8px;background:var(--surface);border-radius:6px">📝 '+esc(t.notes)+'</div>';
+
+  // ═══ ROSTER ═══
+  html+='<div style="border-top:1px solid var(--border);padding-top:10px">';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+  html+='<h3 style="margin:0;font-size:14px;color:var(--text)">👥 Ростер ('+activeRosters.length+')</h3>';
+  html+='<button class="act-btn success" onclick="openPlayerForm('+t.id+')" style="font-size:11px;padding:3px 8px">➕ Игрок</button>';
+  html+='</div>';
+  if(activeRosters.length){
+    html+='<div style="display:grid;gap:6px">';
+    activeRosters.forEach(function(p){
+      var roleColor=p.role==='IGL'?'#ffb800':p.role==='AWPer'?'#ff4444':p.role==='Coach'?'#a855f7':'var(--dim)';
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--surface);border-radius:6px">';
+      html+='<div style="display:flex;align-items:center;gap:8px">';
+      html+='<span style="font-weight:600;color:var(--text)">'+esc(p.nickname)+'</span>';
+      if(p.real_name)html+='<span style="font-size:11px;color:var(--dim)">'+esc(p.real_name)+'</span>';
+      if(p.role)html+='<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:'+roleColor+'22;color:'+roleColor+'">'+esc(p.role)+'</span>';
+      html+='</div>';
+      html+='<div style="display:flex;align-items:center;gap:6px">';
+      if(p.rating)html+='<span style="font-size:11px;color:var(--accent)">⭐'+Number(p.rating).toFixed(2)+'</span>';
+      html+='<button class="act-btn" onclick="editPlayer('+p.id+','+t.id+')" style="font-size:10px;padding:2px 6px">✏️</button>';
+      html+='</div></div>';
+    });
+    html+='</div>';
+  }else{
+    html+='<div style="font-size:12px;color:var(--dim);text-align:center;padding:10px">Нет игроков</div>';
+  }
+  if(inactiveRosters.length){
+    html+='<details style="margin-top:6px"><summary style="font-size:11px;color:var(--dim);cursor:pointer">Бывшие игроки ('+inactiveRosters.length+')</summary>';
+    html+='<div style="display:grid;gap:4px;margin-top:4px">';
+    inactiveRosters.forEach(function(p){
+      html+='<div style="font-size:11px;color:var(--dim);padding:4px 8px;background:var(--surface);border-radius:4px;opacity:0.6">'+esc(p.nickname)+(p.role?' ('+esc(p.role)+')':'')+' — ушёл '+(p.left_at||'?')+'</div>';
+    });
+    html+='</div></details>';
+  }
+  html+='</div>';
+
+  // ═══ TOURNAMENTS ═══
+  html+='<div style="border-top:1px solid var(--border);padding-top:10px">';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+  html+='<h3 style="margin:0;font-size:14px;color:var(--text)">🏅 Турниры ('+tourneys.length+')</h3>';
+  html+='<button class="act-btn success" onclick="openTournamentForm('+t.id+')" style="font-size:11px;padding:3px 8px">➕ Турнир</button>';
+  html+='</div>';
+  if(tourneys.length){
+    html+='<div style="display:grid;gap:6px">';
+    tourneys.forEach(function(tr){
+      var plColor=tr.placement&&tr.placement.indexOf('1')===0?'#ffb800':tr.placement&&tr.placement.indexOf('2')===0?'#c0c0c0':'var(--dim)';
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--surface);border-radius:6px">';
+      html+='<div><span style="font-weight:600;color:var(--text)">'+esc(tr.tournament_name)+'</span>';
+      if(tr.date_start)html+=' <span style="font-size:11px;color:var(--dim)">'+esc(tr.date_start)+'</span>';
+      html+='</div>';
+      html+='<div style="display:flex;align-items:center;gap:6px">';
+      if(tr.placement)html+='<span style="font-size:11px;font-weight:600;color:'+plColor+'">'+esc(tr.placement)+'</span>';
+      if(tr.prize)html+='<span style="font-size:11px;color:var(--accent)">'+esc(tr.prize)+'</span>';
+      html+='</div></div>';
+    });
+    html+='</div>';
+  }else{
+    html+='<div style="font-size:12px;color:var(--dim);text-align:center;padding:10px">Нет записей</div>';
+  }
+  html+='</div></div>';
+
+  showModal('🏆 '+esc(t.name),html);
+}
+
+function openPlayerForm(teamId,editId){
+  var p=editId?(window._rosters||[]).find(function(x){return x.id===editId;}):null;
+  var html='<div style="display:grid;gap:8px">';
+  html+='<input id="pf-nick" placeholder="Ник *" value="'+esc(p?p.nickname:'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<input id="pf-name" placeholder="Реальное имя" value="'+esc(p?p.real_name||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<select id="pf-role" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)"><option value="">Роль</option><option value="AWPer"'+(p&&p.role==='AWPer'?' selected':'')+'>AWPer</option><option value="IGL"'+(p&&p.role==='IGL'?' selected':'')+'>IGL</option><option value="Rifler"'+(p&&p.role==='Rifler'?' selected':'')+'>Rifler</option><option value="Support"'+(p&&p.role==='Support'?' selected':'')+'>Support</option><option value="Coach"'+(p&&p.role==='Coach'?' selected':'')+'>Coach</option><option value="Stand-in"'+(p&&p.role==='Stand-in'?' selected':'')+'>Stand-in</option><option value="Carry"'+(p&&p.role==='Carry'?' selected':'')+'>Carry</option><option value="Mid"'+(p&&p.role==='Mid'?' selected':'')+'>Mid</option><option value="Offlane"'+(p&&p.role==='Offlane'?' selected':'')+'>Offlane</option><option value="Pos4"'+(p&&p.role==='Pos4'?' selected':'')+'>Pos 4</option><option value="Pos5"'+(p&&p.role==='Pos5'?' selected':'')+'>Pos 5</option></select>';
+  html+='<input id="pf-rating" type="number" step="0.01" placeholder="Рейтинг (1.00-2.00)" value="'+(p?p.rating||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<input id="pf-steam" placeholder="Steam ID" value="'+esc(p?p.steam_id||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<input id="pf-faceit" placeholder="FACEIT URL" value="'+esc(p?p.faceit_url||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<button class="act-btn success" onclick="submitPlayer('+teamId+','+(editId||'null')+')">💾 '+(editId?'Обновить':'Добавить')+'</button>';
+  html+='</div>';
+  showModal('👤 '+(editId?'Редактировать':'Новый игрок'),html);
+}
+
+function editPlayer(playerId,teamId){closeModal();openPlayerForm(teamId,playerId);}
+
+async function submitPlayer(teamId,editId){
+  var nick=document.getElementById('pf-nick').value.trim();
+  if(!nick){showToast('Введите ник','error');return;}
+  var obj={
+    team_id:teamId,
+    nickname:nick,
+    real_name:document.getElementById('pf-name').value.trim()||null,
+    role:document.getElementById('pf-role').value||null,
+    rating:document.getElementById('pf-rating').value?parseFloat(document.getElementById('pf-rating').value):null,
+    steam_id:document.getElementById('pf-steam').value.trim()||null,
+    faceit_url:document.getElementById('pf-faceit').value.trim()||null
+  };
+  if(editId){
+    await sbPatch('team_rosters','id=eq.'+editId,obj);
+    showToast('✅ Игрок обновлён','success');
+  }else{
+    obj.is_active=true;
+    obj.joined_at=new Date().toISOString().slice(0,10);
+    await sbInsert('team_rosters',obj);
+    showToast('✅ Игрок добавлен','success');
+  }
+  closeModal();
+  var fresh=await sbFetch('team_rosters','select=*&order=created_at.desc&limit=500');
+  if(fresh)window._rosters=fresh;
+  openTeamDetail(teamId);
+}
+
+function openTournamentForm(teamId,editId){
+  var tr=editId?(window._tournaments||[]).find(function(x){return x.id===editId;}):null;
+  var html='<div style="display:grid;gap:8px">';
+  html+='<input id="trf-name" placeholder="Название турнира *" value="'+esc(tr?tr.tournament_name:'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  html+='<input id="trf-start" type="date" value="'+(tr?tr.date_start||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<input id="trf-end" type="date" value="'+(tr?tr.date_end||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  html+='<input id="trf-placement" placeholder="Место (1st, 3-4th)" value="'+esc(tr?tr.placement||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='<input id="trf-prize" placeholder="Приз ($5000)" value="'+esc(tr?tr.prize||'':'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  html+='</div>';
+  html+='<textarea id="trf-notes" placeholder="Заметки" rows="2" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);resize:vertical">'+esc(tr?tr.notes||'':'')+'</textarea>';
+  html+='<button class="act-btn success" onclick="submitTournament('+teamId+','+(editId||'null')+')">💾 '+(editId?'Обновить':'Добавить')+'</button>';
+  html+='</div>';
+  showModal('🏅 '+(editId?'Редактировать':'Новый турнир'),html);
+}
+
+async function submitTournament(teamId,editId){
+  var name=document.getElementById('trf-name').value.trim();
+  if(!name){showToast('Введите название','error');return;}
+  var t=(window._esTeams||[]).find(function(x){return x.id===teamId;});
+  var obj={
+    team_id:teamId,
+    tournament_name:name,
+    game:t?t.game:'CS2',
+    date_start:document.getElementById('trf-start').value||null,
+    date_end:document.getElementById('trf-end').value||null,
+    placement:document.getElementById('trf-placement').value.trim()||null,
+    prize:document.getElementById('trf-prize').value.trim()||null,
+    notes:document.getElementById('trf-notes').value.trim()||null
+  };
+  if(editId){
+    await sbPatch('tournament_entries','id=eq.'+editId,obj);
+    showToast('✅ Турнир обновлён','success');
+  }else{
+    obj.created_by=_currentSession.login_name||'admin';
+    await sbInsert('tournament_entries',obj);
+    showToast('✅ Турнир добавлен','success');
+  }
+  closeModal();
+  var fresh=await sbFetch('tournament_entries','select=*&order=date_start.desc&limit=500');
+  if(fresh)window._tournaments=fresh;
+  openTeamDetail(teamId);
+}
+
 // ═══ REPORTS ═══
 let reportFilter='all';
 function renderReports(){
@@ -6142,9 +6424,42 @@ async function _saveEventToSupabase(e,isNew){
   };
   if(isNew){
     var result=await sbInsert('f2f_events',payload);
-    if(result&&result[0])e.id=result[0].id;
+    if(result&&result[0]){
+      e.id=result[0].id;
+      // ═══ WORKFLOW: авто-задачи для нового мероприятия ═══
+      await generateEventTasks(e,result[0].id);
+    }
   }else{
     await sbPatch('f2f_events','id=eq.'+e.id,payload);
+  }
+}
+
+// ═══ WORKFLOW: Event → авто-задачи для Referee и Community ═══
+async function generateEventTasks(event,eventId){
+  var tasks=[];
+  var eventName=event.title||event.name||'Мероприятие';
+  var eventDate=event.date||'TBD';
+  var eventType=event.type||'tournament';
+  // Referee задачи
+  if(['tournament','qualifier','showmatch','bootcamp'].indexOf(eventType)!==-1){
+    tasks.push({agent_id:'referee',type:'task',payload_json:{status:'planned',description:'Подготовить регламент для '+eventName+' ('+eventDate+')',event_id:eventId,priority:'high',category:'event_prep'}});
+    tasks.push({agent_id:'referee',type:'task',payload_json:{status:'planned',description:'Сформировать список команд-участников '+eventName,event_id:eventId,priority:'medium',category:'event_prep'}});
+    tasks.push({agent_id:'referee',type:'task',payload_json:{status:'planned',description:'Назначить судей на '+eventName,event_id:eventId,priority:'medium',category:'event_prep'}});
+  }
+  // Community задачи
+  tasks.push({agent_id:'community',type:'task',payload_json:{status:'planned',description:'Анонс '+eventName+' в соцсетях ('+eventDate+')',event_id:eventId,priority:'high',category:'event_promo'}});
+  tasks.push({agent_id:'community',type:'task',payload_json:{status:'planned',description:'Подготовить визуалы для '+eventName,event_id:eventId,priority:'medium',category:'event_promo'}});
+  // BizDev задачи (спонсорство)
+  if(event.budget){
+    tasks.push({agent_id:'bizdev',type:'task',payload_json:{status:'planned',description:'Найти спонсоров для '+eventName+' (бюджет: '+event.budget+')',event_id:eventId,priority:'medium',category:'event_sponsors'}});
+  }
+  // Insert all tasks
+  if(tasks.length){
+    for(var i=0;i<tasks.length;i++){
+      tasks[i].created_at=new Date().toISOString();
+    }
+    await sbInsert('actions',tasks);
+    showToast('📋 Создано '+tasks.length+' задач для мероприятия','success');
   }
 }
 
@@ -6602,6 +6917,7 @@ function renderCommandPalette(){
     {icon:'🤖',title:'AI Агенты',action:()=>switchTab('agents'),category:'nav'},
     {icon:'💬',title:'Чат',action:()=>switchTab('chat'),category:'nav'},
     {icon:'💸',title:'Расходы',action:()=>switchTab('expenses'),category:'nav'},
+    {icon:'🏆',title:'Команды',action:()=>switchTab('teams'),category:'nav'},
     {icon:'📅',title:'Мероприятия',action:()=>switchTab('events'),category:'nav'},
     {icon:'📅',title:'Добавить мероприятие',action:()=>{switchTab('events');setTimeout(()=>openEventForm(),200);},category:'action'},
     {icon:'🔌',title:'Интеграции',action:()=>switchTab('integrations'),category:'nav'},

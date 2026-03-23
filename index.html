@@ -88,6 +88,7 @@
   <button class="tab" data-panel="chat">💬 Чат</button>
   <button class="tab" data-panel="events">📅 Мероприятия <span class="badge" id="tab-events-count">0</span></button>
   <button class="tab" data-panel="expenses">💸 Расходы</button>
+  <button class="tab" data-panel="teams">🏆 Команды <span class="badge" id="tab-teams-count">0</span></button>
   <button class="tab" data-panel="integrations">🔗 Интеграции</button>
   <button class="tab" data-panel="admin" id="tabAdmin" style="display:none">🔐 Админ</button>
 </div>
@@ -342,6 +343,23 @@
     </div>
   </div>
   <div id="expensesContent"></div>
+</div>
+
+<!-- TEAMS PANEL (Referee Module) -->
+<div class="panel data-panel" id="panel-teams">
+  <div class="data-header">
+    <h2>🏆 Команды</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div class="data-count" id="teams-count">-</div>
+      <button class="act-btn success" onclick="openTeamForm()" style="font-size:12px;padding:4px 12px">➕ Добавить команду</button>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <button class="sub-tab active" data-teams-filter="all" onclick="filterTeams('all',this)">Все</button>
+    <button class="sub-tab" data-teams-filter="CS2" onclick="filterTeams('CS2',this)">CS2</button>
+    <button class="sub-tab" data-teams-filter="DOTA2" onclick="filterTeams('DOTA2',this)">DOTA2</button>
+  </div>
+  <div id="teamsContent"></div>
 </div>
 
 <!-- INTEGRATIONS PANEL -->

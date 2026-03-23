@@ -238,6 +238,14 @@ async function syncSupabaseData(){
   const expenses=await sbFetch('expense_entries','select=*&order=created_at.desc&limit=500');
   if(expenses)window._expenses=expenses;
 
+  // Esports teams + rosters + tournament entries
+  const esTeams=await sbFetch('esports_teams','select=*&order=created_at.desc&limit=500');
+  if(esTeams)window._esTeams=esTeams;
+  const rosters=await sbFetch('team_rosters','select=*&order=created_at.desc&limit=500');
+  if(rosters)window._rosters=rosters;
+  const tournaments=await sbFetch('tournament_entries','select=*&order=date_start.desc&limit=500');
+  if(tournaments)window._tournaments=tournaments;
+
   // Team (only active — dismissed filtered on server side)
   const team=await sbFetch('team','select=*&order=id.asc');
   if(team)window._sbTeam=team;
@@ -432,6 +440,7 @@ function refreshAfterSync(){
   if(typeof renderAgentsPanel==='function'){_sr(renderAgentsPanel,'agents');}
   if(typeof renderIntegrations==='function'){_sr(renderIntegrations,'integrations');}
   if(typeof renderExpenses==='function'){_sr(renderExpenses,'expenses');}
+  if(typeof renderTeams==='function'){_sr(renderTeams,'teams');}
   if(typeof renderAnalytics==='function'){_sr(renderAnalytics,'analytics');}
   if(typeof loadStrategy==='function'&&!window._stratLoaded){window._stratLoaded=true;_sr(loadStrategy,'strategy');}
   if(typeof renderStrategyProgress==='function'){_sr(renderStrategyProgress,'strategyProgress');}
