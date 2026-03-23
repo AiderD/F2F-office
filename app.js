@@ -3486,7 +3486,7 @@ window.openPostModal=function(id){
     <p style="color:var(--purple)">${p.hashtags}</p>
     <p style="color:var(--dim);margin-top:8px">📅 Дата: ${p.date} | Агент: ${AGENTS[p.agentId]?.emoji||''} ${AGENTS[p.agentId]?.name||p.agentId}</p>
     ${p.imagePrompt?'<p style="color:var(--dim);font-size:11px;margin-top:4px">🖼 Промпт: <span style="color:#9c27b0">'+((p.imagePrompt||'').length>100?(p.imagePrompt||'').slice(0,100)+'...':p.imagePrompt)+'</span></p>':''}
-    ${p.sbId?'<div style="margin:12px 0;padding:10px;background:#9c27b008;border:1px solid #9c27b033;border-radius:8px"><div style="font-size:11px;color:#9c27b0;font-weight:600;margin-bottom:6px">🖼 AI-картинка — промпт '+(p.imagePrompt?'(от агента)':'(пусто — введи свой)')+':</div><textarea id="customImagePrompt" placeholder="Опиши что хочешь видеть на картинке... Например: F2F logo in center, neon arena, dark background" style="width:100%;min-height:60px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px;resize:vertical;box-sizing:border-box">'+((p.imagePrompt||'').replace(/'/g,"&#39;").replace(/"/g,"&quot;"))+'</textarea><div style="display:flex;gap:6px;margin-top:6px"><button onclick="generatePostImage(\''+p.sbId+'\',document.getElementById(\'customImagePrompt\').value)" style="flex:1;padding:6px;background:#9c27b022;color:#9c27b0;border:1px solid #9c27b044;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600">'+(p.imageUrl?'🔄 Перегенерировать':'🖼 Сгенерировать картинку')+'</button></div></div>':''}
+    ${p.sbId?'<div style="margin:12px 0;padding:12px;background:#9c27b008;border:1px solid #9c27b033;border-radius:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-size:12px;color:#9c27b0;font-weight:700">🎨 Art Director</div><div style="font-size:10px;color:var(--dim)">Claude Sonnet анализирует пост и создаёт промпт</div></div><textarea id="artDirectorNote" placeholder="Указания по визуалу (опционально): стиль, настроение, что хочешь видеть..." style="width:100%;min-height:36px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:11px;resize:vertical;box-sizing:border-box;margin-bottom:6px"></textarea><div style="display:flex;gap:6px;margin-bottom:8px"><button onclick="artDirectorPrompt(\''+p.sbId+'\')" style="flex:1;padding:7px;background:#a855f722;color:#a855f7;border:1px solid #a855f744;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600" id="btnArtDirector">🎨 Составить промпт</button></div><div style="font-size:10px;color:var(--dim);margin-bottom:4px">Промпт для генерации (можешь отредактировать):</div><textarea id="customImagePrompt" placeholder="Промпт появится здесь после нажатия Art Director... или напиши свой" style="width:100%;min-height:60px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:12px;resize:vertical;box-sizing:border-box">'+((p.imagePrompt||'').replace(/'/g,"&#39;").replace(/"/g,"&quot;"))+'</textarea><div style="display:flex;gap:6px;margin-top:6px"><button onclick="generatePostImage(\''+p.sbId+'\',document.getElementById(\'customImagePrompt\').value)" style="flex:1;padding:7px;background:#9c27b022;color:#9c27b0;border:1px solid #9c27b044;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">'+(p.imageUrl?'🔄 Перегенерировать':'🖼 Сгенерировать картинку')+'</button></div></div>':''}
     <div style="display:flex;gap:6px;margin:12px 0;flex-wrap:wrap">
       ${p.sbId?'<button onclick="qaReviewPost(\''+p.sbId+'\')" style="flex:1;min-width:45%;padding:6px 10px;background:#10b98118;color:#10b981;border:1px solid #10b98133;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">✅ QA-проверка</button>':''}
       ${p.sbId?'<button onclick="ceoScorePost(\''+p.sbId+'\')" style="flex:1;min-width:45%;padding:6px 10px;background:#f59e0b18;color:#f59e0b;border:1px solid #f59e0b33;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">⭐ Оценить</button>':''}
@@ -3751,6 +3751,33 @@ window.generatePostImage=function(postId,customPrompt){
     }
   }).catch(function(err){
     showToast('Ошибка генерации картинки: '+err,'error');
+  });
+};
+
+// Art Director: generate smart prompt from post text via Claude Sonnet (without generating image)
+window.artDirectorPrompt=function(postId){
+  if(!SUPABASE_LIVE){showToast('Supabase не подключён','error');return;}
+  var btn=document.getElementById('btnArtDirector');
+  if(btn){btn.textContent='⏳ Art Director думает...';btn.disabled=true;}
+  var ceoNote=(document.getElementById('artDirectorNote')||{}).value||'';
+  var payload={post_id:postId,mode:'prompt_only'};
+  if(ceoNote.trim())payload.ceo_note=ceoNote.trim();
+  fetch(SUPABASE_URL+'/functions/v1/generate-image',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
+    body:JSON.stringify(payload)
+  }).then(function(r){return r.json();}).then(function(data){
+    if(data.success&&data.prompt){
+      var ta=document.getElementById('customImagePrompt');
+      if(ta){ta.value=data.prompt;ta.style.borderColor='#a855f7';ta.style.boxShadow='0 0 8px #a855f744';}
+      showToast('🎨 Art Director составил промпт — проверь и жми "Сгенерировать"','success');
+    } else {
+      showToast('Ошибка Art Director: '+(data.error||'unknown'),'error');
+    }
+  }).catch(function(err){
+    showToast('Ошибка: '+err,'error');
+  }).finally(function(){
+    if(btn){btn.textContent='🎨 Составить промпт';btn.disabled=false;}
   });
 };
 
