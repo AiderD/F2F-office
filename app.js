@@ -5883,17 +5883,14 @@ var EVENT_CHECKLISTS={
 };
 
 function initEventsData(){
+  // v3 cleanup: remove old demo/fake data (one-time migration)
+  if(!localStorage.getItem('f2f_events_v3_clean')){
+    localStorage.removeItem('f2f_events');
+    localStorage.removeItem('f2f_events_v2');
+    localStorage.setItem('f2f_events_v3_clean','1');
+  }
   var saved=[];
   try{saved=JSON.parse(localStorage.getItem('f2f_events_v2')||'[]');}catch(e){}
-  // Migrate old format if exists
-  if(!saved.length){
-    try{
-      var old=JSON.parse(localStorage.getItem('f2f_events')||'[]');
-      if(old.length)saved=old.map(function(e){
-        return Object.assign({},e,{status:e.status||'idea',tasks:e.tasks||[],venue:'',city:'',budget:'',goals:''});
-      });
-    }catch(e){}
-  }
   F2F_EVENTS=saved.map(function(e){
     if(!e.id)e.id='ev_'+Math.random().toString(36).slice(2,8);
     if(!e.status)e.status='idea';
