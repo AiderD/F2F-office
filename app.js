@@ -2310,10 +2310,10 @@ function buildLiveIntegrations(){
   connected.push({name:'LinkedIn (Brave Search)',purpose:'LinkedIn URL enrichment',status:'active',detail:'Автопоиск LinkedIn профилей через Brave site:linkedin.com',
     balance:'В рамках Brave лимита (Free)'});
 
-  // 12. ScrapIn — LinkedIn profile/company enrichment (optional, needs API key)
+  // 12. Reverse Contact (ScrapIn) — LinkedIn deep enrichment (optional, needs API key)
   var hasScrapin=false; // Will be true when SCRAPIN_API_KEY is set in Supabase secrets
-  connected.push({name:'ScrapIn',purpose:'LinkedIn deep enrichment',status:hasScrapin?'active':'pending',detail:hasScrapin?'Полное обогащение профилей':'Нужен API ключ ($27/мес)',
-    balance:hasScrapin?'💰 $27/мес (Basic)':'⏳ Не подключен'});
+  connected.push({name:'Reverse Contact',purpose:'LinkedIn deep enrichment',status:hasScrapin?'active':'pending',detail:hasScrapin?'Полное обогащение профилей':'Trial $30/500 кредитов, PAYG $0.013/кредит',
+    balance:hasScrapin?'💰 По кредитам':'⏳ Опционально'});
 
   // Needed integrations — keep curated list but mark any that became connected
   var neededList=[
@@ -2470,9 +2470,9 @@ window.openIntgDetail=function(name,type){
       {key:'auto_post',label:'Авто-публикация',val:false,type:'toggle'},
       {key:'hashtags',label:'Дефолтные хэштеги',val:'#F2F #CS2 #esports',placeholder:'#F2F #CS2'}
     ],
-    'ScrapIn':[
-      {key:'api_key',label:'API Key',placeholder:'scrapin_...',val:'',type:'password'},
-      {key:'plan',label:'Тариф',val:'Basic ($27/мес)'}
+    'Reverse Contact':[
+      {key:'api_key',label:'API Key',placeholder:'rc_...',val:'',type:'password'},
+      {key:'plan',label:'Тариф',val:'Trial $30/500 кредитов'}
     ],
     'SendGrid/Resend':[
       {key:'api_key',label:'API Key',placeholder:'SG...',val:'',type:'password'},
