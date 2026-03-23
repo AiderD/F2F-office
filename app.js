@@ -1488,11 +1488,11 @@ const AGENT_DESC={
   coordinator:{purpose:'Тимлид всех агентов. Каждые 2ч проводит планёрку: собирает статусы, назначает задания, учитывает директивы CEO и KPI.',replaces:'Менеджер проектов — экономит 2-3ч/день',sources:['Данные других агентов','Список задач','KPI'],interval:'2ч'},
   content:{purpose:'SMM-машина. 30 постов за цикл в 5 форматах: провокации (Durex-стиль), гайды по фичам, комьюнити, новости, дискуссии.',replaces:'SMM-менеджер — экономит 4-5ч/день',sources:['Brand guidelines F2F','Тренды соцсетей','Контент конкурентов'],interval:'2ч'},
   market:{purpose:'Анализ конкурентов (FACEIT, ESEA, CyberShoke, Blast.tv). Мониторинг KPI: регистрации, CAC, retention. Рекомендации.',replaces:'Бизнес-аналитик — экономит 3-4ч/день',sources:['Newzoo','Statista','Esports Charts','SuperData'],interval:'2ч'},
-  leads:{purpose:'Генерация персонализированных email для лидов. Дедупликация (не шлёт повторно). Подпись CEO. Превью в Telegram.',replaces:'BizDev менеджер — экономит 2-3ч/день',sources:['Clay MCP (LinkedIn)','Apollo.io','Hunter.io'],interval:'2ч'},
+  leads:{purpose:'Генерация персонализированных email для лидов. Дедупликация (не шлёт повторно). Подпись CEO. Превью в Telegram.',replaces:'BizDev менеджер — экономит 2-3ч/день',sources:['Brave Search','Hunter.io','LinkedIn (auto)'],interval:'2ч'},
   outreach:{purpose:'Холодный outreach к командам, стримерам, партнёрам. Cold email + персонализация + A/B тесты тем.',replaces:'Outreach-специалист — экономит 2ч/день',sources:['Данные из CRM лидов','Шаблоны писем','LinkedIn профили'],interval:'2ч'},
   social:{purpose:'Развитие комьюнити: Discord, Telegram, Reddit. Organic engagement, мониторинг обсуждений, вовлечение.',replaces:'Community Manager — экономит 3ч/день',sources:['Telegram каналы','Twitter API','Reddit','VK'],interval:'2ч'},
   processor:{purpose:'Мозг Telegram-бота. Обрабатывает кнопки (Отправить/Отклонить email и посты), текстовые директивы CEO, обновляет offset.',replaces:'Автоматизация — работает 24/7',sources:['Telegram Bot API'],interval:'1мин'},
-  lead_finder:{purpose:'Автопоиск лидов: Google Search (Serper) → Hunter.io (email) → RocketReach (LinkedIn). 6 реальных лидов/день.',replaces:'Lead researcher — экономит 4-5ч/день',sources:['Serper.dev','Hunter.io','RocketReach'],interval:'4ч'},
+  lead_finder:{purpose:'Автопоиск лидов: Brave Search → Hunter.io (email) → LinkedIn (auto-enrichment). 6 реальных лидов/день.',replaces:'Lead researcher — экономит 4-5ч/день',sources:['Brave Search','Hunter.io','LinkedIn','ScrapIn'],interval:'4ч'},
   followup:{purpose:'Автоматические follow-up письма через 3 дня после первого контакта без ответа. Другой тон и угол.',replaces:'BizDev follow-up — экономит 1-2ч/день',sources:['CRM pipeline','Email история'],interval:'12ч'},
   watchdog:{purpose:'Мониторинг всех сценариев. Если агент упал — автоперезапуск + TG алерт CEO. Self-healing.',replaces:'DevOps/мониторинг — работает 24/7',sources:['Make.com API','Supabase health'],interval:'1ч'},
   briefing:{purpose:'Утренний брифинг с реальными KPI из Supabase: лиды, письма, контент, статусы всех агентов, приоритеты.',replaces:'Утренняя планёрка — экономит 30мин/день',sources:['Supabase metrics','Agent memory','Events'],interval:'24ч'},
@@ -1581,7 +1581,7 @@ const AGENT_PROMPTS_DEFAULT={
   outreach:'Холодный outreach к командам и стримерам. Cold email с персонализацией, A/B тесты.',
   social:'Развитие комьюнити: Discord, Telegram, Reddit. Organic engagement стратегия.',
   processor:'Обработка Telegram кнопок (Отправить/Отклонить email, Одобрить/Отклонить пост) + текстовые директивы CEO.',
-  lead_finder:'Поиск лидов через Serper.dev (Google) + Hunter.io (email) + RocketReach (LinkedIn). 6 лидов/день.',
+  lead_finder:'Поиск лидов через Brave Search + Hunter.io (email) + LinkedIn (auto). 6 лидов/день.',
   followup:'Follow-up письма через 3 дня после первого контакта без ответа.',
   watchdog:'Проверка всех сценариев каждый час. Автоперезапуск упавших + TG алерт.',
   briefing:'Утренний брифинг с реальными KPI: лиды, письма, контент, статусы агентов. Раз в 24ч.',
@@ -2306,10 +2306,18 @@ function buildLiveIntegrations(){
   connected.push({name:'Apollo.io',purpose:'Lead enrichment & search',status:'limited',detail:'Free plan — search заблокирован',
     balance:'⚠️ Free plan исчерпан'});
 
+  // 11. LinkedIn (via Brave Search) — company/person profile discovery
+  connected.push({name:'LinkedIn (Brave Search)',purpose:'LinkedIn URL enrichment',status:'active',detail:'Автопоиск LinkedIn профилей через Brave site:linkedin.com',
+    balance:'В рамках Brave лимита (Free)'});
+
+  // 12. ScrapIn — LinkedIn profile/company enrichment (optional, needs API key)
+  var hasScrapin=false; // Will be true when SCRAPIN_API_KEY is set in Supabase secrets
+  connected.push({name:'ScrapIn',purpose:'LinkedIn deep enrichment',status:hasScrapin?'active':'pending',detail:hasScrapin?'Полное обогащение профилей':'Нужен API ключ ($27/мес)',
+    balance:hasScrapin?'💰 $27/мес (Basic)':'⏳ Не подключен'});
+
   // Needed integrations — keep curated list but mark any that became connected
   var neededList=[
     {name:'Twitter/X API',purpose:'SMM posting',priority:'high'},
-    {name:'LinkedIn API',purpose:'Outreach automation',priority:'high'},
     {name:'SendGrid/Resend',purpose:'Email delivery',priority:'high'},
     {name:'YouTube API',purpose:'Content analytics',priority:'medium'},
     {name:'Discord Bot',purpose:'Community engagement',priority:'medium'},
@@ -2462,9 +2470,9 @@ window.openIntgDetail=function(name,type){
       {key:'auto_post',label:'Авто-публикация',val:false,type:'toggle'},
       {key:'hashtags',label:'Дефолтные хэштеги',val:'#F2F #CS2 #esports',placeholder:'#F2F #CS2'}
     ],
-    'LinkedIn API':[
-      {key:'access_token',label:'Access Token',placeholder:'AQ...',val:'',type:'password'},
-      {key:'company_id',label:'Company Page ID',placeholder:'',val:''}
+    'ScrapIn':[
+      {key:'api_key',label:'API Key',placeholder:'scrapin_...',val:'',type:'password'},
+      {key:'plan',label:'Тариф',val:'Basic ($27/мес)'}
     ],
     'SendGrid/Resend':[
       {key:'api_key',label:'API Key',placeholder:'SG...',val:'',type:'password'},
@@ -2749,6 +2757,7 @@ function renderPipeline(){
             '<div style="font-size:12px;font-weight:600;color:#e8edf2">'+esc(l.name)+'</div>'+
             '<div style="font-size:10px;color:var(--dim)">'+esc(l.company)+'</div>'+
             (l.email?'<div style="font-size:9px;color:var(--cyan);margin-top:2px">'+esc(l.email)+'</div>':'')+
+            (l.linkedin?'<div style="font-size:9px;color:#0a66c2;margin-top:1px">🔗 LinkedIn</div>':'')+
           '</div>';
         }).join('')+
         (leads.length===0?'<div style="text-align:center;color:#384858;font-size:11px;padding:20px 0">Пусто</div>':'')+
@@ -2840,7 +2849,7 @@ function renderLeads(){
         D.leads.push({
           id:8000+i,sbId:p.id,name:p.contact_name||'Контакт',title:p.segment||'',
           company:p.company_name||'',email:p.contact_email||'',
-          linkedin:p.linkedin||'',phone:p.phone||'',website:p.website||'',
+          linkedin:p.linkedin_url||p.linkedin||'',phone:p.phone||'',website:p.website||'',
           location:loc,source:src,
           contactType:p.contact_type||'partner',
           priority:p.stage==='negotiating'?'hot':p.stage==='contacted'?'warm':'medium',
@@ -2952,7 +2961,7 @@ window.openLeadModal=function(id){
       '<div onclick="editLeadField('+id+',\'company\',\'Компания\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">🏢 Компания:</span> <span style="color:#e8edf2;border-bottom:1px dashed #384858">'+(l.company||'—')+'</span></div>'+
       '<div onclick="editLeadField('+id+',\'email\',\'Email\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">📧 Email:</span> <span style="color:var(--cyan);border-bottom:1px dashed #384858">'+(l.email||'—')+'</span></div>'+
       '<div onclick="editLeadField('+id+',\'phone\',\'Телефон\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">📞 Тел:</span> <span style="color:#e8edf2;border-bottom:1px dashed #384858">'+(l.phone||'—')+'</span></div>'+
-      '<div onclick="editLeadField('+id+',\'linkedin\',\'LinkedIn URL\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">🔗 LinkedIn:</span> <span style="color:var(--cyan);border-bottom:1px dashed #384858">'+(l.linkedin?'Профиль':'—')+'</span></div>'+
+      '<div style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">🔗 LinkedIn:</span> '+(l.linkedin?'<a href="'+esc(l.linkedin)+'" target="_blank" rel="noopener" style="color:var(--cyan);border-bottom:1px dashed #384858;text-decoration:none" onclick="event.stopPropagation()">Открыть ↗</a> <span onclick="editLeadField('+id+',\'linkedin\',\'LinkedIn URL\')" style="color:#384858;font-size:9px;cursor:pointer">✏️</span>':'<span onclick="editLeadField('+id+',\'linkedin\',\'LinkedIn URL\')" style="color:var(--cyan);border-bottom:1px dashed #384858">—</span>')+'</div>'+
       '<div onclick="editLeadField('+id+',\'website\',\'Сайт\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">🌐 Сайт:</span> <span style="color:var(--cyan);border-bottom:1px dashed #384858">'+(l.website?l.website.replace(/https?:\/\//,''):'—')+'</span></div>'+
       '<div onclick="editLeadField('+id+',\'location\',\'Локация\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">📍 Локация:</span> <span style="color:#e8edf2;border-bottom:1px dashed #384858">'+(l.location||'—')+'</span></div>'+
       '<div onclick="editLeadField('+id+',\'title\',\'Должность / Сегмент\')" style="font-size:11px;cursor:pointer" title="Клик — редактировать"><span style="color:var(--dim)">💼 Должность:</span> <span style="color:#e8edf2;border-bottom:1px dashed #384858">'+(l.title||'—')+'</span></div>'+
@@ -3221,7 +3230,7 @@ window.editLeadField=function(id,field,label){
     if(val===null)return;
     l[field]=val.trim();
     var sbMap={name:'contact_name',company:'company_name',email:'contact_email',phone:'phone',
-      linkedin:'linkedin',website:'website',location:'notes',title:'segment'};
+      linkedin:'linkedin_url',website:'website',location:'notes',title:'segment'};
     if(l.sbId&&SUPABASE_LIVE&&sbMap[field]){
       var upd={};upd[sbMap[field]]=val.trim();
       sbPatch('partner_pipeline','id=eq.'+l.sbId,upd);
