@@ -3,6 +3,38 @@ const SUPABASE_URL='https://cuvmjkavluixkbzblcie.supabase.co';
 const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1dm1qa2F2bHVpeGtiemJsY2llIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NDg4ODgsImV4cCI6MjA4OTMyNDg4OH0.Ie1xGbB45nELK0PbwnKgDu56yxhZugVEdXYoUQT7TG4';
 let SUPABASE_LIVE=false;
 
+// ═══ AUTH JWT (role-based access) ═══
+// After login: auth-login Edge Function returns signed JWT with user_role claim
+// This JWT is used for ALL API calls (instead of anon key)
+// Anon key is ONLY used on login screen to call auth-login
+window._authJWT=null;
+function getAuthKey(){
+  // If we have a signed JWT from auth-login, use it (role-based RLS)
+  // Otherwise fall back to anon key (only works for auth_tokens SELECT)
+  return window._authJWT || SUPABASE_ANON;
+}
+function setAuthJWT(jwt){
+  window._authJWT=jwt;
+  if(jwt){localStorage.setItem('f2f_jwt',jwt);}
+  else{localStorage.removeItem('f2f_jwt');}
+}
+// Restore JWT from localStorage on page load
+(function(){
+  var saved=localStorage.getItem('f2f_jwt');
+  if(saved){
+    // Check if JWT is expired
+    try{
+      var parts=saved.split('.');
+      var payload=JSON.parse(atob(parts[1]));
+      if(payload.exp && payload.exp*1000 > Date.now()){
+        window._authJWT=saved;
+      } else {
+        localStorage.removeItem('f2f_jwt');
+      }
+    }catch(e){localStorage.removeItem('f2f_jwt');}
+  }
+})();
+
 // ═══ ERROR TRACKER ═══
 window._sbErrors={count:0,last:null,tables:{}};
 var _sbErrorToastLast=0;
@@ -61,10 +93,12 @@ Object.keys(SB_SLUG_TO_DASH).forEach(k=>{DASH_TO_SB_SLUG[SB_SLUG_TO_DASH[k]]=k;}
 window._sbAgents={};
 
 // Generic Supabase REST fetch (10s timeout)
+// Uses getAuthKey() — returns JWT after login, anon key before login
 async function sbFetch(table,params=''){
   try{
+    var key=getAuthKey();
     const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+(params?'?'+params:''),{
-      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json'},
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+key,'Content-Type':'application/json'},
       signal:AbortSignal.timeout(10000)
     });
     if(!r.ok)throw new Error(r.status);
@@ -73,9 +107,10 @@ async function sbFetch(table,params=''){
 }
 async function sbPatch(table,filter,data){
   try{
+    var key=getAuthKey();
     const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
       method:'PATCH',
-      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'},
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+key,'Content-Type':'application/json','Prefer':'return=representation'},
       body:JSON.stringify(data),
       signal:AbortSignal.timeout(10000)
     });
@@ -85,9 +120,10 @@ async function sbPatch(table,filter,data){
 }
 async function sbInsert(table,data){
   try{
+    var key=getAuthKey();
     const r=await fetch(SUPABASE_URL+'/rest/v1/'+table,{
       method:'POST',
-      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'},
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+key,'Content-Type':'application/json','Prefer':'return=representation'},
       body:JSON.stringify(data),
       signal:AbortSignal.timeout(10000)
     });
@@ -98,10 +134,11 @@ async function sbInsert(table,data){
 // Upsert — insert or update on conflict
 async function sbUpsert(table,data,onConflict){
   try{
+    var key=getAuthKey();
     const r=await fetch(SUPABASE_URL+'/rest/v1/'+table,{
       method:'POST',
       headers:{
-        'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,
+        'apikey':SUPABASE_ANON,'Authorization':'Bearer '+key,
         'Content-Type':'application/json',
         'Prefer':'return=representation,resolution=merge-duplicates'
       },
@@ -115,9 +152,10 @@ async function sbUpsert(table,data,onConflict){
 // Delete row
 async function sbDelete(table,filter){
   try{
+    var key=getAuthKey();
     const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
       method:'DELETE',
-      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'},
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+key,'Content-Type':'application/json','Prefer':'return=representation'},
       signal:AbortSignal.timeout(10000)
     });
     if(!r.ok)throw new Error(r.status);

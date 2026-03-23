@@ -19,8 +19,53 @@ let _currentSession = JSON.parse(localStorage.getItem('f2f_session')||'null');
 
 // Try auto-login from saved session (runs immediately — DOM already parsed since script at end of body)
 if(_currentSession){
-  document.getElementById('loginScreen').style.display='none';
-  document.getElementById('app').style.display='';
+  // Check if JWT is still valid (set by supabase.js on page load)
+  if(window._authJWT){
+    // JWT valid — show dashboard
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('app').style.display='';
+  } else {
+    // JWT expired — try silent re-login from saved credentials
+    var _savedCreds=JSON.parse(localStorage.getItem('f2f_login_creds')||'null');
+    if(_savedCreds&&_savedCreds.token){
+      (async function(){
+        try{
+          var res=await fetch(SUPABASE_URL+'/functions/v1/auth-login',{
+            method:'POST',
+            headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
+            body:JSON.stringify({token:_savedCreds.token,employee_name:_savedCreds.name||_currentSession.login_name})
+          });
+          var data=await res.json();
+          if(res.ok&&data.jwt){
+            if(typeof setAuthJWT==='function')setAuthJWT(data.jwt);
+            _currentSession.role=data.role;
+            _currentSession.token_id=data.token_id;
+            localStorage.setItem('f2f_session',JSON.stringify(_currentSession));
+            document.getElementById('loginScreen').style.display='none';
+            document.getElementById('app').style.display='';
+            if(typeof initSupabase==='function'&&!SUPABASE_LIVE)setTimeout(initSupabase,300);
+          } else {
+            // Token revoked or invalid — force login screen
+            _currentSession=null;
+            localStorage.removeItem('f2f_session');
+            localStorage.removeItem('f2f_jwt');
+            document.getElementById('loginScreen').style.display='flex';
+            document.getElementById('app').style.display='none';
+          }
+        }catch(e){
+          console.warn('Silent re-login failed:',e);
+          document.getElementById('loginScreen').style.display='flex';
+          document.getElementById('app').style.display='none';
+        }
+      })();
+    } else {
+      // No saved credentials — show login
+      _currentSession=null;
+      localStorage.removeItem('f2f_session');
+      document.getElementById('loginScreen').style.display='flex';
+      document.getElementById('app').style.display='none';
+    }
+  }
 }
 
 async function loginWithToken(){
@@ -35,22 +80,27 @@ async function loginWithToken(){
 
   errDiv.style.display='none';
 
-  // Validate token against Supabase
+  // Authenticate via auth-login Edge Function
+  // Returns signed JWT with user_role claim for role-based RLS
   try {
-    const SB_URL = 'https://cuvmjkavluixkbzblcie.supabase.co';
-    const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1dm1qa2F2bHVpeGtiemJsY2llIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NDg4ODgsImV4cCI6MjA4OTMyNDg4OH0.Ie1xGbB45nELK0PbwnKgDu56yxhZugVEdXYoUQT7TG4';
-    const res = await fetch(SB_URL+'/rest/v1/auth_tokens?token=eq.'+encodeURIComponent(token)+'&is_active=eq.true&select=id,token,employee_name,role', {
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
+    const SB_URL = SUPABASE_URL;
+    const res = await fetch(SB_URL+'/functions/v1/auth-login', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
+      body:JSON.stringify({token:token, employee_name:name})
     });
     const data = await res.json();
-    if(!data||!data.length){
-      errDiv.textContent='Токен недействителен или отозван';
+
+    if(!res.ok||data.error){
+      errDiv.textContent=data.error||'Ошибка авторизации';
       errDiv.style.display='block';
       tokenInput.value='';
       tokenInput.focus();
       return;
     }
-    const tkn = data[0];
+
+    // Store the signed JWT for all subsequent API calls
+    if(typeof setAuthJWT==='function') setAuthJWT(data.jwt);
 
     // Match login name with team members
     let matchedTeamId = null;
@@ -65,26 +115,17 @@ async function loginWithToken(){
 
     // Save session
     _currentSession = {
-      token_id: tkn.id,
-      token: tkn.token,
-      employee_name: tkn.employee_name,
+      token_id: data.token_id,
+      token: token,
+      employee_name: data.employee_name,
       login_name: name,
-      role: tkn.role,
+      role: data.role,
       matched_team_id: matchedTeamId
     };
     localStorage.setItem('f2f_session', JSON.stringify(_currentSession));
-    // Remember credentials for next login
     localStorage.setItem('f2f_login_creds', JSON.stringify({name:name,token:token}));
 
-    // Update last_used_at
-    fetch(SB_URL+'/rest/v1/auth_tokens?id=eq.'+tkn.id, {
-      method:'PATCH',
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-      body:JSON.stringify({last_used_at:new Date().toISOString()})
-    });
-
-    // Write audit log entry
-    auditLog('login','auth','Вход: '+name+' (роль: '+tkn.role+')');
+    // Audit log is now written by auth-login Edge Function (server-side)
 
     // Show dashboard
     document.getElementById('loginScreen').style.display='none';
@@ -108,7 +149,8 @@ function logoutUser(){
   if(_currentSession) auditLog('logout','auth','Выход: '+_currentSession.login_name);
   _currentSession=null;
   localStorage.removeItem('f2f_session');
-  // SECURITY: Clear all Supabase data on logout
+  // SECURITY: Clear JWT and all Supabase data on logout
+  if(typeof setAuthJWT==='function') setAuthJWT(null);
   SUPABASE_LIVE=false;
   window._sbTeam=null;window._sbPartners=null;window._sbContent=null;
   window._sbMemory=null;window._sbEvents=null;window._sbReports=null;
@@ -176,12 +218,7 @@ async function renderAdmin(){
 }
 
 async function renderAdminTokens(container){
-  const SB_URL = 'https://cuvmjkavluixkbzblcie.supabase.co';
-  const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1dm1qa2F2bHVpeGtiemJsY2llIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NDg4ODgsImV4cCI6MjA4OTMyNDg4OH0.Ie1xGbB45nELK0PbwnKgDu56yxhZugVEdXYoUQT7TG4';
-  const res = await fetch(SB_URL+'/rest/v1/auth_tokens?select=*&order=created_at.desc', {
-    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
-  });
-  const tokens = await res.json();
+  const tokens = await sbFetch('auth_tokens','select=*&order=created_at.desc');
 
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border)">';
   html += '<th style="padding:8px;text-align:left;color:var(--dim)">Сотрудник</th>';
@@ -218,12 +255,7 @@ async function renderAdminTokens(container){
 }
 
 async function renderAdminAudit(container){
-  const SB_URL = 'https://cuvmjkavluixkbzblcie.supabase.co';
-  const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1dm1qa2F2bHVpeGtiemJsY2llIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NDg4ODgsImV4cCI6MjA4OTMyNDg4OH0.Ie1xGbB45nELK0PbwnKgDu56yxhZugVEdXYoUQT7TG4';
-  const res = await fetch(SB_URL+'/rest/v1/audit_log?select=*&order=created_at.desc&limit=200', {
-    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
-  });
-  const logs = await res.json();
+  const logs = await sbFetch('audit_log','select=*&order=created_at.desc&limit=200');
 
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border)">';
   html += '<th style="padding:8px;text-align:left;color:var(--dim)">Время</th>';
@@ -407,7 +439,7 @@ async function loadStrategy(){
   if(!SUPABASE_LIVE)return;
   try{
     var res=await fetch(SUPABASE_URL+'/rest/v1/directives?key=eq.company_strategy&select=value_json',{
-      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON}
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+getAuthKey()}
     });
     var data=await res.json();
     if(data&&data[0]&&data[0].value_json){
@@ -874,7 +906,7 @@ window.confirmPayment=async function(entryId){
     try{
       var uploadResp=await fetch(SUPABASE_URL+'/storage/v1/object/payment-proofs/'+fileName,{
         method:'POST',
-        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':file.type},
+        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+getAuthKey(),'Content-Type':file.type},
         body:file
       });
       if(uploadResp.ok){
@@ -1565,7 +1597,7 @@ window.aiGeneratePrompt=async function(agentId){
   try{
     var resp=await fetch(SUPABASE_URL+'/functions/v1/agent-chat',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
       body:JSON.stringify({
         agent:'coordinator',
         message:'Ты — эксперт по созданию системных промптов для AI-агентов. '+
@@ -1818,7 +1850,7 @@ function chatRespondAI(channel,userMsg){
     method:'POST',
     headers:{
       'Content-Type':'application/json',
-      'Authorization':'Bearer '+SUPABASE_ANON
+      'Authorization':'Bearer '+getAuthKey()
     },
     body:JSON.stringify({
       agent_slug:slug,
@@ -2066,7 +2098,7 @@ window.executeApprovedAction=async function(taskId){
     try{
       var resp=await fetch(SUPABASE_URL+'/functions/v1/send-email',{
         method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
         body:JSON.stringify({
           action_id:t.sbId||null,
           to:emailData.to||emailData.email,
@@ -2455,7 +2487,7 @@ window.saveIntgConfig=function(cfgKey,keys,count){
   if(SUPABASE_LIVE){
     fetch(SUPABASE_URL+'/rest/v1/directives',{
       method:'POST',
-      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+getAuthKey(),'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
       body:JSON.stringify({key:cfgKey,value_json:cfg})
     }).catch(function(e){console.warn('Save intg cfg:',e);});
   }
@@ -3352,7 +3384,7 @@ window.bulkApprovePosts=async function(){
     if(SUPABASE_LIVE&&p.sbId){
       try{
         await fetch(SUPABASE_URL+'/rest/v1/content_queue?id=eq.'+p.sbId,{
-          method:'PATCH',headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json'},
+          method:'PATCH',headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+getAuthKey(),'Content-Type':'application/json'},
           body:JSON.stringify({status:'approved'})
         });
         p.sbStatus='approved';p.status='ready';done++;
@@ -3404,7 +3436,7 @@ window.postAction=function(id,action){
       var newSbStatus=p.status==='ready'?'approved':'pending_approval';
       fetch(SUPABASE_URL+'/rest/v1/content_queue?id=eq.'+p.sbId,{
         method:'PATCH',
-        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json'},
+        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+getAuthKey(),'Content-Type':'application/json'},
         body:JSON.stringify({status:newSbStatus})
       }).then(function(r){
         if(r.ok){p.sbStatus=newSbStatus;console.log('✅ Supabase post status updated: '+newSbStatus);}
@@ -3435,7 +3467,7 @@ window.postAction=function(id,action){
         showToast('🔄 Запускаю переработку поста...','info');
         fetch(SUPABASE_URL+'/functions/v1/smm-generate',{
           method:'POST',
-          headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
           body:JSON.stringify({mode:'rework',post_id:p.sbId,feedback:feedback.trim(),original_text:origText,platform:p.platform})
         }).then(function(res){return res.json();}).then(function(data){
           if(data.success&&data.new_text){
@@ -3517,7 +3549,7 @@ window.qaReviewPost=async function(postId){
   try{
     var res=await fetch(SUPABASE_URL+'/functions/v1/quality-review',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
       body:JSON.stringify({post_id:postId})
     });
     if(!res.ok){
@@ -3596,7 +3628,7 @@ window.ceoScorePost=async function(postId){
   try{
     var res=await fetch(SUPABASE_URL+'/functions/v1/quality-review',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
       body:JSON.stringify({post_id:postId,ceo_score:score,feedback:feedback})
     });
     var data=await res.json();
@@ -3619,7 +3651,7 @@ window.generatePostImage=function(postId,customPrompt){
   if(customPrompt&&customPrompt.trim()){payload.custom_prompt=customPrompt.trim();}
   fetch(SUPABASE_URL+'/functions/v1/generate-image',{
     method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
     body:JSON.stringify(payload)
   }).then(function(r){return r.json();}).then(function(data){
     if(data.success&&data.image_url){
@@ -3642,7 +3674,7 @@ window.publishPostToTelegram=function(postId){
   showToast('Отправляю в Telegram...','info');
   fetch(SUPABASE_URL+'/functions/v1/content-publish',{
     method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
     body:JSON.stringify({post_id:postId})
   }).then(function(r){return r.json();}).then(function(data){
     if(data.success&&data.published>0){
@@ -3791,7 +3823,7 @@ window.triggerBriefing=async function(btnEl){
   try{
     var r=await fetch(SUPABASE_URL+'/functions/v1/coordinator-briefing',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
       body:JSON.stringify({type:'morning'})
     });
     if(!r.ok){
@@ -3834,7 +3866,7 @@ window.triggerAgentCycles=async function(btnEl, singleAgentSlug){
     var body=isSingle?{agent_slug:singleAgentSlug}:{};
     var r=await fetch(SUPABASE_URL+'/functions/v1/agent-autonomous-cycle',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
       body:JSON.stringify(body)
     });
     if(!r.ok){
@@ -4880,7 +4912,7 @@ window.agentAIChat=async function(id,presetMsg){
       method:'POST',
       headers:{
         'Content-Type':'application/json',
-        'Authorization':'Bearer '+SUPABASE_ANON
+        'Authorization':'Bearer '+getAuthKey()
       },
       body:JSON.stringify({
         agent_slug:slug,
@@ -4956,7 +4988,7 @@ window.saveReplyAsPost=async function(agentId,replyElId,platform){
   try{
     var resp=await fetch(SUPABASE_URL+'/rest/v1/content_queue',{
       method:'POST',
-      headers:{'Content-Type':'application/json','apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Prefer':'return=minimal'},
+      headers:{'Content-Type':'application/json','apikey':SUPABASE_ANON,'Authorization':'Bearer '+getAuthKey(),'Prefer':'return=minimal'},
       body:JSON.stringify({platform:platform,content_text:text.trim(),status:'pending_approval'})
     });
     if(resp.ok){
@@ -5031,7 +5063,7 @@ window.saveAlgorithmSettings=function(){
   if(SUPABASE_LIVE){
     fetch(SUPABASE_URL+'/rest/v1/directives',{
       method:'POST',
-      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+getAuthKey(),'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
       body:JSON.stringify({key:'smm_algorithm',value_json:cfg})
     }).catch(function(e){console.warn('Save algo cfg:',e);});
   }
@@ -5046,7 +5078,7 @@ window.generatePostsBatch=async function(){
   try{
     var resp=await fetch(SUPABASE_URL+'/functions/v1/smm-generate',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
       body:JSON.stringify({count:5,platforms:['telegram','twitter']})
     });
     var data=await resp.json();
@@ -5184,7 +5216,7 @@ window.doUploadReferences=async function(){
     try{
       var res=await fetch(SUPABASE_URL+'/functions/v1/upload-reference',{
         method:'POST',
-        headers:{'Authorization':'Bearer '+SUPABASE_ANON},
+        headers:{'Authorization':'Bearer '+getAuthKey()},
         body:formData
       });
       var data=await res.json();
