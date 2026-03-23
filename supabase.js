@@ -507,7 +507,7 @@ function syncOfficeLiveStatus(){
       var dashId=meta.agent_dash_id||(slug&&SB_SLUG_TO_DASH[slug])||'';
       if(!dashId)return;
       if(!agentLatest[dashId]){
-        agentLatest[dashId]={type:ev.type||'',time:new Date(ev.created_at).getTime(),desc:(ev.description||'').slice(0,80)};
+        agentLatest[dashId]={type:ev.type||'',time:new Date(ev.created_at).getTime(),desc:((meta&&meta.description)||ev.type||'').slice(0,80)};
       }
     });
     Object.keys(agentLatest).forEach(function(dashId){
@@ -612,14 +612,15 @@ function setupRealtimeNotifications(){
     try{
       var lastCheck=window._lastRealtimeCheck||new Date(Date.now()-60000).toISOString();
       // Check for new events
-      var newEvents=await sbFetch('events','select=id,type,description,metadata_json,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=5');
+      var newEvents=await sbFetch('events','select=id,type,agent_id,metadata_json,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=5');
       if(newEvents&&newEvents.length>0){
         newEvents.forEach(function(ev){
           var msgType='ℹ️';
           if(ev.type.includes('approved'))msgType='✅';
           else if(ev.type.includes('published'))msgType='📢';
           else if(ev.type.includes('error'))msgType='❌';
-          var msg=(ev.description||ev.type).slice(0,80);
+          var evMeta=ev.metadata_json;if(typeof evMeta==='string'){try{evMeta=JSON.parse(evMeta);}catch(e){evMeta={};}}if(!evMeta)evMeta={};
+          var msg=((evMeta&&evMeta.description)||ev.type||'event').slice(0,80);
           if(typeof showToast==='function')showToast(msgType+' '+msg,'info');
           // Trigger office visual effects for new events
           if(typeof setAgentLiveStatus==='function'){
