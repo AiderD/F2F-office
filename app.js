@@ -2169,7 +2169,8 @@ function buildLiveIntegrations(){
 
   // 1. Supabase — check if SUPABASE_LIVE
   connected.push({name:'Supabase',purpose:'Database & Auth',status:SUPABASE_LIVE?'active':'pending',
-    detail:SUPABASE_LIVE?Object.keys(window._sbAgents||{}).length+' agents synced':'Connecting...'});
+    detail:SUPABASE_LIVE?Object.keys(window._sbAgents||{}).length+' agents synced':'Connecting...',
+    balance:'Free tier (500MB DB, 1GB Storage)'});
 
   // 2. Edge Functions — check if agent cycles ran recently
   var lastCycle=null;
@@ -2179,12 +2180,14 @@ function buildLiveIntegrations(){
   }
   var cycleAge=lastCycle?Math.round((Date.now()-new Date(lastCycle).getTime())/60000):9999;
   connected.push({name:'Edge Functions',purpose:'Agent AI cycles',status:cycleAge<180?'active':'limited',
-    detail:lastCycle?cycleAge+'мин назад':'Нет данных'});
+    detail:lastCycle?cycleAge+'мин назад':'Нет данных',
+    balance:'500K вызовов/мес (Free)'});
 
   // 3. pg_cron — infer from regular execution pattern
   var hasCron=lastCycle&&cycleAge<180;
   connected.push({name:'pg_cron',purpose:'Auto scheduling',status:hasCron?'active':'limited',
-    detail:hasCron?'11 jobs active':'Check SQL console'});
+    detail:hasCron?'15 jobs active':'Check SQL console',
+    balance:'Безлимитно (Supabase)'});
 
   // 4. Telegram Bot — check directives for bot token or check if any agent posted to TG
   var tgActive=false;var tgDetail='Не настроен';
@@ -2198,30 +2201,37 @@ function buildLiveIntegrations(){
     if(tgPosts.length>0){tgActive=true;tgDetail=tgPosts.length+' постов в TG';}
   }
   connected.push({name:'Telegram Bot',purpose:'CEO commands & approvals',status:tgActive?'active':'limited',
-    detail:tgDetail});
+    detail:tgDetail,balance:'Безлимитно (Free)'});
 
   // 5. AI Credits — check if ai_credits data loaded
   var hasCredits=window._sbCredits&&window._sbCredits.length>0;
   var weeklyBudget=50;// $50/week budget
+  var aiRemaining=hasCredits?Math.max(0,weeklyBudget-creditsSpent):weeklyBudget;
   connected.push({name:'Claude AI (Anthropic)',purpose:'LLM for agents',status:hasCredits?'active':'limited',
     detail:hasCredits?'$'+creditsSpent.toFixed(2)+' использовано':'Ожидание данных',
-    usage:hasCredits?Math.round(creditsSpent*100)/100:0,limit:weeklyBudget});
+    usage:hasCredits?Math.round(creditsSpent*100)/100:0,limit:weeklyBudget,
+    balance:'$'+aiRemaining.toFixed(2)+' из $'+weeklyBudget+'/нед'});
 
   // 6. GitHub Pages — always active (we're running on it)
-  connected.push({name:'GitHub Pages',purpose:'Dashboard hosting',status:'active',detail:'aiderd.github.io'});
+  connected.push({name:'GitHub Pages',purpose:'Dashboard hosting',status:'active',detail:'aiderd.github.io',
+    balance:'Безлимитно (Free)'});
 
   // 7. Brave Search API — for lead_finder web search
-  connected.push({name:'Brave Search API',purpose:'Web search for leads',status:'active',detail:'1000 req/мес бесплатно'});
+  connected.push({name:'Brave Search API',purpose:'Web search for leads',status:'active',detail:'1000 req/мес бесплатно',
+    balance:'~1000 запросов/мес (Free)'});
 
   // 8. Hunter.io — email verification
-  connected.push({name:'Hunter.io',purpose:'Email verification',status:'active',detail:'Верификация по домену'});
+  connected.push({name:'Hunter.io',purpose:'Email verification',status:'active',detail:'Верификация по домену',
+    balance:'50 кредитов/мес (Free)'});
 
   // 9. Replicate (Flux) — AI image generation
   var hasImages=window._sbContent?window._sbContent.filter(function(c){return c.image_url;}).length:0;
-  connected.push({name:'Replicate (Flux)',purpose:'AI image generation',status:'active',detail:hasImages?hasImages+' картинок':'Готов к генерации'});
+  connected.push({name:'Replicate (Flux)',purpose:'AI image generation',status:'active',detail:hasImages?hasImages+' картинок':'Готов к генерации',
+    balance:'Pay-per-use (~$0.003/img)'});
 
-  // 10. Apollo.io — lead enrichment
-  connected.push({name:'Apollo.io',purpose:'Lead enrichment & search',status:'active',detail:'People & Company search'});
+  // 10. Apollo.io — DISABLED (free plan blocks search endpoints since session 14)
+  connected.push({name:'Apollo.io',purpose:'Lead enrichment & search',status:'limited',detail:'Free plan — search заблокирован',
+    balance:'⚠️ Free plan исчерпан'});
 
   // Needed integrations — keep curated list but mark any that became connected
   var neededList=[
@@ -2262,9 +2272,10 @@ function renderIntegrations(){
         '<div class="intg-progress" style="flex:1"><div class="intg-progress-fill" style="width:'+usePct+'%;background:'+useColor+'"></div></div>'+
         '<span style="font-size:9px;color:var(--dim);font-family:monospace;white-space:nowrap">'+c.usage+'/'+c.limit+'</span></div>';
     }
+    var balanceHtml=c.balance?'<div style="font-size:9px;color:var(--cyan,#0ff);margin-top:2px;font-family:monospace">💰 '+esc(c.balance)+'</div>':'';
     return '<div class="intg-row" style="cursor:pointer" onclick="openIntgDetail(\''+c.name.replace(/'/g,"\\'")+"','connected')\">" +
       '<div class="intg-dot '+c.status+'"></div>'+
-      '<div style="flex:1;min-width:0"><div class="intg-name" style="margin-bottom:1px">'+c.name+'</div><div style="font-size:10px;color:var(--dim)">'+c.purpose+'</div></div>'+
+      '<div style="flex:1;min-width:0"><div class="intg-name" style="margin-bottom:1px">'+c.name+'</div><div style="font-size:10px;color:var(--dim)">'+c.purpose+'</div>'+balanceHtml+'</div>'+
       (usageBar||'<div style="font-size:10px;color:var(--dim);white-space:nowrap">'+c.detail+'</div>')+
       '<div class="intg-badge '+c.status+'">'+statusLabel+'</div>'+
     '</div>';
@@ -2302,6 +2313,12 @@ window.openIntgDetail=function(name,type){
     '<span class="intg-badge '+(isConn?item.status:'needed')+'" style="font-size:11px;padding:4px 10px">'+(isConn?item.status.toUpperCase():'НЕ ПОДКЛЮЧЕНО')+'</span>'+
     (item.detail?'<span style="font-size:11px;color:var(--dim)">'+item.detail+'</span>':'')+
   '</div>';
+  // Balance info
+  if(item.balance){
+    html+='<div style="padding:8px 12px;background:rgba(0,255,255,0.05);border:1px solid rgba(0,255,255,0.15);border-radius:6px;margin-bottom:12px">'+
+      '<div style="font-size:10px;color:var(--dim);margin-bottom:2px">Баланс / Лимит</div>'+
+      '<div style="font-size:13px;color:var(--cyan,#0ff);font-family:monospace;font-weight:600">'+esc(item.balance)+'</div></div>';
+  }
   // Usage bar
   if(isConn&&item.usage!==undefined&&item.limit){
     var pct=Math.min(100,Math.round(item.usage/item.limit*100));
@@ -5255,7 +5272,7 @@ function renderFeed(){
   });
   document.getElementById('feedList').innerHTML=filtered.length?filtered.map(function(f){
     var a=AGENTS[f.agentId]||{emoji:'📋',name:'System'};
-    return '<div class="feed-item" style="border-left-color:'+f.color+'" onclick="openFeedDetail('+f.id+')">'+
+    return '<div class="feed-item" style="border-left-color:'+f.color+'">'+
       '<div class="feed-agent" style="color:'+f.color+'">'+a.emoji+' '+a.name+'</div>'+
       '<div class="feed-text">'+f.text+'</div>'+
       '<div class="feed-time">'+f.time+'</div>'+
@@ -6093,7 +6110,7 @@ function renderEventsCalendar(events){
     var dateStr=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     var isToday=dateStr===todayStr;
     var evs=dayEvents[d]||[];
-    html+='<div onclick="showDayEvents(\''+dateStr+'\')" style="padding:3px;min-height:40px;background:'+(isToday?'var(--cyan)11':'var(--bg)')+';border:1px solid '+(isToday?'var(--cyan)':'transparent')+';border-radius:6px;cursor:pointer;transition:all .15s" onmouseover="this.style.background=\'var(--panel)\'" onmouseout="this.style.background=\''+(isToday?'var(--cyan)11':'var(--bg)')+'\'">'+
+    html+='<div class="cal-day'+(isToday?' cal-today':'')+'" onclick="showDayEvents(\''+dateStr+'\')" style="padding:3px;min-height:40px;border-radius:6px;cursor:pointer">'+
       '<div style="font-size:11px;color:'+(isToday?'var(--cyan)':'var(--text)')+';font-weight:'+(isToday?'700':'400')+';text-align:right;padding:0 2px">'+d+'</div>';
     if(evs.length>0){
       evs.slice(0,2).forEach(function(e){
@@ -6466,63 +6483,5 @@ document.addEventListener('click',function(e){
   if(commandPaletteOverlay&&e.target===commandPaletteOverlay)closeCommandPalette();
 });
 
-// ═══ FEATURE 3: ACTIVITY SUMMARY IN FEED ═══
-function renderActivitySummary(){
-  const feed_header=document.querySelector('.feed-header');
-  if(!feed_header)return;
-
-  // Count actions by agent in last 24h
-  const now=new Date();
-  const d24=new Date(now-24*3600000);
-  const agentActivity={};
-
-  (window._sbActions||[]).forEach(a=>{
-    if(a.created_at&&new Date(a.created_at)>=d24&&a.agent_id){
-      // Map SB agent_id → dashboard agent ID via _sbAgentById
-      let dashId='coordinator';
-      if(window._sbAgentById&&window._sbAgentById[a.agent_id]){
-        var slug=window._sbAgentById[a.agent_id].slug||'';
-        dashId=(typeof SB_SLUG_TO_DASH!=='undefined'&&SB_SLUG_TO_DASH[slug])?SB_SLUG_TO_DASH[slug]:'coordinator';
-      }
-      agentActivity[dashId]=(agentActivity[dashId]||0)+1;
-    }
-  });
-
-  // Build summary HTML — wrapped in single container for clean replacement
-  if(Object.keys(agentActivity).length===0){
-    // Remove old summary if no activity
-    var oldWrap=document.getElementById('activitySummaryWrap');
-    if(oldWrap)oldWrap.remove();
-    return;
-  }
-
-  let html='<div id="activitySummaryWrap">'+
-    '<div class="activity-summary">⚡ Активность за 24ч</div>'+
-    '<div class="activity-mini-cards">';
-  Object.entries(agentActivity).forEach(([dashId,count])=>{
-    const a=AGENTS[dashId];
-    if(a){
-      var dept=a.dept||'';
-      html+='<div class="activity-mini-card" style="border-left:3px solid '+a.color+';cursor:pointer" onclick="setFeedFilter(feedFilterDept===\''+dept+'\'?\'all\':\''+dept+'\')" title="'+a.name+': '+count+' действий за 24ч. Клик — фильтр ленты">'+a.emoji+' '+count+'</div>';
-    }
-  });
-  html+='</div></div>';
-
-  // Replace entire wrapper (prevents mini-cards accumulation bug)
-  var oldWrap=document.getElementById('activitySummaryWrap');
-  if(oldWrap){
-    oldWrap.outerHTML=html;
-  }else{
-    feed_header.insertAdjacentHTML('afterend',html);
-  }
-}
-
-// Re-render activity summary when feed updates
-const origRenderFeed=window.renderFeed;
-window.renderFeed=function(){
-  if(origRenderFeed)origRenderFeed.call(this);
-  renderActivitySummary();
-};
-
-// Initial render
-renderActivitySummary();
+// ═══ FEATURE 3: ACTIVITY SUMMARY IN FEED (removed — CEO: бесполезные кнопки) ═══
+// Activity mini-cards removed per CEO request (session 23)

@@ -396,6 +396,11 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
 .intg-badge.limited{background:#ffaa0022;color:var(--amber);border:1px solid #ffaa0044}
 .intg-badge.pending{background:#ff444422;color:var(--hot);border:1px solid #ff444444}
 .intg-badge.needed{background:#ffffff08;color:var(--dim);border:1px solid var(--border)}
+/* ═══ CALENDAR ═══ */
+.cal-day{background:var(--bg);border:1px solid transparent;transition:background .15s,border-color .15s}
+.cal-day:hover{background:var(--panel);border-color:var(--border)}
+.cal-today{background:rgba(0,229,255,0.07)!important;border:1px solid var(--cyan)!important}
+.cal-today:hover{background:rgba(0,229,255,0.14)!important}
 /* ═══ TEAM CHAT ═══ */
 .chat-panel{flex-direction:column;height:100%;padding:0!important;overflow:hidden}
 .chat-container{display:flex;flex:1;overflow:hidden}

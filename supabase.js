@@ -189,7 +189,7 @@ async function syncSupabaseData(){
   }
 
   // Content queue
-  const content=await sbFetch('content_queue','select=*&order=created_at.desc&limit=200');
+  const content=await sbFetch('content_queue','select=*&order=created_at.desc&limit=1000');
   if(content){
     window._sbContent=content;
     window._sbContentMerged=false;
@@ -219,7 +219,7 @@ async function syncSupabaseData(){
   if(reports)window._sbReports=reports;
 
   // Actions (tasks)
-  const actions=await sbFetch('actions','select=id,agent_id,type,payload_json,created_at&order=created_at.desc&limit=200');
+  const actions=await sbFetch('actions','select=id,agent_id,type,payload_json,created_at&order=created_at.desc&limit=1000');
   if(actions)window._sbActions=actions;
 
   // Finance (legacy)
