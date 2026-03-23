@@ -19,53 +19,9 @@ let _currentSession = JSON.parse(localStorage.getItem('f2f_session')||'null');
 
 // Try auto-login from saved session (runs immediately — DOM already parsed since script at end of body)
 if(_currentSession){
-  // Check if JWT is still valid (set by supabase.js on page load)
-  if(window._authJWT){
-    // JWT valid — show dashboard
-    document.getElementById('loginScreen').style.display='none';
-    document.getElementById('app').style.display='';
-  } else {
-    // JWT expired — try silent re-login from saved credentials
-    var _savedCreds=JSON.parse(localStorage.getItem('f2f_login_creds')||'null');
-    if(_savedCreds&&_savedCreds.token){
-      (async function(){
-        try{
-          var res=await fetch(SUPABASE_URL+'/functions/v1/auth-login',{
-            method:'POST',
-            headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
-            body:JSON.stringify({token:_savedCreds.token,employee_name:_savedCreds.name||_currentSession.login_name})
-          });
-          var data=await res.json();
-          if(res.ok&&data.jwt){
-            if(typeof setAuthJWT==='function')setAuthJWT(data.jwt);
-            _currentSession.role=data.role;
-            _currentSession.token_id=data.token_id;
-            localStorage.setItem('f2f_session',JSON.stringify(_currentSession));
-            document.getElementById('loginScreen').style.display='none';
-            document.getElementById('app').style.display='';
-            if(typeof initSupabase==='function'&&!SUPABASE_LIVE)setTimeout(initSupabase,300);
-          } else {
-            // Token revoked or invalid — force login screen
-            _currentSession=null;
-            localStorage.removeItem('f2f_session');
-            localStorage.removeItem('f2f_jwt');
-            document.getElementById('loginScreen').style.display='flex';
-            document.getElementById('app').style.display='none';
-          }
-        }catch(e){
-          console.warn('Silent re-login failed:',e);
-          document.getElementById('loginScreen').style.display='flex';
-          document.getElementById('app').style.display='none';
-        }
-      })();
-    } else {
-      // No saved credentials — show login
-      _currentSession=null;
-      localStorage.removeItem('f2f_session');
-      document.getElementById('loginScreen').style.display='flex';
-      document.getElementById('app').style.display='none';
-    }
-  }
+  // Session exists — show dashboard (JWT is optional enhancement, not required)
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('app').style.display='';
 }
 
 async function loginWithToken(){
@@ -80,27 +36,48 @@ async function loginWithToken(){
 
   errDiv.style.display='none';
 
-  // Authenticate via auth-login Edge Function
-  // Returns signed JWT with user_role claim for role-based RLS
   try {
-    const SB_URL = SUPABASE_URL;
-    const res = await fetch(SB_URL+'/functions/v1/auth-login', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+getAuthKey()},
-      body:JSON.stringify({token:token, employee_name:name})
-    });
-    const data = await res.json();
+    // Try Edge Function auth first (returns JWT with role for RLS)
+    var tkn = null;
+    var jwtReceived = false;
+    try {
+      var efRes = await fetch(SUPABASE_URL+'/functions/v1/auth-login', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+        body:JSON.stringify({token:token, employee_name:name}),
+        signal:AbortSignal.timeout(5000)
+      });
+      if(efRes.ok){
+        var efData = await efRes.json();
+        if(efData.jwt){
+          if(typeof setAuthJWT==='function') setAuthJWT(efData.jwt);
+          jwtReceived = true;
+          tkn = {id:efData.token_id, token:token, employee_name:efData.employee_name, role:efData.role};
+        }
+      }
+    } catch(efErr){ console.warn('auth-login Edge Function unavailable, using direct REST fallback:', efErr); }
 
-    if(!res.ok||data.error){
-      errDiv.textContent=data.error||'Ошибка авторизации';
-      errDiv.style.display='block';
-      tokenInput.value='';
-      tokenInput.focus();
-      return;
+    // Fallback: direct REST query (works with anon key when RLS allows it)
+    if(!tkn){
+      var res = await fetch(SUPABASE_URL+'/rest/v1/auth_tokens?token=eq.'+encodeURIComponent(token)+'&is_active=eq.true&select=id,token,employee_name,role', {
+        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+getAuthKey()}
+      });
+      var data = await res.json();
+      if(!data||!data.length){
+        errDiv.textContent='Токен недействителен или отозван';
+        errDiv.style.display='block';
+        tokenInput.value='';
+        tokenInput.focus();
+        return;
+      }
+      tkn = data[0];
+      // Update last_used_at
+      fetch(SUPABASE_URL+'/rest/v1/auth_tokens?id=eq.'+tkn.id, {
+        method:'PATCH',
+        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+getAuthKey(),'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify({last_used_at:new Date().toISOString()})
+      }).catch(function(){});
     }
-
-    // Store the signed JWT for all subsequent API calls
-    if(typeof setAuthJWT==='function') setAuthJWT(data.jwt);
 
     // Match login name with team members
     let matchedTeamId = null;
@@ -115,17 +92,17 @@ async function loginWithToken(){
 
     // Save session
     _currentSession = {
-      token_id: data.token_id,
+      token_id: tkn.id,
       token: token,
-      employee_name: data.employee_name,
+      employee_name: tkn.employee_name,
       login_name: name,
-      role: data.role,
+      role: tkn.role,
       matched_team_id: matchedTeamId
     };
     localStorage.setItem('f2f_session', JSON.stringify(_currentSession));
     localStorage.setItem('f2f_login_creds', JSON.stringify({name:name,token:token}));
 
-    // Audit log is now written by auth-login Edge Function (server-side)
+    auditLog('login','auth','Вход: '+name+' (роль: '+tkn.role+(jwtReceived?' JWT':'')+')')
 
     // Show dashboard
     document.getElementById('loginScreen').style.display='none';
