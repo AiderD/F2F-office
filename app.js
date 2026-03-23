@@ -2873,7 +2873,7 @@ window.openLeadModal=function(id){
 
   // Load interaction history from Supabase
   if(l.sbId&&SUPABASE_LIVE){
-    sbFetch('lead_interactions','lead_id=eq.'+l.sbId+'&order=created_at.desc&limit=20').then(function(data){
+    sbFetch('lead_interactions','lead_id=eq.'+l.sbId+'&order=created_at.desc&limit=200').then(function(data){
       var el=document.getElementById('leadHistoryContent_'+id);
       if(!el)return;
       if(!data||!data.length){el.textContent='Нет записей';return;}
@@ -3751,15 +3751,15 @@ renderReports();
 
 // Helper: full data reload after agent runs (credits, reports, leads, memory)
 async function reloadAfterAgentRun(){
-  var reports=await sbFetch('reports','select=id,agent_id,type_ab,summary,results,theses,metrics_json,approved_by_ceo,created_at&order=created_at.desc&limit=50');
+  var reports=await sbFetch('reports','select=id,agent_id,type_ab,summary,results,theses,metrics_json,approved_by_ceo,created_at&order=created_at.desc&limit=500');
   if(reports)window._sbReports=reports;
-  var credits=await sbFetch('ai_credits','select=agent_id,tokens_input,tokens_output,cost_usd,model,task_type,created_at&order=created_at.desc&limit=30');
+  var credits=await sbFetch('ai_credits','select=agent_id,tokens_input,tokens_output,cost_usd,model,task_type,created_at&order=created_at.desc&limit=500');
   if(credits)window._sbCredits=credits;
-  var partners=await sbFetch('partner_pipeline','select=*&order=created_at.desc&limit=20');
+  var partners=await sbFetch('partner_pipeline','select=*&order=created_at.desc&limit=500');
   if(partners)window._sbPartners=partners;
-  var actions=await sbFetch('actions','select=id,agent_id,type,payload_json,created_at&order=created_at.desc&limit=50');
+  var actions=await sbFetch('actions','select=id,agent_id,type,payload_json,created_at&order=created_at.desc&limit=500');
   if(actions)window._sbActions=actions;
-  var memory=await sbFetch('agent_memory','select=agent_id,state,last_output,insights,next_action,tasks_done,cycle_number,created_at,agents!inner(slug,name)&order=created_at.desc&limit=50');
+  var memory=await sbFetch('agent_memory','select=agent_id,state,last_output,insights,next_action,tasks_done,cycle_number,created_at,agents!inner(slug,name)&order=created_at.desc&limit=500');
   if(memory)window._sbMemory=memory.map(function(m){var ag=m.agents;return Object.assign({},m,{slug:ag?ag.slug:'unknown',dashId:ag?SB_SLUG_TO_DASH[ag.slug]:null});});
   refreshAfterSync();
   if(typeof calcCreditsFromSupabase==='function')calcCreditsFromSupabase();
