@@ -339,11 +339,11 @@
 
 <!-- EVENTS/МЕРОПРИЯТИЯ PANEL -->
 <div class="panel data-panel" id="panel-events">
-  <div class="data-header">
+  <div class="data-header" style="flex-wrap:wrap;gap:8px">
     <h2>📅 Мероприятия</h2>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <div class="data-count" id="events-total-count">0</div>
-      <button class="ctrl-btn" onclick="openEventForm()" style="background:#a855f733;color:#a855f7;font-size:13px;font-weight:700;padding:8px 18px;border:1px solid #a855f766;min-height:44px">+ Новое мероприятие</button>
+      <button class="ctrl-btn" onclick="openEventForm()" style="background:#a855f733;color:#a855f7;font-size:13px;font-weight:700;padding:8px 18px;border:1px solid #a855f766;min-height:44px;white-space:nowrap">+ Новое мероприятие</button>
     </div>
   </div>
   <div id="eventsFilterBar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:0 4px"></div>
