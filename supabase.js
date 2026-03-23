@@ -372,27 +372,8 @@ function refreshAfterSync(){
   // ═══ 7b. AI CREDITS: Calculate real usage from ai_credits table ═══
   if(typeof calcCreditsFromSupabase==='function')calcCreditsFromSupabase();
 
-  // ═══ 8. FEED: Restore from Supabase events ═══
-  if(window._sbEvents&&window._sbEvents.length>0&&typeof feedItems!=='undefined'){
-    // Only load once per session (don't re-add on auto-refresh)
-    if(!window._sbFeedLoaded){
-      window._sbFeedLoaded=true;
-      window._sbEvents.forEach(function(ev){
-        if(!ev.metadata_json)return;
-        var meta=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json):ev.metadata_json;
-        if(!meta.text)return;
-        var agId=meta.agent_dash_id||'coordinator';
-        var ag=AGENTS[agId]||{color:'#64748b'};
-        var t=new Date(ev.created_at);
-        feedItems.push({
-          id:feedItems.length+1,agentId:agId,text:meta.text,
-          time:t.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}),
-          fullTime:ev.created_at,color:ag.color
-        });
-      });
-      if(typeof renderFeed==='function')renderFeed();
-    }
-  }
+  // ═══ 8. FEED: Loaded via section 5b (enriched events with dedup) ═══
+  // REMOVED: old section 8 duplicated events from section 5b below
 
   // ═══ 8b. AGENT PROMPTS: Load from agents.system_prompt ═══
   if(typeof loadAgentPromptsFromSupabase==='function')loadAgentPromptsFromSupabase();
@@ -434,10 +415,10 @@ function refreshAfterSync(){
       if(contacted>0) addFeed('outreach','📧 '+contacted+' лидов на стадии контакта');
     }
 
-    // 3. Recent reports
+    // 3. Recent reports (last 10 only, not all 126)
     if(window._sbReports&&window._sbReports.length>0){
-      var recent=window._sbReports;
-      recent.forEach(r=>{
+      var recentReports=window._sbReports.slice(0,10);
+      recentReports.forEach(r=>{
         var ago=window._sbAgentById&&r.agent_id?window._sbAgentById[r.agent_id]:null;
         var dashId=ago?SB_SLUG_TO_DASH[ago.slug]:'coordinator';
         addFeed(dashId,'📋 Отчёт: '+(r.summary||r.type_ab||'').slice(0,80));
@@ -458,24 +439,36 @@ function refreshAfterSync(){
     if(activeAgents>0) addFeed('watchdog','🟢 '+activeAgents+' агентов онлайн | Supabase подключён');
 
     // 5b. Real Supabase events from events table (with full metadata for drill-down)
+    // FIXED: 24h filter + dedup + max 30 items (was loading ALL 500 events with duplicates)
     if(window._sbEvents&&window._sbEvents.length>0){
-      var recentEvents=window._sbEvents;
-      recentEvents.forEach(function(ev){
+      var now24=Date.now()-24*3600000;
+      var seenTexts=new Set();
+      // Collect existing feed texts for dedup
+      feedItems.forEach(function(f){seenTexts.add(f.text.slice(0,50));});
+      var addedCount=0;
+      window._sbEvents.forEach(function(ev){
+        if(addedCount>=30)return; // max 30 events in feed
+        if(ev.created_at&&new Date(ev.created_at).getTime()<now24)return; // 24h only
         var m=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json||'{}'):ev.metadata_json||{};
         if(m.source==='dashboard')return; // skip our own feed events
+        var text=m.text||m.summary||ev.type||'Событие';
+        if(text.length>120)text=text.slice(0,120)+'...';
+        var textKey=text.slice(0,50);
+        if(seenTexts.has(textKey))return; // dedup
+        seenTexts.add(textKey);
         var agSlug=null;
         if(ev.agent_id&&window._sbAgentById&&window._sbAgentById[ev.agent_id])agSlug=window._sbAgentById[ev.agent_id].slug;
         var dashId=(agSlug&&SB_SLUG_TO_DASH[agSlug])?SB_SLUG_TO_DASH[agSlug]:'coordinator';
-        var text=m.text||m.summary||ev.type||'Событие';
-        if(text.length>120)text=text.slice(0,120)+'...';
         var ago=ev.created_at?timeSince(ev.created_at):'';
-        var item={
+        feedItems.push({
           id:++feedIdCounter,agentId:dashId,text:text,
           time:ago,fullTime:ev.created_at,color:(AGENTS[dashId]||{}).color||'#64748b',
           sbEvent:ev,sbMeta:m
-        };
-        feedItems.push(item);
+        });
+        addedCount++;
       });
+      // Trim total feed to 50 max
+      if(feedItems.length>50)feedItems.length=50;
       renderFeed();
     }
 

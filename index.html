@@ -86,6 +86,7 @@
   <button class="tab" data-panel="team">👥 Команда <span class="badge" id="tab-team-count">0</span></button>
   <button class="tab" data-panel="agents">🤖 AI Агенты <span class="badge" style="background:var(--cyan)" id="tab-agents-count">0</span></button>
   <button class="tab" data-panel="chat">💬 Чат</button>
+  <button class="tab" data-panel="events">📅 Мероприятия <span class="badge" id="tab-events-count">0</span></button>
   <button class="tab" data-panel="integrations">🔗 Интеграции</button>
   <button class="tab" data-panel="admin" id="tabAdmin" style="display:none">🔐 Админ</button>
 </div>
@@ -334,6 +335,26 @@
 <div class="panel data-panel" id="panel-integrations">
   <div class="data-header"><h2>🔗 Интеграции</h2><div class="data-count" id="intg-count">-</div></div>
   <div id="intgContent"></div>
+</div>
+
+<!-- EVENTS/МЕРОПРИЯТИЯ PANEL -->
+<div class="panel data-panel" id="panel-events">
+  <div class="data-header">
+    <h2>📅 Мероприятия</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div class="data-count" id="events-total-count">0</div>
+      <button class="ctrl-btn" onclick="openEventForm()" style="background:#a855f722;color:#a855f7">+ Добавить</button>
+    </div>
+  </div>
+  <div id="eventsFilterBar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:0 4px"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 4px" id="eventsLayout">
+    <div>
+      <div id="eventsCalendarGrid" style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px"></div>
+    </div>
+    <div>
+      <div id="eventsUpcomingList" style="max-height:500px;overflow-y:auto"></div>
+    </div>
+  </div>
 </div>
 
 <!-- STRATEGY & KPI PANEL -->
