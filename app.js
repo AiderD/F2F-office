@@ -6443,7 +6443,10 @@ function renderActivitySummary(){
     '<div class="activity-mini-cards">';
   Object.entries(agentActivity).forEach(([dashId,count])=>{
     const a=AGENTS[dashId];
-    if(a)html+='<div class="activity-mini-card" style="border-left:3px solid '+a.color+'">'+a.emoji+' '+count+'</div>';
+    if(a){
+      var dept=a.dept||'';
+      html+='<div class="activity-mini-card" style="border-left:3px solid '+a.color+';cursor:pointer" onclick="setFeedFilter(feedFilterDept===\''+dept+'\'?\'all\':\''+dept+'\')" title="'+a.name+': '+count+' действий за 24ч. Клик — фильтр ленты">'+a.emoji+' '+count+'</div>';
+    }
   });
   html+='</div></div>';
 
