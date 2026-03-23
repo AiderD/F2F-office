@@ -5891,24 +5891,61 @@ var EVENT_CHECKLISTS={
   ]
 };
 
-function initEventsData(){
-  // v3 cleanup: remove old demo/fake data (one-time migration)
-  if(!localStorage.getItem('f2f_events_v3_clean')){
-    localStorage.removeItem('f2f_events');
-    localStorage.removeItem('f2f_events_v2');
-    localStorage.setItem('f2f_events_v3_clean','1');
-  }
-  var saved=[];
-  try{saved=JSON.parse(localStorage.getItem('f2f_events_v2')||'[]');}catch(e){}
-  F2F_EVENTS=saved.map(function(e){
-    if(!e.id)e.id='ev_'+Math.random().toString(36).slice(2,8);
-    if(!e.status)e.status='idea';
-    if(!e.tasks)e.tasks=[];
-    return e;
-  });
-  saveEvents();
+var _eventsLoaded=false;
+async function initEventsData(){
+  if(_eventsLoaded&&F2F_EVENTS.length>0)return;
+  try{
+    var data=await sbFetch('f2f_events','select=*&order=date.asc');
+    if(data&&data.length>0){
+      F2F_EVENTS=data.map(function(e){
+        // Map DB columns to frontend fields
+        return{
+          id:e.id,title:e.title,date:e.date,end:e.end_date||'',
+          type:e.type||'tournament',status:e.status||'idea',
+          venue:e.venue||'',budget:e.budget||'',goals:e.goals||'',
+          desc:e.description||'',tasks:e.tasks||[]
+        };
+      });
+      _eventsLoaded=true;
+      return;
+    }
+  }catch(err){console.warn('Events load from Supabase failed:',err);}
+  // Fallback: try localStorage migration (one-time)
+  try{
+    var saved=JSON.parse(localStorage.getItem('f2f_events_v2')||'[]');
+    if(saved.length>0){
+      F2F_EVENTS=saved.map(function(e){
+        if(!e.id)e.id='ev_'+Math.random().toString(36).slice(2,8);
+        if(!e.status)e.status='idea';
+        if(!e.tasks)e.tasks=[];
+        return e;
+      });
+      // Migrate to Supabase
+      F2F_EVENTS.forEach(function(e){_saveEventToSupabase(e,true);});
+      showToast('📅 Мероприятия мигрированы в Supabase','info');
+    }
+  }catch(e){}
+  _eventsLoaded=true;
 }
+
+async function _saveEventToSupabase(e,isNew){
+  var payload={
+    title:e.title,date:e.date,end_date:e.end||null,
+    type:e.type,status:e.status,venue:e.venue||null,
+    budget:e.budget||null,goals:e.goals||null,
+    description:e.desc||null,tasks:e.tasks||[],
+    updated_at:new Date().toISOString()
+  };
+  if(isNew){
+    var result=await sbInsert('f2f_events',payload);
+    if(result&&result[0])e.id=result[0].id;
+  }else{
+    await sbPatch('f2f_events','id=eq.'+e.id,payload);
+  }
+}
+
 function saveEvents(){
+  // Legacy localStorage backup (will be removed later)
   try{localStorage.setItem('f2f_events_v2',JSON.stringify(F2F_EVENTS));}catch(e){}
 }
 
@@ -5918,8 +5955,8 @@ function getEventProgress(e){
   return{done:done,total:e.tasks.length,pct:Math.round(done/e.tasks.length*100)};
 }
 
-function renderEventsPanel(){
-  initEventsData();
+async function renderEventsPanel(){
+  await initEventsData();
   var countEl=document.getElementById('tab-events-count');
   var today=new Date().toISOString().slice(0,10);
   var upcoming=F2F_EVENTS.filter(function(e){return e.date>=today&&e.status!=='cancelled'&&e.status!=='completed';});
@@ -6170,6 +6207,7 @@ window.toggleEventTask=function(evId,taskIdx){
   if(!e||!e.tasks||!e.tasks[taskIdx])return;
   e.tasks[taskIdx].done=!e.tasks[taskIdx].done;
   saveEvents();
+  _saveEventToSupabase(e,false);
   closeModal();
   setTimeout(function(){openEventDetail(evId);},100);
 };
@@ -6186,6 +6224,7 @@ window.generateChecklist=function(evId){
     });
   });
   saveEvents();
+  _saveEventToSupabase(e,false);
   closeModal();
   setTimeout(function(){openEventDetail(evId);},100);
   showToast('📋 Чеклист сгенерирован ('+e.tasks.length+' задач)','success');
@@ -6196,6 +6235,7 @@ window.changeEventStatus=function(evId,newStatus){
   if(!e)return;
   e.status=newStatus;
   saveEvents();
+  _saveEventToSupabase(e,false);
   closeModal();
   setTimeout(function(){openEventDetail(evId);},100);
 };
@@ -6253,7 +6293,7 @@ window.openEventForm=function(defaultDate,editId){
   },100);
 };
 
-window.saveEventForm=function(editId){
+window.saveEventForm=async function(editId){
   var title=document.getElementById('evTitle').value.trim();
   var date=document.getElementById('evDate').value;
   var end=document.getElementById('evEnd').value;
@@ -6267,8 +6307,11 @@ window.saveEventForm=function(editId){
   if(editId){
     var ev=F2F_EVENTS.find(function(e){return e.id===editId;});
     if(ev){ev.title=title;ev.date=date;ev.end=end||'';ev.type=type;ev.status=status;ev.venue=venue;ev.budget=budget;ev.goals=goals;ev.desc=desc;}
+    _saveEventToSupabase(ev,false);
   }else{
-    F2F_EVENTS.push({id:'ev_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),title:title,date:date,end:end||'',type:type,status:status,venue:venue,budget:budget,goals:goals,desc:desc,tasks:[]});
+    var newEv={id:'temp_'+Date.now(),title:title,date:date,end:end||'',type:type,status:status,venue:venue,budget:budget,goals:goals,desc:desc,tasks:[]};
+    F2F_EVENTS.push(newEv);
+    _saveEventToSupabase(newEv,true);
   }
   saveEvents();
   closeModal();
@@ -6279,6 +6322,8 @@ window.saveEventForm=function(editId){
 window.deleteEvent=function(id){
   F2F_EVENTS=F2F_EVENTS.filter(function(e){return e.id!==id;});
   saveEvents();
+  // Delete from Supabase (soft: set status=cancelled since DELETE blocked by RLS)
+  sbPatch('f2f_events','id=eq.'+id,{status:'cancelled',updated_at:new Date().toISOString()});
   closeModal();
   renderEventsPanel();
   showToast('🗑 Мероприятие удалено','info');
@@ -6292,8 +6337,12 @@ if(_origSwitchTab){
     if(panel==='events')renderEventsPanel();
   };
 }
-// Init on load
-setTimeout(function(){initEventsData();var c=document.getElementById('tab-events-count');if(c){var u=F2F_EVENTS.filter(function(e){return e.date>=new Date().toISOString().slice(0,10);}).length;c.textContent=u;}},500);
+// Init on load — async, updates counter when ready
+setTimeout(async function(){
+  await initEventsData();
+  var c=document.getElementById('tab-events-count');
+  if(c){var u=F2F_EVENTS.filter(function(e){return e.date>=new Date().toISOString().slice(0,10)&&e.status!=='cancelled';}).length;c.textContent=u;}
+},500);
 
 // ═══ FEATURE 1: COMMAND PALETTE (⌘K / Ctrl+K) ═══
 let commandPaletteOverlay,commandPaletteInput,commandPaletteList;
