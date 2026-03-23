@@ -641,56 +641,89 @@ window.addEventListener('load',()=>{
 });
 
 // ═══ REALTIME NOTIFICATIONS ═══
+// Informative toasts for: posts, leads, events, errors
 function setupRealtimeNotifications(){
-  // Poll every 30 seconds for new events/content to show notifications
-  // This serves as lightweight realtime without needing WebSocket setup
   window._lastRealtimeCheck=new Date(Date.now()-60000).toISOString();
+  window._notifiedIds=new Set();
   setInterval(async function(){
     if(!SUPABASE_LIVE||!isAuthenticated())return;
     try{
       var lastCheck=window._lastRealtimeCheck||new Date(Date.now()-60000).toISOString();
-      // Check for new events
-      var newEvents=await sbFetch('events','select=id,type,agent_id,metadata_json,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=5');
-      if(newEvents&&newEvents.length>0){
-        newEvents.forEach(function(ev){
-          var msgType='ℹ️';
-          if(ev.type.includes('approved'))msgType='✅';
-          else if(ev.type.includes('published'))msgType='📢';
-          else if(ev.type.includes('error'))msgType='❌';
-          var evMeta=ev.metadata_json;if(typeof evMeta==='string'){try{evMeta=JSON.parse(evMeta);}catch(e){evMeta={};}}if(!evMeta)evMeta={};
-          var msg=((evMeta&&evMeta.description)||ev.type||'event').slice(0,80);
-          if(typeof showToast==='function')showToast(msgType+' '+msg,'info');
-          // Trigger office visual effects for new events
-          if(typeof setAgentLiveStatus==='function'){
-            var meta=ev.metadata_json;
-            if(typeof meta==='string'){try{meta=JSON.parse(meta);}catch(e){meta={};}}
-            var dashId=(meta&&meta.agent_dash_id)||(meta&&meta.agent_slug&&SB_SLUG_TO_DASH[meta.agent_slug])||'';
-            if(dashId){
-              var evType=ev.type||'';
-              if(evType.indexOf('publish')!==-1)setAgentLiveStatus(dashId,'publishing',msg);
-              else if(evType.indexOf('error')!==-1)setAgentLiveStatus(dashId,'error',msg);
-              else if(evType.indexOf('approved')!==-1)setAgentLiveStatus(dashId,'approved',msg);
-              else if(evType.indexOf('rework')!==-1)setAgentLiveStatus(dashId,'rework',msg);
-              else setAgentLiveStatus(dashId,'active',msg);
-            }
+      var lc=encodeURIComponent(lastCheck);
+      var toast=typeof showToast==='function'?showToast:function(){};
+
+      // 1. ПОСТЫ — одобрены, опубликованы, на доработке
+      var posts=await sbFetch('content_queue','select=id,status,content_text,qa_score,platform,created_at&created_at=gt.'+lc+'&order=created_at.desc&limit=5');
+      if(posts&&posts.length>0){
+        posts.forEach(function(p){
+          if(window._notifiedIds.has('p_'+p.id))return;
+          window._notifiedIds.add('p_'+p.id);
+          var preview=(p.content_text||'').slice(0,50).replace(/\n/g,' ');
+          if(p.status==='approved')toast('✅ Пост одобрен (QA: '+p.qa_score+'): «'+preview+'…»','success');
+          else if(p.status==='published')toast('📢 Опубликован в '+((p.platform||'TG').toUpperCase())+': «'+preview+'…»','success');
+          else if(p.status==='needs_rework')toast('🔄 На доработке (QA: '+p.qa_score+'): «'+preview+'…»','warning');
+          else if(p.status==='rejected')toast('❌ Отклонён (QA: '+p.qa_score+'): «'+preview+'…»','error');
+          else if(p.status==='pending_approval')toast('📝 Новый пост: «'+preview+'…»','info');
+        });
+      }
+
+      // 2. ЛИДЫ — новые лиды в pipeline
+      var leads=await sbFetch('partner_pipeline','select=id,company,name,stage,created_at&created_at=gt.'+lc+'&order=created_at.desc&limit=5');
+      if(leads&&leads.length>0){
+        leads.forEach(function(l){
+          if(window._notifiedIds.has('l_'+l.id))return;
+          window._notifiedIds.add('l_'+l.id);
+          var comp=l.company||l.name||'Unknown';
+          var stg=l.stage||'found';
+          toast('🎯 Новый лид: '+comp+' ('+stg+')','info');
+        });
+      }
+
+      // 3. ОШИБКИ — из events table
+      var errs=await sbFetch('events','select=id,type,agent_id,metadata_json,created_at&type=like.*error*&created_at=gt.'+lc+'&order=created_at.desc&limit=5');
+      if(errs&&errs.length>0){
+        errs.forEach(function(ev){
+          if(window._notifiedIds.has('e_'+ev.id))return;
+          window._notifiedIds.add('e_'+ev.id);
+          var m=ev.metadata_json;if(typeof m==='string'){try{m=JSON.parse(m);}catch(e){m={};}}if(!m)m={};
+          var agName=m.agent_name||m.agent_slug||'Agent';
+          var detail=(m.error||m.description||ev.type||'').slice(0,60);
+          toast('❌ Ошибка ['+agName+']: '+detail,'error');
+        });
+      }
+
+      // 4. МЕРОПРИЯТИЯ — новые или обновлённые
+      var evts=await sbFetch('f2f_events','select=id,title,status,date,updated_at&updated_at=gt.'+lc+'&order=updated_at.desc&limit=3');
+      if(evts&&evts.length>0){
+        evts.forEach(function(ev){
+          if(window._notifiedIds.has('ev_'+ev.id))return;
+          window._notifiedIds.add('ev_'+ev.id);
+          toast('📅 Мероприятие: '+ev.title+' ('+ev.date+') — '+(ev.status||'idea'),'info');
+        });
+      }
+
+      // Visual effects on canvas for events
+      var allEvs=await sbFetch('events','select=id,type,agent_id,metadata_json,created_at&created_at=gt.'+lc+'&order=created_at.desc&limit=5');
+      if(allEvs&&allEvs.length>0&&typeof setAgentLiveStatus==='function'){
+        allEvs.forEach(function(ev){
+          var meta=ev.metadata_json;if(typeof meta==='string'){try{meta=JSON.parse(meta);}catch(e){meta={};}}if(!meta)meta={};
+          var dashId=(meta.agent_dash_id)||(meta.agent_slug&&SB_SLUG_TO_DASH[meta.agent_slug])||'';
+          if(dashId){
+            var t=ev.type||'';
+            var msg=(meta.description||t).slice(0,60);
+            if(t.indexOf('publish')!==-1)setAgentLiveStatus(dashId,'publishing',msg);
+            else if(t.indexOf('error')!==-1)setAgentLiveStatus(dashId,'error',msg);
+            else if(t.indexOf('approved')!==-1)setAgentLiveStatus(dashId,'approved',msg);
+            else if(t.indexOf('rework')!==-1)setAgentLiveStatus(dashId,'rework',msg);
+            else setAgentLiveStatus(dashId,'active',msg);
           }
         });
       }
-      // Check for new content queue items
-      var newContent=await sbFetch('content_queue','select=id,status,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=3');
-      if(newContent&&newContent.length>0){
-        newContent.forEach(function(c){
-          var statusMsg='новый пост';
-          if(c.status==='approved')statusMsg='✅ пост одобрен';
-          else if(c.status==='needs_rework')statusMsg='🔄 переработка';
-          if(typeof showToast==='function')showToast('📱 '+statusMsg,'info');
-        });
-      }
-      // Check for new actions
-      var newActions=await sbFetch('actions','select=id,type,payload_json,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=5');
-      if(newActions&&newActions.length>0){
-        var actionCount=newActions.filter(function(a){var p=a.payload_json||{};return p.status!=='done'&&p.status!=='executed';}).length;
-        if(actionCount>0&&typeof showToast==='function')showToast('📋 '+actionCount+' новых задач','info');
+
+      // Cleanup notified IDs (keep last 200)
+      if(window._notifiedIds.size>200){
+        var arr=Array.from(window._notifiedIds);
+        window._notifiedIds=new Set(arr.slice(arr.length-100));
       }
       window._lastRealtimeCheck=new Date().toISOString();
     }catch(e){
