@@ -646,7 +646,9 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
 
   /* ─── ACTION BUTTONS ─── */
   .action-bar{gap:4px}
-  .act-btn{padding:5px 10px;font-size:10px}
+  .act-btn{padding:8px 12px;font-size:11px;min-height:44px}
+  .quick-act{min-height:44px;padding:8px 12px}
+  .ctrl-btn{min-width:36px;min-height:36px;font-size:14px}
 
   /* ─── CHARTS & ANALYTICS ─── */
   #postsAnalytics{grid-template-columns:repeat(2,1fr)!important;gap:6px!important}

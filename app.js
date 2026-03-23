@@ -383,11 +383,18 @@ function switchTab(panelId){
   if(tab)tab.classList.add('active');
   const panel=document.getElementById('panel-'+panelId);
   if(panel)panel.classList.add('active');
-  if(panelId==='office') resizeCanvas();
+  if(panelId==='office'){resizeCanvas();if(typeof updateOfficeStatuses==='function')updateOfficeStatuses();}
   if(panelId==='admin') renderAdmin();
 }
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>switchTab(tab.dataset.panel));
+});
+// Alt+1-9 hotkeys for tab switching
+document.addEventListener('keydown',function(e){
+  if(!e.altKey||e.ctrlKey||e.metaKey)return;
+  var tabs=document.querySelectorAll('.tab[data-panel]');
+  var idx=parseInt(e.key)-1;
+  if(idx>=0&&idx<tabs.length){e.preventDefault();switchTab(tabs[idx].dataset.panel);}
 });
 // KPI click → navigate to tab
 document.querySelectorAll('.kpi[data-goto]').forEach(kpi=>{
@@ -551,6 +558,9 @@ function updateKPI(){
   var pendingCount=D.posts.filter(function(p){return p.sbStatus==='pending_approval';}).length;
   document.getElementById('tab-posts-count').textContent=pendingCount>0?pendingCount+' ⏳':D.posts.length;
   document.getElementById('tab-reports-count').textContent=D.reports.length;
+  var inProgressCount=D.tasks.filter(function(t){var ks=mapToKanban(t.kanbanStatus||t.status);return ks==='in_progress'||ks==='rework';}).length;
+  var tasksCountEl=document.getElementById('tab-tasks-count');
+  if(tasksCountEl)tasksCountEl.textContent=inProgressCount>0?inProgressCount+' 🔧':D.tasks.length;
   // SyncBadge: don't override LIVE status if Supabase is connected
   if(!SUPABASE_LIVE){
     document.getElementById('syncBadge').textContent='● LOCAL '+new Date(D.lastUpdated||Date.now()).toLocaleDateString('ru');
@@ -1707,10 +1717,10 @@ function renderChat(){
   }
   el.innerHTML=msgs.map(function(m){
     return '<div class="chat-msg '+(m.role==='user'?'user':'agent')+'">'+
-      '<div class="msg-author" style="color:'+(m.role==='user'?'var(--cyan)':m.color||'var(--green)')+'">'+m.author+'</div>'+
-      '<div>'+m.text+'</div>'+
-      (m.source?'<div class="msg-source">📎 '+m.source+'</div>':'')+
-      '<div class="msg-time">'+m.time+'</div></div>';
+      '<div class="msg-author" style="color:'+(m.role==='user'?'var(--cyan)':m.color||'var(--green)')+'">'+esc(m.author)+'</div>'+
+      '<div>'+esc(m.text).replace(/\n/g,'<br>')+'</div>'+
+      (m.source?'<div class="msg-source">📎 '+esc(m.source)+'</div>':'')+
+      '<div class="msg-time">'+esc(m.time)+'</div></div>';
   }).join('');
   el.scrollTop=el.scrollHeight;
 }
@@ -2519,7 +2529,7 @@ function showToast(message,type){
   var icons={success:'✅',error:'❌',info:'ℹ️',warning:'⚠️'};
   var el=document.createElement('div');
   el.style.cssText='pointer-events:auto;padding:12px 18px;background:#0d1820ee;border:1px solid '+(colors[type]||colors.info)+'55;border-left:3px solid '+(colors[type]||colors.info)+';border-radius:8px;color:#e8edf2;font-size:13px;backdrop-filter:blur(12px);box-shadow:0 4px 20px #00000066;transform:translateX(120%);transition:transform .3s ease;max-width:360px';
-  el.innerHTML=(icons[type]||'')+'  '+message;
+  el.textContent=(icons[type]||'')+'  '+message;
   document.getElementById('toastContainer').appendChild(el);
   requestAnimationFrame(function(){el.style.transform='translateX(0)';});
   setTimeout(function(){
@@ -2637,9 +2647,9 @@ function renderPipeline(){
       '<div style="flex:1;display:flex;flex-direction:column;gap:6px;overflow-y:auto;max-height:400px">'+
         leads.map(function(l){
           return '<div onclick="openLeadModal('+l.id+')" style="padding:8px 10px;background:#0d1820;border:1px solid #1a2d3d;border-radius:6px;cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor=\''+s.color+'\'" onmouseout="this.style.borderColor=\'#1a2d3d\'">'+
-            '<div style="font-size:12px;font-weight:600;color:#e8edf2">'+l.name+'</div>'+
-            '<div style="font-size:10px;color:var(--dim)">'+l.company+'</div>'+
-            (l.email?'<div style="font-size:9px;color:var(--cyan);margin-top:2px">'+l.email+'</div>':'')+
+            '<div style="font-size:12px;font-weight:600;color:#e8edf2">'+esc(l.name)+'</div>'+
+            '<div style="font-size:10px;color:var(--dim)">'+esc(l.company)+'</div>'+
+            (l.email?'<div style="font-size:9px;color:var(--cyan);margin-top:2px">'+esc(l.email)+'</div>':'')+
           '</div>';
         }).join('')+
         (leads.length===0?'<div style="text-align:center;color:#384858;font-size:11px;padding:20px 0">Пусто</div>':'')+
@@ -2650,9 +2660,15 @@ function renderPipeline(){
 }
 
 // ═══ CLOCK ═══
-setInterval(()=>{
-  document.getElementById('clock').textContent=new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-},1000);
+var _clockInterval;
+function startClock(){
+  if(_clockInterval)clearInterval(_clockInterval);
+  _clockInterval=setInterval(()=>{
+    var el=document.getElementById('clock');
+    if(el)el.textContent=new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  },1000);
+}
+startClock();
 
 // ═══ MODAL ═══
 const modal=document.getElementById('modal');
@@ -2759,7 +2775,7 @@ function renderLeads(){
         ${l.linkedin?`<a href="${esc(l.linkedin)}" target="_blank" onclick="event.stopPropagation()">🔗 LinkedIn</a>`:''}
         <span>📍 ${esc(l.location)}</span>
       </div>
-      <div class="lead-notes">${l.notes}</div>
+      <div class="lead-notes">${esc(l.notes)}</div>
       ${l.sbStage==='identified'?`<div style="display:flex;gap:4px;margin-top:6px;border-top:1px solid var(--border);padding-top:6px" onclick="event.stopPropagation()">
         <button onclick="quickLeadStage(${l.id},'contacted')" style="flex:1;padding:4px;background:#00e5ff12;color:#00e5ff;border:1px solid #00e5ff33;border-radius:4px;cursor:pointer;font-size:10px">📧 Связаться</button>
         <button onclick="quickLeadStage(${l.id},'closed_lost')" style="padding:4px 8px;background:#ff2d7808;color:#ff2d78;border:1px solid #ff2d7822;border-radius:4px;cursor:pointer;font-size:10px">✕</button>
@@ -5807,10 +5823,16 @@ setTimeout(function(){
 
 
 // ═══ FEATURE 1: COMMAND PALETTE (⌘K / Ctrl+K) ═══
-const commandPaletteOverlay=document.getElementById('commandPaletteOverlay');
-const commandPaletteInput=document.getElementById('commandPaletteInput');
-const commandPaletteList=document.getElementById('commandPaletteList');
+let commandPaletteOverlay,commandPaletteInput,commandPaletteList;
 let commandPaletteSelectedIdx=0;
+
+// Lazy-init DOM refs (avoids null reference if script loads before DOM)
+function ensureCommandPaletteRefs(){
+  if(!commandPaletteOverlay)commandPaletteOverlay=document.getElementById('commandPaletteOverlay');
+  if(!commandPaletteInput)commandPaletteInput=document.getElementById('commandPaletteInput');
+  if(!commandPaletteList)commandPaletteList=document.getElementById('commandPaletteList');
+  return !!commandPaletteOverlay;
+}
 
 // Global shortcuts to open command palette
 document.addEventListener('keydown',function(e){
@@ -5818,12 +5840,13 @@ document.addEventListener('keydown',function(e){
     e.preventDefault();
     openCommandPalette();
   }
-  if(e.key==='Escape'&&commandPaletteOverlay.classList.contains('open')){
+  if(e.key==='Escape'&&ensureCommandPaletteRefs()&&commandPaletteOverlay.classList.contains('open')){
     closeCommandPalette();
   }
 });
 
 function openCommandPalette(){
+  if(!ensureCommandPaletteRefs())return;
   commandPaletteOverlay.classList.add('open');
   commandPaletteInput.value='';
   commandPaletteSelectedIdx=0;
@@ -5831,6 +5854,7 @@ function openCommandPalette(){
   renderCommandPalette();
 }
 function closeCommandPalette(){
+  if(!ensureCommandPaletteRefs())return;
   commandPaletteOverlay.classList.remove('open');
   commandPaletteSelectedIdx=0;
 }
