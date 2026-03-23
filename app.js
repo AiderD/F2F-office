@@ -3900,7 +3900,7 @@ function taskSmartTitle(t){
     // Last resort: first meaningful line from body, stripped of variables
     if(p.body||p.text){
       var clean=stripVars((p.body||p.text||'').split('\n').filter(function(l){return l.trim().length>10;}).slice(1,2).join(' '));
-      if(clean)return '📧 '+clean.slice(0,65)+(clean.length>65?'...':'');
+      if(clean)return '📧 '+clean;
     }
     return '📧 Email шаблон';
   }
@@ -3911,7 +3911,7 @@ function taskSmartTitle(t){
     var segment=segmentLabel(p.segment||'');
     var reason=esc(p.reason||p.description||p.why||'');
     if(comp){
-      var reasonShort=reason?(' — '+reason.slice(0,45)+(reason.length>45?'...':'')):'';
+      var reasonShort=reason?(' — '+reason):'';
       return '🆕 '+comp+(segment?' ('+segment+')':'')+reasonShort;
     }
     var name=esc(p.name||p.contact||p.contact_name||'');
@@ -3924,7 +3924,7 @@ function taskSmartTitle(t){
     var src=esc(p.source_agent||'');
     var rec=esc(p.recommendation||'');
     var srcLabel=src==='qa'?'🧪 QA':src==='cto'?'🛠 CTO':src==='cpo'?'📦 CPO':src==='ux'?'🎨 UX':src?'🤖 '+src:'🤖 Meta';
-    if(rec)return srcLabel+': '+rec.slice(0,70)+(rec.length>70?'...':'');
+    if(rec)return srcLabel+': '+rec;
     return srcLabel+' рекомендация';
   }
 
@@ -3932,7 +3932,7 @@ function taskSmartTitle(t){
   if(aType.includes('cycle_run')||aType.includes('agent_cycle')){
     var agentName=esc(p.agent_name||p.agent_slug||p.agent||'');
     var result=esc(p.result||p.summary||'');
-    if(agentName&&result)return '🔄 '+agentName+': '+result.slice(0,50);
+    if(agentName&&result)return '🔄 '+agentName+': '+result;
     if(agentName)return '🔄 Цикл: '+agentName;
     return esc(t.title)||'🔄 Цикл агента';
   }
@@ -3942,7 +3942,7 @@ function taskSmartTitle(t){
 
   // === FALLBACK ===
   var fallback=stripVars(p.recommendation||p.description||p.summary||'');
-  if(fallback&&fallback.length>5)return fallback.slice(0,70)+(fallback.length>70?'...':'');
+  if(fallback&&fallback.length>5)return fallback;
   return esc(t.title)||'Задача #'+t.id;
 }
 
