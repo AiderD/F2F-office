@@ -5127,7 +5127,7 @@ window.uploadReferenceImage=function(){
         '</div>'+
         '<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Категория</label>'+
         '<select id="upCat" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+
-        '<option value="news">news</option><option value="tournament">tournament</option><option value="match">match</option><option value="meme">meme</option><option value="educational">educational</option><option value="promo">promo</option><option value="entertainment">entertainment</option></select></div>'+
+        '<option value="news">news</option><option value="tournament">tournament</option><option value="match">match</option><option value="meme">meme</option><option value="educational">educational</option><option value="promo">promo</option><option value="entertainment">entertainment</option><option value="maintenance">тех работы</option><option value="updates">обновления</option></select></div>'+
         '<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:4px">Опиши стиль</label>'+
         '<textarea id="upDesc" rows="2" placeholder="Тёмный стиль, зелёный неон, минимализм" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box"></textarea></div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
