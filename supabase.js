@@ -234,6 +234,10 @@ async function syncSupabaseData(){
   const credits=await sbFetch('ai_credits','select=agent_id,tokens_input,tokens_output,cost_usd,model,task_type,created_at&order=created_at.desc&limit=500');
   if(credits)window._sbCredits=credits;
 
+  // Expense Entries (all roles can see own; admin sees all via RLS)
+  const expenses=await sbFetch('expense_entries','select=*&order=created_at.desc&limit=500');
+  if(expenses)window._expenses=expenses;
+
   // Team (only active — dismissed filtered on server side)
   const team=await sbFetch('team','select=*&order=id.asc');
   if(team)window._sbTeam=team;
@@ -427,6 +431,7 @@ function refreshAfterSync(){
   if(typeof updateKPI==='function'){_sr(updateKPI,'kpi');}
   if(typeof renderAgentsPanel==='function'){_sr(renderAgentsPanel,'agents');}
   if(typeof renderIntegrations==='function'){_sr(renderIntegrations,'integrations');}
+  if(typeof renderExpenses==='function'){_sr(renderExpenses,'expenses');}
   if(typeof renderAnalytics==='function'){_sr(renderAnalytics,'analytics');}
   if(typeof loadStrategy==='function'&&!window._stratLoaded){window._stratLoaded=true;_sr(loadStrategy,'strategy');}
   if(typeof renderStrategyProgress==='function'){_sr(renderStrategyProgress,'strategyProgress');}

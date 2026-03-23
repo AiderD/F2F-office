@@ -87,6 +87,7 @@
   <button class="tab" data-panel="agents">🤖 AI Агенты <span class="badge" style="background:var(--cyan)" id="tab-agents-count">0</span></button>
   <button class="tab" data-panel="chat">💬 Чат</button>
   <button class="tab" data-panel="events">📅 Мероприятия <span class="badge" id="tab-events-count">0</span></button>
+  <button class="tab" data-panel="expenses">💸 Расходы</button>
   <button class="tab" data-panel="integrations">🔗 Интеграции</button>
   <button class="tab" data-panel="admin" id="tabAdmin" style="display:none">🔐 Админ</button>
 </div>
@@ -331,6 +332,18 @@
   </div>
 </div>
 
+<!-- EXPENSES PANEL -->
+<div class="panel data-panel" id="panel-expenses">
+  <div class="data-header">
+    <h2>💸 Расходы</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div class="data-count" id="expenses-count">-</div>
+      <button class="act-btn success" onclick="openExpenseForm()" style="font-size:12px;padding:4px 12px">➕ Добавить расход</button>
+    </div>
+  </div>
+  <div id="expensesContent"></div>
+</div>
+
 <!-- INTEGRATIONS PANEL -->
 <div class="panel data-panel" id="panel-integrations">
   <div class="data-header"><h2>🔗 Интеграции</h2><div class="data-count" id="intg-count">-</div></div>
@@ -487,6 +500,7 @@
   <div class="sub-tabs" id="adminTabs">
     <button class="sub-tab active" onclick="adminSwitchTab('tokens',this)">🔑 Токены доступа</button>
     <button class="sub-tab" onclick="adminSwitchTab('audit',this)">📋 Аудит-лог</button>
+    <button class="sub-tab" onclick="adminSwitchTab('productivity',this)">📊 Продуктивность</button>
   </div>
   <div id="adminContent"></div>
 </div>

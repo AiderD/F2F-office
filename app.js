@@ -154,10 +154,15 @@ updateUserBadge();
 
 function isAdmin(){ return _currentSession && _currentSession.role==='admin'; }
 function isPM(){ return _currentSession && _currentSession.role==='pm'; }
-function isEditor(){ return _currentSession && (_currentSession.role==='admin'||_currentSession.role==='editor'||_currentSession.role==='pm'); }
+function isBizDev(){ return _currentSession && _currentSession.role==='bizdev'; }
+function isCommunity(){ return _currentSession && _currentSession.role==='community'; }
+function isReferee(){ return _currentSession && _currentSession.role==='referee'; }
+function isEditor(){ return _currentSession && ['admin','editor','pm','bizdev','community'].indexOf(_currentSession.role)!==-1; }
 function canSeeSalary(){ return isAdmin(); }
 function canEditSalary(){ return isAdmin()||isPM(); }
 function canSeeFinance(){ return isAdmin(); }
+function canAddExpense(){ return _currentSession && _currentSession.role!=='viewer'; }
+function canSeeExpenseTotal(){ return isAdmin(); }
 function getCurrentUser(){ return _currentSession ? _currentSession.login_name : 'unknown'; }
 function getCurrentRole(){ return _currentSession ? _currentSession.role : 'viewer'; }
 function getCurrentTokenId(){ return _currentSession ? _currentSession.token_id : null; }
@@ -168,6 +173,8 @@ async function auditLog(action, section, details){
     const body = {
       token_id: getCurrentTokenId(),
       employee_name: getCurrentUser(),
+      user_name: _currentSession?_currentSession.login_name:null,
+      user_role: _currentSession?_currentSession.role:null,
       action: action,
       section: section||null,
       details: typeof details==='string' ? {text:details} : (details||null)
@@ -191,6 +198,7 @@ async function renderAdmin(){
   if(!c) return;
 
   if(adminTab==='tokens') await renderAdminTokens(c);
+  else if(adminTab==='productivity') await renderAdminProductivity(c);
   else await renderAdminAudit(c);
 }
 
@@ -209,8 +217,8 @@ async function renderAdminTokens(container){
 
   (tokens||[]).forEach(t=>{
     const active = t.is_active;
-    const roleColors = {admin:'#ffb800',pm:'#a855f7',editor:'#2cff80',viewer:'#00e5ff'};
-    const roleNames = {admin:'Админ',pm:'PM',editor:'Редактор',viewer:'Наблюдатель'};
+    const roleColors = {admin:'#ffb800',pm:'#a855f7',editor:'#2cff80',viewer:'#00e5ff',bizdev:'#ff6b35',community:'#e040fb',referee:'#26c6da'};
+    const roleNames = {admin:'Админ',pm:'PM',editor:'Редактор',viewer:'Наблюдатель',bizdev:'BizDev',community:'Community',referee:'Referee'};
     const created = t.created_at ? new Date(t.created_at).toLocaleDateString('ru-RU') : '—';
     const lastUsed = t.last_used_at ? timeSince(t.last_used_at) : 'никогда';
     html += '<tr style="border-bottom:1px solid var(--border);opacity:'+(active?1:0.4)+'">';
@@ -263,6 +271,59 @@ async function renderAdminAudit(container){
   container.innerHTML = html;
 }
 
+async function renderAdminProductivity(container){
+  var logs=await sbFetch('audit_log','select=*&order=created_at.desc&limit=1000')||[];
+  var feedback=await sbFetch('team_feedback','select=*&order=created_at.desc&limit=500')||[];
+  var expenses=await sbFetch('expense_entries','select=*&order=created_at.desc&limit=500')||[];
+  // Aggregate by user
+  var users={};
+  function ensureUser(name,role){
+    if(!name)return;
+    if(!users[name])users[name]={name:name,role:role||'',logins:0,actions:0,feedback:0,expenses:0,lastActive:null};
+    return users[name];
+  }
+  logs.forEach(function(l){
+    var u=ensureUser(l.user_name||l.employee_name,l.user_role);
+    if(!u)return;
+    u.actions++;
+    if(l.action==='login')u.logins++;
+    var t=l.created_at?new Date(l.created_at):null;
+    if(t&&(!u.lastActive||t>u.lastActive))u.lastActive=t;
+  });
+  feedback.forEach(function(f){
+    var u=ensureUser(f.author,f.author_role);
+    if(u)u.feedback++;
+  });
+  expenses.forEach(function(e){
+    var u=ensureUser(e.author,e.author_role);
+    if(u)u.expenses++;
+  });
+  var sorted=Object.values(users).sort(function(a,b){return b.actions-a.actions;});
+  var roleColors={admin:'#ffb800',pm:'#a855f7',editor:'#2cff80',viewer:'#00e5ff',bizdev:'#ff6b35',community:'#e040fb',referee:'#26c6da'};
+  var roleNames={admin:'Админ',pm:'PM',editor:'Редактор',viewer:'Наблюдатель',bizdev:'BizDev',community:'Community',referee:'Referee'};
+  var html='<div style="margin-bottom:16px;font-size:13px;color:var(--dim)">Активность сотрудников за всё время (аудит-лог + feedback + расходы)</div>';
+  html+='<div class="fin-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">';
+  sorted.forEach(function(u){
+    var rc=roleColors[u.role]||'var(--dim)';
+    var rn=roleNames[u.role]||u.role;
+    var lastStr=u.lastActive?timeSince(u.lastActive.toISOString()):'никогда';
+    html+='<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;border-top:3px solid '+rc+'">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'+
+      '<div style="font-weight:700;font-size:15px">'+esc(u.name)+'</div>'+
+      '<span style="color:'+rc+';font-size:11px;font-weight:600">'+rn+'</span></div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<div style="padding:8px;background:var(--bg);border-radius:6px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--cyan)">'+u.actions+'</div><div style="font-size:10px;color:var(--dim)">Действий</div></div>'+
+      '<div style="padding:8px;background:var(--bg);border-radius:6px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--green)">'+u.feedback+'</div><div style="font-size:10px;color:var(--dim)">Feedback</div></div>'+
+      '<div style="padding:8px;background:var(--bg);border-radius:6px;text-align:center"><div style="font-size:18px;font-weight:700;color:var(--amber)">'+u.expenses+'</div><div style="font-size:10px;color:var(--dim)">Расходы</div></div>'+
+      '<div style="padding:8px;background:var(--bg);border-radius:6px;text-align:center"><div style="font-size:18px;font-weight:700">'+u.logins+'</div><div style="font-size:10px;color:var(--dim)">Входов</div></div>'+
+      '</div>'+
+      '<div style="margin-top:10px;font-size:11px;color:var(--dim)">Посл. активность: '+lastStr+'</div></div>';
+  });
+  html+='</div>';
+  if(!sorted.length)html='<div style="text-align:center;padding:40px;color:var(--dim)">Нет данных. Активность сотрудников начнёт отслеживаться после входа в систему.</div>';
+  container.innerHTML=html;
+}
+
 function openCreateTokenModal(){
   const modal=document.getElementById('modal');
   const mc=document.getElementById('modalContent');
@@ -274,8 +335,11 @@ function openCreateTokenModal(){
     '<div><label style="font-size:11px;color:var(--dim)">Роль</label>'+
     '<select id="newTokenRole" style="width:100%;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;box-sizing:border-box;margin-top:4px">'+
     '<option value="viewer">👁️ Наблюдатель — только просмотр</option>'+
-    '<option value="editor">✏️ Редактор — просмотр + редактирование</option>'+
-    '<option value="pm">📋 PM — команда + ЗП (write-only) + задачи</option>'+
+    '<option value="bizdev">🔥 BizDev — B2B: лиды, мероприятия, контент, расходы</option>'+
+    '<option value="community">💜 Community — B2C: лиды, мероприятия, контент, расходы</option>'+
+    '<option value="referee">🏆 Referee — команды, мероприятия, расходы судей</option>'+
+    '<option value="editor">✏️ Редактор — просмотр + редактирование контента</option>'+
+    '<option value="pm">📋 PM — команда + ЗП (write-only) + задачи + расходы</option>'+
     '<option value="admin">👑 Админ — полный доступ (финансы, ЗП, токены)</option>'+
     '</select></div>'+
     '<div><label style="font-size:11px;color:var(--dim)">Токен (авто-генерация)</label>'+
@@ -394,6 +458,7 @@ function switchTab(panelId){
   if(panel)panel.classList.add('active');
   if(panelId==='office'){resizeCanvas();if(typeof updateOfficeStatuses==='function')updateOfficeStatuses();}
   if(panelId==='admin') renderAdmin();
+  if(panelId==='expenses'&&typeof renderExpenses==='function') renderExpenses();
 }
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>switchTab(tab.dataset.panel));
@@ -1230,6 +1295,7 @@ function teamCardHTML(t){
   const d=CDepts.find(x=>x.id===t.dept);
   var salaryBadge='';
   if(t.salary_usdt && canSeeSalary()) salaryBadge='<span style="font-size:10px;color:var(--cyan);margin-left:auto">$'+parseFloat(t.salary_usdt).toLocaleString('ru')+'</span>';
+  else if(t.salary_usdt && isPM()) salaryBadge='<span style="font-size:10px;color:var(--dim);margin-left:auto">💰 ***</span>';
   else if(t.salary_usdt && !canSeeSalary()) salaryBadge='<span style="font-size:10px;color:var(--dim);margin-left:auto">💰 Указана</span>';
   return '<div class="team-card" onclick="openTeamMemberModal('+t.id+')" style="border-left:3px solid '+(d?.color||'var(--dim)')+'">'+
     '<div class="t-top">'+
@@ -1929,7 +1995,7 @@ document.getElementById('chatSend').addEventListener('click',function(){
   var msg=cleanInput(input.value,2000);if(!msg)return;
   input.value='';
   if(!chatHistory[currentChannel])chatHistory[currentChannel]=[];
-  var roleEmoji={admin:'👑',pm:'📋',editor:'✏️',viewer:'👁️'};
+  var roleEmoji={admin:'👑',pm:'📋',editor:'✏️',viewer:'👁️',bizdev:'🔥',community:'💜',referee:'🏆'};
   var userName=_currentSession?_currentSession.login_name:'User';
   var userRole=_currentSession?_currentSession.role:'viewer';
   var userLabel=(roleEmoji[userRole]||'👤')+' '+userName;
@@ -3417,6 +3483,16 @@ window.openPostModal=function(id){
     </div>
     ${p.qaScore?'<div style="padding:8px;background:'+(p.qaScore>=8?'#10b98118':p.qaScore>=5?'#f59e0b18':'#ef444418')+';border-radius:6px;margin-bottom:8px;font-size:12px">QA: <b>'+p.qaScore+'/10</b> — '+(p.qaVerdict||'')+'</div>':''}
     ${p.ceoScore?'<div style="padding:8px;background:#f59e0b18;border-radius:6px;margin-bottom:8px;font-size:12px">CEO: <b>'+p.ceoScore+'/10</b> ${"⭐".repeat(Math.round(p.ceoScore/2))}</div>':''}
+    <div style="margin:12px 0;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px">
+      <div style="font-size:11px;color:var(--dim);font-weight:600;margin-bottom:8px">💬 Обратная связь (обучает AI)</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="sendFeedback('post','${p.sbId||p.id}','approve','Контент хороший')" style="padding:5px 12px;background:#10b98118;color:#10b981;border:1px solid #10b98133;border-radius:6px;cursor:pointer;font-size:12px">👍 Хорошо</button>
+        <button onclick="sendFeedback('post','${p.sbId||p.id}','reject','Контент плохой')" style="padding:5px 12px;background:#ef444418;color:#ef4444;border:1px solid #ef444433;border-radius:6px;cursor:pointer;font-size:12px">👎 Плохо</button>
+        <button onclick="sendFeedbackComment('post','${p.sbId||p.id}')" style="padding:5px 12px;background:#6366f118;color:#6366f1;border:1px solid #6366f133;border-radius:6px;cursor:pointer;font-size:12px">💬 Комментарий</button>
+        <button onclick="sendFeedbackTag('post','${p.sbId||p.id}')" style="padding:5px 12px;background:#f59e0b18;color:#f59e0b;border:1px solid #f59e0b33;border-radius:6px;cursor:pointer;font-size:12px">🏷 Тег</button>
+      </div>
+      <div id="feedbackList-post-${p.sbId||p.id}" style="margin-top:6px"></div>
+    </div>
     <div class="action-bar">
       <button class="act-btn" onclick="navigator.clipboard.writeText(document.querySelector('.modal div[style*=pre-wrap]').textContent).then(function(){showToast('Скопировано!','info')})">📋 Копировать</button>
       <button class="act-btn success" onclick="postAction(${p.id},'approve')">✅ ${p.status==='draft'?'Утвердить':'Вернуть в черновик'}</button>
@@ -3694,6 +3770,111 @@ window.publishPostToTelegram=function(postId){
 };
 renderPosts();
 renderPostsAnalytics();
+
+// ═══ TEAM FEEDBACK ═══
+window.sendFeedback=function(entityType,entityId,action,defaultComment){
+  if(!_currentSession){showToast('Войдите в систему','error');return;}
+  var data={entity_type:entityType,entity_id:parseInt(entityId)||0,action:action,
+    feedback_data:{comment:defaultComment||''},author:_currentSession.login_name,author_role:_currentSession.role};
+  sbInsert('team_feedback',data).then(function(){
+    showToast('✅ Feedback отправлен ('+action+')','success');
+    logAudit('feedback_'+action,entityType,entityId,{action:action});
+  }).catch(function(e){showToast('Ошибка: '+e,'error');});
+};
+window.sendFeedbackComment=function(entityType,entityId){
+  f2fPrompt({title:'💬 Комментарий к контенту',fields:[{id:'comment',label:'Ваш комментарий',type:'textarea',placeholder:'Что не так? Как улучшить?',rows:3}],submitText:'Отправить'}).then(function(comment){
+    if(comment&&comment.trim()){sendFeedback(entityType,entityId,'comment',comment.trim());}
+  });
+};
+window.sendFeedbackTag=function(entityType,entityId){
+  var tags=['🔥 Хит','💤 Скучно','🎯 В точку','❌ Не по теме','📈 Для роста','🤝 Для партнёров','🏆 Для турниров','🎮 Для комьюнити'];
+  var btns=tags.map(function(t){return '<button onclick="sendFeedback(\''+entityType+'\',\''+entityId+'\',\'tag\',\''+t+'\');closeModal()" style="padding:6px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer;color:var(--text);font-size:13px">'+t+'</button>';}).join('');
+  openModal('<h3 style="margin-bottom:12px">🏷 Выбери тег</h3><div style="display:flex;flex-wrap:wrap;gap:8px">'+btns+'</div>');
+};
+// Log audit action
+function logAudit(action,entityType,entityId,details){
+  if(!_currentSession)return;
+  sbInsert('audit_log',{action:action,section:entityType,user_name:_currentSession.login_name,
+    user_role:_currentSession.role,entity_type:entityType,entity_id:parseInt(entityId)||null,
+    details:details||{}}).catch(function(){});
+}
+
+// ═══ EXPENSE ENTRIES ═══
+window._expenses=[];
+async function loadExpenses(){
+  if(!canAddExpense())return;
+  var q=canSeeExpenseTotal()?'select=*&order=created_at.desc&limit=500':'select=*&order=created_at.desc&limit=500';
+  window._expenses=await sbFetch('expense_entries',q)||[];
+}
+window.openExpenseForm=function(){
+  if(!canAddExpense()){showToast('Нет доступа','error');return;}
+  var categories=[{v:'event',l:'🎮 Мероприятие'},{v:'merch',l:'👕 Мерч'},{v:'service',l:'💻 Сервис/подписка'},{v:'judge_labor',l:'⚖️ Трудозатраты судей'},{v:'other',l:'📦 Прочее'}];
+  var catOpts=categories.map(function(c){return '<option value="'+c.v+'">'+c.l+'</option>';}).join('');
+  var evtOpts='<option value="">— не привязан —</option>';
+  (window._sbEvents||[]).forEach(function(e){evtOpts+='<option value="'+e.id+'">'+esc(e.title||'Event #'+e.id)+'</option>';});
+  openModal('<h3 style="margin-bottom:16px">➕ Добавить расход</h3>'+
+    '<div style="display:flex;flex-direction:column;gap:12px">'+
+    '<div><label style="font-size:12px;color:var(--dim)">Категория</label><select id="expCat" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px">'+catOpts+'</select></div>'+
+    '<div><label style="font-size:12px;color:var(--dim)">Сумма (₽)</label><input id="expAmount" type="number" step="0.01" placeholder="0.00" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;box-sizing:border-box"></div>'+
+    '<div><label style="font-size:12px;color:var(--dim)">Описание</label><input id="expDesc" placeholder="На что потрачено..." style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;box-sizing:border-box"></div>'+
+    '<div><label style="font-size:12px;color:var(--dim)">Мероприятие (если связано)</label><select id="expEvent" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px">'+evtOpts+'</select></div>'+
+    '<button onclick="submitExpense()" class="act-btn success" style="padding:10px;font-size:14px;width:100%">💾 Сохранить расход</button></div>');
+};
+window.submitExpense=async function(){
+  var cat=document.getElementById('expCat').value;
+  var amount=parseFloat(document.getElementById('expAmount').value);
+  var desc=document.getElementById('expDesc').value.trim();
+  var eventId=document.getElementById('expEvent').value;
+  if(!amount||!desc){showToast('Заполни сумму и описание','error');return;}
+  var entry={category:cat,amount:amount,currency:'RUB',description:desc,
+    related_event_id:eventId?parseInt(eventId):null,
+    author:_currentSession.login_name,author_role:_currentSession.role,status:'pending'};
+  await sbInsert('expense_entries',entry);
+  logAudit('expense_add','expense',null,{amount:amount,category:cat,description:desc});
+  showToast('✅ Расход добавлен ('+amount+' ₽)','success');
+  closeModal();
+  await loadExpenses();
+  if(typeof renderExpenses==='function')renderExpenses();
+};
+function renderExpenses(){
+  var c=document.getElementById('expensesContent');if(!c)return;
+  var exps=window._expenses||[];
+  var countEl=document.getElementById('expenses-count');if(countEl)countEl.textContent=exps.length+' записей';
+  if(!exps.length){c.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim)">Нет расходов. Нажми ➕ чтобы добавить первый.</div>';return;}
+  var myExps=canSeeExpenseTotal()?exps:exps.filter(function(e){return e.author===(_currentSession?_currentSession.login_name:'');});
+  var total=0;myExps.forEach(function(e){total+=parseFloat(e.amount)||0;});
+  var catIcons={event:'🎮',merch:'👕',service:'💻',judge_labor:'⚖️',other:'📦'};
+  var statusColors={pending:'var(--amber)',approved:'var(--green)',rejected:'var(--hot)'};
+  var html='';
+  if(canSeeExpenseTotal()){html+='<div style="padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;display:flex;gap:20px;flex-wrap:wrap"><div><span style="color:var(--dim);font-size:12px">Всего расходов</span><div style="font-size:20px;font-weight:700;color:var(--hot)">₽'+Math.round(total).toLocaleString('ru')+'</div></div><div><span style="color:var(--dim);font-size:12px">Записей</span><div style="font-size:20px;font-weight:700">'+myExps.length+'</div></div></div>';}
+  html+='<div style="display:flex;flex-direction:column;gap:8px">';
+  myExps.slice(0,100).forEach(function(e){
+    var icon=catIcons[e.category]||'📦';
+    var stColor=statusColors[e.status]||'var(--dim)';
+    html+='<div style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px">'+
+      '<span style="font-size:20px">'+icon+'</span>'+
+      '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">'+esc(e.description)+'</div>'+
+      '<div style="font-size:11px;color:var(--dim);margin-top:2px">'+esc(e.author)+' • '+(e.created_at?timeSince(e.created_at):'—')+'</div></div>'+
+      '<div style="text-align:right"><div style="font-weight:700;font-size:14px;color:var(--cyan)">₽'+(parseFloat(e.amount)||0).toLocaleString('ru')+'</div>'+
+      '<div style="font-size:10px;color:'+stColor+';margin-top:2px">'+(e.status==='pending'?'⏳ Ожидает':e.status==='approved'?'✅ Одобрено':'❌ Отклонено')+'</div></div>'+
+      (canSeeExpenseTotal()&&e.status==='pending'?'<div style="display:flex;flex-direction:column;gap:4px;margin-left:8px"><button onclick="approveExpense('+e.id+')" style="padding:3px 8px;background:#10b98118;color:#10b981;border:1px solid #10b98133;border-radius:4px;cursor:pointer;font-size:10px">✅</button><button onclick="rejectExpense('+e.id+')" style="padding:3px 8px;background:#ef444418;color:#ef4444;border:1px solid #ef444433;border-radius:4px;cursor:pointer;font-size:10px">❌</button></div>':'')+
+      '</div>';
+  });
+  html+='</div>';
+  c.innerHTML=html;
+}
+window.approveExpense=async function(id){
+  await sbPatch('expense_entries','id=eq.'+id,{status:'approved',approved_by:_currentSession.login_name,updated_at:new Date().toISOString()});
+  logAudit('expense_approve','expense',id,{});
+  showToast('✅ Расход одобрен','success');
+  await loadExpenses();renderExpenses();
+};
+window.rejectExpense=async function(id){
+  await sbPatch('expense_entries','id=eq.'+id,{status:'rejected',approved_by:_currentSession.login_name,updated_at:new Date().toISOString()});
+  logAudit('expense_reject','expense',id,{});
+  showToast('❌ Расход отклонён','info');
+  await loadExpenses();renderExpenses();
+};
 
 // ═══ REPORTS ═══
 let reportFilter='all';
@@ -6420,6 +6601,7 @@ function renderCommandPalette(){
     {icon:'👥',title:'Команда',action:()=>switchTab('team'),category:'nav'},
     {icon:'🤖',title:'AI Агенты',action:()=>switchTab('agents'),category:'nav'},
     {icon:'💬',title:'Чат',action:()=>switchTab('chat'),category:'nav'},
+    {icon:'💸',title:'Расходы',action:()=>switchTab('expenses'),category:'nav'},
     {icon:'📅',title:'Мероприятия',action:()=>switchTab('events'),category:'nav'},
     {icon:'📅',title:'Добавить мероприятие',action:()=>{switchTab('events');setTimeout(()=>openEventForm(),200);},category:'action'},
     {icon:'🔌',title:'Интеграции',action:()=>switchTab('integrations'),category:'nav'},
