@@ -5822,7 +5822,7 @@ setTimeout(function(){
 },3500);
 
 
-// ═══ МЕРОПРИЯТИЯ / EVENTS CALENDAR ═══
+// ═══ МЕРОПРИЯТИЯ / EVENTS v2 — инструмент подготовки ═══
 var F2F_EVENTS=[];
 var eventsCurrentMonth=new Date().getMonth();
 var eventsCurrentYear=new Date().getFullYear();
@@ -5830,125 +5830,204 @@ var eventsFilterType='all';
 
 var EVENT_TYPES={
   tournament:{label:'Турнир',emoji:'🏆',color:'#f59e0b'},
-  patch:{label:'Патч/Обновление',emoji:'🔧',color:'#3b82f6'},
-  holiday:{label:'Праздник',emoji:'🎉',color:'#ec4899'},
-  partnership:{label:'Партнёрство',emoji:'🤝',color:'#10b981'},
-  internal:{label:'Внутреннее',emoji:'📌',color:'#8b5cf6'},
-  content:{label:'Контент',emoji:'📱',color:'#06b6d4'},
-  deadline:{label:'Дедлайн',emoji:'⏰',color:'#ef4444'}
+  lan:{label:'LAN-пати',emoji:'🖥',color:'#3b82f6'},
+  showmatch:{label:'Шоуматч',emoji:'⚔️',color:'#ec4899'},
+  promo:{label:'Промо-акция',emoji:'📢',color:'#06b6d4'},
+  partner:{label:'Партнёрское',emoji:'🤝',color:'#10b981'},
+  meetup:{label:'Митап',emoji:'👥',color:'#8b5cf6'}
 };
 
-// Predefined esports events 2026
-var ESPORTS_CALENDAR_2026=[
-  {title:'PGL Major Copenhagen 2026',type:'tournament',date:'2026-03-30',end:'2026-04-13',desc:'CS2 Major — главный турнир года. $1.25M призовых.'},
-  {title:'IEM Katowice 2026',type:'tournament',date:'2026-02-05',end:'2026-02-16',desc:'Один из крупнейших CS2 турниров. Катовице, Польша.'},
-  {title:'BLAST Premier Spring Final',type:'tournament',date:'2026-06-18',end:'2026-06-22',desc:'BLAST Spring Finals. Top 8 teams.'},
-  {title:'ESL Pro League S23',type:'tournament',date:'2026-04-22',end:'2026-05-11',desc:'ESL Pro League Season 23 Finals.'},
-  {title:'IEM Cologne 2026',type:'tournament',date:'2026-07-08',end:'2026-07-20',desc:'Cathedral of CS. Кёльн, Германия.'},
-  {title:'BLAST Premier Fall Final',type:'tournament',date:'2026-11-25',end:'2026-11-29',desc:'BLAST Fall Finals.'},
-  {title:'CS2 Major #2 2026',type:'tournament',date:'2026-10-01',end:'2026-10-13',desc:'Второй Major 2026 года.'},
-  {title:'The International 2026 (DOTA2)',type:'tournament',date:'2026-08-15',end:'2026-08-25',desc:'Крупнейший DOTA2 турнир.'},
-  {title:'Valorant Champions 2026',type:'tournament',date:'2026-08-05',end:'2026-08-25',desc:'Valorant мировой чемпионат.'},
-  {title:'F2F Platform Launch',type:'internal',date:'2026-04-15',desc:'Запуск бета-версии F2F для первых пользователей.'},
-  {title:'Ramadan 2026',type:'holiday',date:'2026-02-18',end:'2026-03-19',desc:'Рамадан — аудитория MENA региона.'},
-  {title:'April Fools',type:'content',date:'2026-04-01',desc:'Контент-возможность: мемы и приколы.'},
-  {title:'Gamescom 2026',type:'partnership',date:'2026-08-20',end:'2026-08-24',desc:'Крупнейшая игровая выставка. Кёльн.'}
-];
+var EVENT_STATUSES={
+  idea:{label:'Идея',color:'#64748b'},
+  planning:{label:'Планирование',color:'#3b82f6'},
+  preparation:{label:'Подготовка',color:'#f59e0b'},
+  active:{label:'Активно',color:'#10b981'},
+  completed:{label:'Завершено',color:'#22c55e'},
+  cancelled:{label:'Отменено',color:'#ef4444'}
+};
+
+// Checklist templates per event type
+var EVENT_CHECKLISTS={
+  tournament:[
+    {cat:'Площадка',items:['Забронировать площадку','Проверить интернет/серверы','План рассадки']},
+    {cat:'Техника',items:['ПК/мониторы для игроков','Стриминг оборудование','Резервное оборудование']},
+    {cat:'Маркетинг',items:['Анонс в соцсетях','Промо-материалы','Пресс-релиз']},
+    {cat:'Контент',items:['Контент-план на время турнира','Фото/видео команда','Пост-турнирный контент']},
+    {cat:'Призы',items:['Определить призовой фонд','Подготовить награды','Оплата/перевод призовых']}
+  ],
+  lan:[
+    {cat:'Площадка',items:['Забронировать площадку','Проверить сеть','Расстановка столов']},
+    {cat:'Техника',items:['ПК/периферия','Интернет backup','Электропитание']},
+    {cat:'Логистика',items:['Еда/напитки','Регистрация участников','Мерч']}
+  ],
+  showmatch:[
+    {cat:'Организация',items:['Пригласить игроков','Согласовать формат','Определить дату']},
+    {cat:'Стриминг',items:['Настроить стрим','Найти кастеров','Оверлеи/графика']},
+    {cat:'Промо',items:['Анонс','Тизеры в соцсетях','Промо у игроков']}
+  ],
+  promo:[
+    {cat:'Планирование',items:['Определить цель акции','Бюджет','Механика акции']},
+    {cat:'Контент',items:['Креативы','Тексты постов','Лендинг (если нужен)']},
+    {cat:'Запуск',items:['Публикация','Модерация','Подведение итогов']}
+  ],
+  partner:[
+    {cat:'Партнёр',items:['Согласовать условия','Подписать договор','Получить материалы партнёра']},
+    {cat:'Интеграция',items:['Брендинг на площадке','Упоминания в контенте','Отчёт для партнёра']},
+    {cat:'Контент',items:['Совместный анонс','Контент во время ивента','Пост-ивент кейс']}
+  ],
+  meetup:[
+    {cat:'Площадка',items:['Забронировать место','Еда/напитки','Навигация']},
+    {cat:'Программа',items:['Спикеры/темы','Расписание','Нетворкинг формат']},
+    {cat:'Промо',items:['Регистрация','Анонс в сообществе','Follow-up после']}
+  ]
+};
 
 function initEventsData(){
-  // Load from localStorage + merge predefined
   var saved=[];
-  try{saved=JSON.parse(localStorage.getItem('f2f_events')||'[]');}catch(e){}
-  // Merge predefined (don't duplicate by title)
-  var titles=new Set(saved.map(function(e){return e.title;}));
-  ESPORTS_CALENDAR_2026.forEach(function(e){
-    if(!titles.has(e.title)){saved.push(Object.assign({id:'preset_'+Math.random().toString(36).slice(2,8)},e));}
+  try{saved=JSON.parse(localStorage.getItem('f2f_events_v2')||'[]');}catch(e){}
+  // Migrate old format if exists
+  if(!saved.length){
+    try{
+      var old=JSON.parse(localStorage.getItem('f2f_events')||'[]');
+      if(old.length)saved=old.map(function(e){
+        return Object.assign({},e,{status:e.status||'idea',tasks:e.tasks||[],venue:'',city:'',budget:'',goals:''});
+      });
+    }catch(e){}
+  }
+  F2F_EVENTS=saved.map(function(e){
+    if(!e.id)e.id='ev_'+Math.random().toString(36).slice(2,8);
+    if(!e.status)e.status='idea';
+    if(!e.tasks)e.tasks=[];
+    return e;
   });
-  F2F_EVENTS=saved.map(function(e){if(!e.id)e.id='ev_'+Math.random().toString(36).slice(2,8);return e;});
   saveEvents();
 }
 function saveEvents(){
-  try{localStorage.setItem('f2f_events',JSON.stringify(F2F_EVENTS));}catch(e){}
+  try{localStorage.setItem('f2f_events_v2',JSON.stringify(F2F_EVENTS));}catch(e){}
+}
+
+function getEventProgress(e){
+  if(!e.tasks||!e.tasks.length)return{done:0,total:0,pct:0};
+  var done=e.tasks.filter(function(t){return t.done;}).length;
+  return{done:done,total:e.tasks.length,pct:Math.round(done/e.tasks.length*100)};
 }
 
 function renderEventsPanel(){
   initEventsData();
   var countEl=document.getElementById('tab-events-count');
-  var upcoming=F2F_EVENTS.filter(function(e){return e.date>=new Date().toISOString().slice(0,10);});
+  var today=new Date().toISOString().slice(0,10);
+  var upcoming=F2F_EVENTS.filter(function(e){return e.date>=today&&e.status!=='cancelled'&&e.status!=='completed';});
   if(countEl)countEl.textContent=upcoming.length;
   document.getElementById('events-total-count').textContent=F2F_EVENTS.length+' событий';
+
+  // KPI strip
+  var kpiEl=document.getElementById('eventsKPI');
+  var active=F2F_EVENTS.filter(function(e){return e.status==='active'||e.status==='preparation';}).length;
+  var planning=F2F_EVENTS.filter(function(e){return e.status==='planning'||e.status==='idea';}).length;
+  var completed=F2F_EVENTS.filter(function(e){return e.status==='completed';}).length;
+  var totalTasks=0,doneTasks=0;
+  F2F_EVENTS.forEach(function(e){if(e.tasks){totalTasks+=e.tasks.length;doneTasks+=e.tasks.filter(function(t){return t.done;}).length;}});
+  kpiEl.innerHTML=[
+    {label:'Активных',val:active,color:'#10b981'},
+    {label:'В планах',val:planning,color:'#3b82f6'},
+    {label:'Завершено',val:completed,color:'#22c55e'},
+    {label:'Задач готово',val:totalTasks?doneTasks+'/'+totalTasks:'—',color:'#f59e0b'}
+  ].map(function(k){
+    return '<div style="flex:1;min-width:100px;padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;text-align:center">'+
+      '<div style="font-size:18px;font-weight:700;color:'+k.color+'">'+k.val+'</div>'+
+      '<div style="font-size:10px;color:var(--dim);margin-top:2px">'+k.label+'</div></div>';
+  }).join('');
 
   // Filter bar
   var fb=document.getElementById('eventsFilterBar');
   var types=['all'].concat(Object.keys(EVENT_TYPES));
   fb.innerHTML=types.map(function(t){
-    var active=eventsFilterType===t;
+    var isActive=eventsFilterType===t;
     var info=EVENT_TYPES[t];
     var label=t==='all'?'Все':(info?info.emoji+' '+info.label:t);
     var cnt=t==='all'?F2F_EVENTS.length:F2F_EVENTS.filter(function(e){return e.type===t;}).length;
-    return '<button onclick="eventsFilterType=\''+t+'\';renderEventsPanel()" style="padding:5px 12px;border-radius:6px;border:1px solid '+(active?'var(--cyan)':'var(--border)')+';background:'+(active?'var(--cyan)11':'transparent')+';color:'+(active?'var(--cyan)':'var(--dim)')+';font-size:11px;cursor:pointer;transition:all .2s">'+label+' <span style="opacity:.5">'+cnt+'</span></button>';
+    return '<button onclick="eventsFilterType=\''+t+'\';renderEventsPanel()" style="padding:6px 14px;border-radius:6px;border:1px solid '+(isActive?'var(--cyan)':'var(--border)')+';background:'+(isActive?'var(--cyan)11':'transparent')+';color:'+(isActive?'var(--cyan)':'var(--dim)')+';font-size:11px;cursor:pointer;transition:all .2s;min-height:34px">'+label+' <span style="opacity:.5">'+cnt+'</span></button>';
   }).join('');
 
   // Filter events
   var filtered=eventsFilterType==='all'?F2F_EVENTS:F2F_EVENTS.filter(function(e){return e.type===eventsFilterType;});
 
-  // Calendar grid
+  // Calendar grid (compact)
   renderEventsCalendar(filtered);
 
-  // Upcoming list
-  var listEl=document.getElementById('eventsUpcomingList');
-  var today=new Date().toISOString().slice(0,10);
+  // Event list — vertical, below calendar
+  var listEl=document.getElementById('eventsListSection');
   var sorted=filtered.slice().sort(function(a,b){return a.date>b.date?1:-1;});
-  var upcomingList=sorted.filter(function(e){return e.date>=today;});
-  var pastList=sorted.filter(function(e){return e.date<today;}).reverse().slice(0,5);
+  var activeList=sorted.filter(function(e){return e.status!=='completed'&&e.status!=='cancelled';});
+  var doneList=sorted.filter(function(e){return e.status==='completed'||e.status==='cancelled';}).reverse().slice(0,5);
 
-  var html='<h3 style="margin:0 0 10px;font-size:14px;color:var(--cyan)">📅 Ближайшие</h3>';
-  if(!upcomingList.length)html+='<div style="color:var(--dim);font-size:12px;padding:12px">Нет предстоящих мероприятий</div>';
-  upcomingList.forEach(function(e){html+=renderEventCard(e,today);});
-
-  if(pastList.length){
-    html+='<h3 style="margin:16px 0 10px;font-size:14px;color:var(--dim)">📜 Прошедшие</h3>';
-    pastList.forEach(function(e){html+=renderEventCard(e,today);});
+  var html='';
+  if(!activeList.length&&!doneList.length){
+    html='<div style="text-align:center;padding:40px 20px;color:var(--dim)">'+
+      '<div style="font-size:32px;margin-bottom:8px">📅</div>'+
+      '<div style="font-size:14px;margin-bottom:4px">Нет мероприятий</div>'+
+      '<div style="font-size:12px">Нажми <b>+ Новое мероприятие</b> чтобы начать планирование</div>'+
+    '</div>';
+  }else{
+    if(activeList.length){
+      html+='<div style="font-size:13px;font-weight:600;color:var(--cyan);margin-bottom:8px">Активные и в планах ('+activeList.length+')</div>';
+      activeList.forEach(function(e){html+=renderEventCard(e,today);});
+    }
+    if(doneList.length){
+      html+='<div style="font-size:13px;font-weight:600;color:var(--dim);margin:16px 0 8px">Завершённые</div>';
+      doneList.forEach(function(e){html+=renderEventCard(e,today);});
+    }
   }
   listEl.innerHTML=html;
 }
 
 function renderEventCard(e,today){
   var info=EVENT_TYPES[e.type]||{label:'?',emoji:'📌',color:'#666'};
-  var isPast=e.date<today;
+  var st=EVENT_STATUSES[e.status]||{label:'?',color:'#666'};
+  var isDone=e.status==='completed'||e.status==='cancelled';
   var daysUntil=Math.ceil((new Date(e.date)-new Date(today))/(86400000));
   var daysLabel=daysUntil===0?'Сегодня!':daysUntil===1?'Завтра':daysUntil>0?'через '+daysUntil+' дн.':Math.abs(daysUntil)+' дн. назад';
-  return '<div onclick="openEventDetail(\''+e.id+'\')" style="padding:10px 12px;background:var(--panel);border:1px solid var(--border);border-left:3px solid '+info.color+';border-radius:8px;margin-bottom:8px;cursor:pointer;opacity:'+(isPast?'0.5':'1')+';transition:all .2s" onmouseover="this.style.borderColor=\''+info.color+'\'" onmouseout="this.style.borderColor=\'var(--border)\'">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center">'+
-      '<div style="font-size:13px;font-weight:600;color:var(--text)">'+esc(info.emoji+' '+e.title)+'</div>'+
-      '<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:'+info.color+'22;color:'+info.color+'">'+info.label+'</span>'+
+  var prog=getEventProgress(e);
+
+  return '<div onclick="openEventDetail(\''+e.id+'\')" style="padding:12px 14px;background:var(--panel);border:1px solid var(--border);border-left:3px solid '+info.color+';border-radius:8px;margin-bottom:8px;cursor:pointer;opacity:'+(isDone?'0.5':'1')+';transition:all .2s" onmouseover="this.style.borderColor=\''+info.color+'\'" onmouseout="this.style.borderColor=\'var(--border)\'">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'+
+      '<div style="font-size:14px;font-weight:600;color:var(--text)">'+esc(info.emoji+' '+e.title)+'</div>'+
+      '<div style="display:flex;gap:4px;align-items:center">'+
+        '<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:'+st.color+'22;color:'+st.color+'">'+st.label+'</span>'+
+        '<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:'+info.color+'22;color:'+info.color+'">'+info.label+'</span>'+
+      '</div>'+
     '</div>'+
-    '<div style="font-size:11px;color:var(--dim);margin-top:4px">'+
-      e.date+(e.end?' → '+e.end:'')+' · <span style="color:'+(daysUntil<=3&&daysUntil>=0?'#f59e0b':'var(--dim)')+'">'+daysLabel+'</span>'+
+    '<div style="display:flex;align-items:center;gap:12px;margin-top:6px;flex-wrap:wrap">'+
+      '<span style="font-size:11px;color:var(--dim)">'+e.date+(e.end?' → '+e.end:'')+'</span>'+
+      '<span style="font-size:11px;color:'+(daysUntil<=3&&daysUntil>=0?'#f59e0b':'var(--dim)')+'">'+daysLabel+'</span>'+
+      (e.venue?'<span style="font-size:11px;color:var(--dim)">📍 '+esc(e.venue)+'</span>':'')+
+      (e.budget?'<span style="font-size:11px;color:var(--dim)">💰 '+esc(e.budget)+'</span>':'')+
     '</div>'+
-    (e.desc?'<div style="font-size:11px;color:#8892a4;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+esc(e.desc)+'</div>':'')+
+    (prog.total>0?'<div style="margin-top:8px;display:flex;align-items:center;gap:8px">'+
+      '<div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden">'+
+        '<div style="width:'+prog.pct+'%;height:100%;background:'+(prog.pct===100?'#22c55e':'#3b82f6')+';border-radius:2px;transition:width .3s"></div>'+
+      '</div>'+
+      '<span style="font-size:10px;color:var(--dim);white-space:nowrap">'+prog.done+'/'+prog.total+' задач</span>'+
+    '</div>':'')+
   '</div>';
 }
 
 function renderEventsCalendar(events){
   var el=document.getElementById('eventsCalendarGrid');
   var y=eventsCurrentYear,m=eventsCurrentMonth;
-  var firstDay=new Date(y,m,1).getDay()||7; // Mon=1
+  var firstDay=new Date(y,m,1).getDay()||7;
   var daysInMonth=new Date(y,m+1,0).getDate();
   var today=new Date();var todayStr=today.toISOString().slice(0,10);
   var monthNames=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 
-  // Map events to days
   var dayEvents={};
   events.forEach(function(e){
-    var start=e.date.slice(0,7)===y+'-'+String(m+1).padStart(2,'0')?parseInt(e.date.slice(8,10)):null;
+    var ym=y+'-'+String(m+1).padStart(2,'0');
+    var start=e.date.slice(0,7)===ym?parseInt(e.date.slice(8,10)):null;
     var endDate=e.end||e.date;
-    // Check if event spans into this month
-    if(!start){
-      if(e.date<y+'-'+String(m+1).padStart(2,'0')+'-01'&&endDate>=y+'-'+String(m+1).padStart(2,'0')+'-01')start=1;
-    }
+    if(!start){if(e.date<ym+'-01'&&endDate>=ym+'-01')start=1;}
     if(start){
-      var endDay=endDate.slice(0,7)===y+'-'+String(m+1).padStart(2,'0')?parseInt(endDate.slice(8,10)):daysInMonth;
+      var endDay=endDate.slice(0,7)===ym?parseInt(endDate.slice(8,10)):daysInMonth;
       for(var d=start;d<=Math.min(endDay,daysInMonth);d++){
         if(!dayEvents[d])dayEvents[d]=[];
         dayEvents[d].push(e);
@@ -5957,34 +6036,26 @@ function renderEventsCalendar(events){
   });
 
   var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
-    '<button onclick="eventsCurrentMonth--;if(eventsCurrentMonth<0){eventsCurrentMonth=11;eventsCurrentYear--;}renderEventsPanel()" style="background:none;border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:14px">◀</button>'+
+    '<button onclick="eventsCurrentMonth--;if(eventsCurrentMonth<0){eventsCurrentMonth=11;eventsCurrentYear--;}renderEventsPanel()" style="background:none;border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:14px;min-height:34px">◀</button>'+
     '<span style="font-size:15px;font-weight:700;color:var(--text)">'+monthNames[m]+' '+y+'</span>'+
-    '<button onclick="eventsCurrentMonth++;if(eventsCurrentMonth>11){eventsCurrentMonth=0;eventsCurrentYear++;}renderEventsPanel()" style="background:none;border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:14px">▶</button>'+
+    '<button onclick="eventsCurrentMonth++;if(eventsCurrentMonth>11){eventsCurrentMonth=0;eventsCurrentYear++;}renderEventsPanel()" style="background:none;border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:14px;min-height:34px">▶</button>'+
   '</div>';
-
-  // Day headers
   html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;margin-bottom:4px">';
   ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(function(d){
     html+='<div style="font-size:10px;color:var(--dim);padding:4px 0;font-weight:600">'+d+'</div>';
   });
-  html+='</div>';
-
-  // Days grid
-  html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">';
-  // Empty cells before first day
-  for(var i=1;i<firstDay;i++)html+='<div style="padding:4px;min-height:48px"></div>';
-
+  html+='</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">';
+  for(var i=1;i<firstDay;i++)html+='<div style="padding:4px;min-height:40px"></div>';
   for(var d=1;d<=daysInMonth;d++){
     var dateStr=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     var isToday=dateStr===todayStr;
     var evs=dayEvents[d]||[];
-    var hasTournament=evs.some(function(e){return e.type==='tournament';});
-    html+='<div onclick="showDayEvents(\''+dateStr+'\')" style="padding:3px;min-height:48px;background:'+(isToday?'var(--cyan)11':'var(--bg)')+';border:1px solid '+(isToday?'var(--cyan)':'transparent')+';border-radius:6px;cursor:pointer;transition:all .15s" onmouseover="this.style.background=\'var(--panel)\'" onmouseout="this.style.background=\''+(isToday?'var(--cyan)11':'var(--bg)')+'\'">'+
+    html+='<div onclick="showDayEvents(\''+dateStr+'\')" style="padding:3px;min-height:40px;background:'+(isToday?'var(--cyan)11':'var(--bg)')+';border:1px solid '+(isToday?'var(--cyan)':'transparent')+';border-radius:6px;cursor:pointer;transition:all .15s" onmouseover="this.style.background=\'var(--panel)\'" onmouseout="this.style.background=\''+(isToday?'var(--cyan)11':'var(--bg)')+'\'">'+
       '<div style="font-size:11px;color:'+(isToday?'var(--cyan)':'var(--text)')+';font-weight:'+(isToday?'700':'400')+';text-align:right;padding:0 2px">'+d+'</div>';
     if(evs.length>0){
       evs.slice(0,2).forEach(function(e){
-        var info=EVENT_TYPES[e.type]||{color:'#666'};
-        html+='<div style="font-size:7px;padding:1px 3px;margin-top:1px;border-radius:3px;background:'+info.color+'22;color:'+info.color+';overflow:hidden;white-space:nowrap;text-overflow:ellipsis">'+esc(e.title.slice(0,12))+'</div>';
+        var inf=EVENT_TYPES[e.type]||{color:'#666'};
+        html+='<div style="font-size:7px;padding:1px 3px;margin-top:1px;border-radius:3px;background:'+inf.color+'22;color:'+inf.color+';overflow:hidden;white-space:nowrap;text-overflow:ellipsis">'+esc(e.title.slice(0,12))+'</div>';
       });
       if(evs.length>2)html+='<div style="font-size:7px;color:var(--dim);text-align:center">+'+String(evs.length-2)+'</div>';
     }
@@ -6000,17 +6071,15 @@ window.showDayEvents=function(dateStr){
   var html='<h2 style="margin-bottom:12px">📅 '+dateStr+'</h2>';
   evs.forEach(function(e){
     var info=EVENT_TYPES[e.type]||{label:'?',emoji:'📌',color:'#666'};
-    html+='<div style="padding:10px;background:var(--bg);border-left:3px solid '+info.color+';border-radius:8px;margin-bottom:8px">'+
-      '<div style="font-weight:600;font-size:13px">'+esc(info.emoji+' '+e.title)+'</div>'+
-      '<div style="font-size:11px;color:var(--dim);margin-top:4px">'+e.date+(e.end?' → '+e.end:'')+'</div>'+
-      (e.desc?'<div style="font-size:12px;color:#8892a4;margin-top:6px">'+esc(e.desc)+'</div>':'')+
-      '<div style="margin-top:8px;display:flex;gap:6px">'+
-        '<button onclick="openEventForm(null,\''+e.id+'\')" style="padding:4px 10px;background:#3b82f622;color:#3b82f6;border:1px solid #3b82f644;border-radius:5px;cursor:pointer;font-size:11px">✏️ Редакт.</button>'+
-        '<button onclick="deleteEvent(\''+e.id+'\')" style="padding:4px 10px;background:#ef444422;color:#ef4444;border:1px solid #ef444444;border-radius:5px;cursor:pointer;font-size:11px">🗑 Удалить</button>'+
+    var st=EVENT_STATUSES[e.status]||{label:'?',color:'#666'};
+    html+='<div style="padding:10px;background:var(--bg);border-left:3px solid '+info.color+';border-radius:8px;margin-bottom:8px;cursor:pointer" onclick="closeModal();setTimeout(function(){openEventDetail(\''+e.id+'\')},150)">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center">'+
+        '<div style="font-weight:600;font-size:13px">'+esc(info.emoji+' '+e.title)+'</div>'+
+        '<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:'+st.color+'22;color:'+st.color+'">'+st.label+'</span>'+
       '</div>'+
     '</div>';
   });
-  html+='<button onclick="openEventForm(\''+dateStr+'\')" style="width:100%;padding:8px;background:#a855f722;color:#a855f7;border:1px solid #a855f744;border-radius:6px;cursor:pointer;font-size:12px;margin-top:8px">+ Добавить на эту дату</button>';
+  html+='<button onclick="openEventForm(\''+dateStr+'\')" style="width:100%;padding:10px;background:#a855f722;color:#a855f7;border:1px solid #a855f744;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;margin-top:8px;min-height:44px">+ Добавить на эту дату</button>';
   openModal(html);
 };
 
@@ -6018,26 +6087,111 @@ window.openEventDetail=function(id){
   var e=F2F_EVENTS.find(function(ev){return ev.id===id;});
   if(!e)return;
   var info=EVENT_TYPES[e.type]||{label:'?',emoji:'📌',color:'#666'};
+  var st=EVENT_STATUSES[e.status]||{label:'?',color:'#666'};
   var today=new Date().toISOString().slice(0,10);
   var daysUntil=Math.ceil((new Date(e.date)-new Date(today))/(86400000));
   var daysLabel=daysUntil===0?'Сегодня!':daysUntil>0?'через '+daysUntil+' дн.':Math.abs(daysUntil)+' дн. назад';
+  var prog=getEventProgress(e);
+
+  // Status selector
+  var statusHtml='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:12px">';
+  Object.keys(EVENT_STATUSES).forEach(function(sk){
+    var s=EVENT_STATUSES[sk];
+    var isCur=e.status===sk;
+    statusHtml+='<button onclick="changeEventStatus(\''+e.id+'\',\''+sk+'\')" style="padding:4px 10px;border-radius:5px;border:1px solid '+(isCur?s.color:s.color+'44')+';background:'+(isCur?s.color+'33':s.color+'11')+';color:'+s.color+';font-size:10px;cursor:pointer;font-weight:'+(isCur?'700':'400')+';min-height:30px">'+s.label+'</button>';
+  });
+  statusHtml+='</div>';
+
+  // Checklist
+  var taskHtml='';
+  if(e.tasks&&e.tasks.length>0){
+    taskHtml='<div style="margin-top:16px"><div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px">📋 Чеклист ('+prog.done+'/'+prog.total+')</div>';
+    if(prog.total>0){
+      taskHtml+='<div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:10px">'+
+        '<div style="width:'+prog.pct+'%;height:100%;background:'+(prog.pct===100?'#22c55e':'#3b82f6')+';transition:width .3s"></div></div>';
+    }
+    var curCat='';
+    e.tasks.forEach(function(t,idx){
+      if(t.cat&&t.cat!==curCat){
+        curCat=t.cat;
+        taskHtml+='<div style="font-size:11px;font-weight:600;color:var(--cyan);margin:10px 0 4px;text-transform:uppercase;letter-spacing:0.5px">'+esc(curCat)+'</div>';
+      }
+      taskHtml+='<div onclick="toggleEventTask(\''+e.id+'\','+idx+')" style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg);border-radius:6px;margin-bottom:3px;cursor:pointer;border:1px solid '+(t.done?'#22c55e33':'var(--border)')+';transition:all .15s">'+
+        '<span style="font-size:14px;width:20px;text-align:center">'+(t.done?'✅':'⬜')+'</span>'+
+        '<span style="font-size:12px;color:'+(t.done?'var(--dim)':'var(--text)')+';text-decoration:'+(t.done?'line-through':'none')+';flex:1">'+esc(t.text)+'</span>'+
+      '</div>';
+    });
+    taskHtml+='</div>';
+  }else{
+    // Offer to generate checklist
+    var tmpl=EVENT_CHECKLISTS[e.type];
+    if(tmpl){
+      taskHtml='<div style="margin-top:16px;text-align:center;padding:16px;background:var(--bg);border:1px dashed var(--border);border-radius:8px">'+
+        '<div style="font-size:12px;color:var(--dim);margin-bottom:8px">Нет задач. Сгенерировать чеклист для типа "'+info.label+'"?</div>'+
+        '<button onclick="generateChecklist(\''+e.id+'\')" style="padding:8px 20px;background:#3b82f622;color:#3b82f6;border:1px solid #3b82f644;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;min-height:36px">📋 Сгенерировать чеклист</button>'+
+      '</div>';
+    }
+  }
 
   openModal(
     '<div style="border-left:4px solid '+info.color+';padding-left:16px">'+
       '<h2 style="margin:0 0 4px">'+esc(info.emoji+' '+e.title)+'</h2>'+
-      '<span style="font-size:11px;padding:2px 10px;border-radius:4px;background:'+info.color+'22;color:'+info.color+'">'+info.label+'</span>'+
-      ' <span style="font-size:11px;color:var(--dim);margin-left:8px">'+daysLabel+'</span>'+
+      '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+
+        '<span style="font-size:11px;padding:2px 10px;border-radius:4px;background:'+st.color+'22;color:'+st.color+';font-weight:600">'+st.label+'</span>'+
+        '<span style="font-size:11px;padding:2px 10px;border-radius:4px;background:'+info.color+'22;color:'+info.color+'">'+info.label+'</span>'+
+        '<span style="font-size:11px;color:var(--dim)">'+daysLabel+'</span>'+
+      '</div>'+
     '</div>'+
-    '<div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
-      '<div style="padding:10px;background:var(--bg);border-radius:8px"><div style="font-size:10px;color:var(--dim)">Начало</div><div style="font-size:14px;font-weight:600;color:var(--text);margin-top:2px">'+e.date+'</div></div>'+
-      '<div style="padding:10px;background:var(--bg);border-radius:8px"><div style="font-size:10px;color:var(--dim)">Конец</div><div style="font-size:14px;font-weight:600;color:var(--text);margin-top:2px">'+(e.end||e.date)+'</div></div>'+
+    statusHtml+
+    '<div style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px">'+
+      '<div style="padding:8px;background:var(--bg);border-radius:8px"><div style="font-size:10px;color:var(--dim)">Начало</div><div style="font-size:13px;font-weight:600;color:var(--text);margin-top:2px">'+e.date+'</div></div>'+
+      '<div style="padding:8px;background:var(--bg);border-radius:8px"><div style="font-size:10px;color:var(--dim)">Конец</div><div style="font-size:13px;font-weight:600;color:var(--text);margin-top:2px">'+(e.end||'—')+'</div></div>'+
+      (e.venue?'<div style="padding:8px;background:var(--bg);border-radius:8px"><div style="font-size:10px;color:var(--dim)">Площадка</div><div style="font-size:13px;font-weight:600;color:var(--text);margin-top:2px">'+esc(e.venue)+'</div></div>':'')+
+      (e.budget?'<div style="padding:8px;background:var(--bg);border-radius:8px"><div style="font-size:10px;color:var(--dim)">Бюджет</div><div style="font-size:13px;font-weight:600;color:var(--text);margin-top:2px">'+esc(e.budget)+'</div></div>':'')+
     '</div>'+
-    (e.desc?'<div style="margin-top:12px;padding:12px;background:var(--bg);border-radius:8px;font-size:13px;color:#8892a4;line-height:1.6">'+esc(e.desc)+'</div>':'')+
+    (e.goals?'<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:8px"><div style="font-size:10px;color:var(--dim);margin-bottom:4px">🎯 Цель</div><div style="font-size:12px;color:var(--text);line-height:1.5">'+esc(e.goals)+'</div></div>':'')+
+    (e.desc?'<div style="margin-top:8px;padding:10px;background:var(--bg);border-radius:8px;font-size:12px;color:#8892a4;line-height:1.5">'+esc(e.desc)+'</div>':'')+
+    taskHtml+
     '<div style="margin-top:16px;display:flex;gap:8px">'+
-      '<button onclick="openEventForm(null,\''+e.id+'\')" style="flex:1;padding:8px;background:#3b82f622;color:#3b82f6;border:1px solid #3b82f644;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">✏️ Редактировать</button>'+
-      '<button onclick="deleteEvent(\''+e.id+'\')" style="padding:8px 16px;background:#ef444422;color:#ef4444;border:1px solid #ef444444;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">🗑</button>'+
+      '<button onclick="openEventForm(null,\''+e.id+'\')" style="flex:1;padding:8px;background:#3b82f622;color:#3b82f6;border:1px solid #3b82f644;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;min-height:40px">✏️ Редактировать</button>'+
+      '<button onclick="deleteEvent(\''+e.id+'\')" style="padding:8px 16px;background:#ef444422;color:#ef4444;border:1px solid #ef444444;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;min-height:40px">🗑</button>'+
     '</div>'
   );
+};
+
+window.toggleEventTask=function(evId,taskIdx){
+  var e=F2F_EVENTS.find(function(ev){return ev.id===evId;});
+  if(!e||!e.tasks||!e.tasks[taskIdx])return;
+  e.tasks[taskIdx].done=!e.tasks[taskIdx].done;
+  saveEvents();
+  closeModal();
+  setTimeout(function(){openEventDetail(evId);},100);
+};
+
+window.generateChecklist=function(evId){
+  var e=F2F_EVENTS.find(function(ev){return ev.id===evId;});
+  if(!e)return;
+  var tmpl=EVENT_CHECKLISTS[e.type];
+  if(!tmpl)return;
+  e.tasks=[];
+  tmpl.forEach(function(cat){
+    cat.items.forEach(function(item){
+      e.tasks.push({cat:cat.cat,text:item,done:false});
+    });
+  });
+  saveEvents();
+  closeModal();
+  setTimeout(function(){openEventDetail(evId);},100);
+  showToast('📋 Чеклист сгенерирован ('+e.tasks.length+' задач)','success');
+};
+
+window.changeEventStatus=function(evId,newStatus){
+  var e=F2F_EVENTS.find(function(ev){return ev.id===evId;});
+  if(!e)return;
+  e.status=newStatus;
+  saveEvents();
+  closeModal();
+  setTimeout(function(){openEventDetail(evId);},100);
 };
 
 window.openEventForm=function(defaultDate,editId){
@@ -6047,25 +6201,47 @@ window.openEventForm=function(defaultDate,editId){
     var info=EVENT_TYPES[k];
     return '<option value="'+k+'"'+(e&&e.type===k?' selected':(!e&&k==='tournament'?' selected':''))+'>'+info.emoji+' '+info.label+'</option>';
   }).join('');
+  var statusOptions=Object.keys(EVENT_STATUSES).map(function(k){
+    var s=EVENT_STATUSES[k];
+    return '<option value="'+k+'"'+(e&&e.status===k?' selected':(!e&&k==='idea'?' selected':''))+'>'+s.label+'</option>';
+  }).join('');
 
   closeModal();
   setTimeout(function(){
     openModal(
-      '<h2 style="margin-bottom:12px">'+(isEdit?'✏️ Редактировать':'📅 Новое мероприятие')+'</h2>'+
-      '<div style="display:flex;flex-direction:column;gap:10px">'+
-        '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Название</label>'+
-        '<input id="evTitle" value="'+esc(e?e.title:'')+'" placeholder="PGL Major Copenhagen" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;box-sizing:border-box"></div>'+
+      '<h2 style="margin-bottom:16px">'+(isEdit?'✏️ Редактировать':'📅 Новое мероприятие')+'</h2>'+
+      '<div style="display:flex;flex-direction:column;gap:12px">'+
+        '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Название *</label>'+
+        '<input id="evTitle" value="'+esc(e?e.title:'')+'" placeholder="Например: F2F LAN #1" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:14px;box-sizing:border-box"></div>'+
+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-          '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Дата начала</label>'+
-          '<input id="evDate" type="date" value="'+(e?e.date:(defaultDate||new Date().toISOString().slice(0,10)))+'" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;box-sizing:border-box"></div>'+
-          '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Дата конца</label>'+
-          '<input id="evEnd" type="date" value="'+(e&&e.end?e.end:'')+'" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;box-sizing:border-box"></div>'+
+          '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Тип</label>'+
+          '<select id="evType" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+typeOptions+'</select></div>'+
+          '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Статус</label>'+
+          '<select id="evStatus" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+statusOptions+'</select></div>'+
         '</div>'+
-        '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Тип</label>'+
-        '<select id="evType" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">'+typeOptions+'</select></div>'+
+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+          '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Дата начала *</label>'+
+          '<input id="evDate" type="date" value="'+(e?e.date:(defaultDate||new Date().toISOString().slice(0,10)))+'" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;box-sizing:border-box"></div>'+
+          '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Дата конца</label>'+
+          '<input id="evEnd" type="date" value="'+(e&&e.end?e.end:'')+'" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;box-sizing:border-box"></div>'+
+        '</div>'+
+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+          '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Площадка</label>'+
+          '<input id="evVenue" value="'+esc(e?e.venue||'':'')+'" placeholder="Название / адрес" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;box-sizing:border-box"></div>'+
+          '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Бюджет</label>'+
+          '<input id="evBudget" value="'+esc(e?e.budget||'':'')+'" placeholder="$500 / 50 000₽" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;box-sizing:border-box"></div>'+
+        '</div>'+
+
+        '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Цель мероприятия</label>'+
+        '<input id="evGoals" value="'+esc(e?e.goals||'':'')+'" placeholder="Зачем проводим? Что хотим получить?" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;box-sizing:border-box"></div>'+
+
         '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Описание</label>'+
-        '<textarea id="evDesc" rows="3" placeholder="Детали мероприятия..." style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box">'+esc(e?e.desc||'':'')+'</textarea></div>'+
-        '<button onclick="saveEventForm('+(isEdit?"'"+editId+"'":"null")+')" style="width:100%;padding:10px;background:#a855f722;color:#a855f7;border:1px solid #a855f744;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700">'+(isEdit?'💾 Сохранить':'📅 Создать мероприятие')+'</button>'+
+        '<textarea id="evDesc" rows="2" placeholder="Дополнительные детали..." style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box">'+esc(e?e.desc||'':'')+'</textarea></div>'+
+
+        '<button onclick="saveEventForm('+(isEdit?"'"+editId+"'":"null")+')" style="width:100%;padding:12px;background:#a855f733;color:#a855f7;border:1px solid #a855f766;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700;min-height:48px">'+(isEdit?'💾 Сохранить':'📅 Создать мероприятие')+'</button>'+
       '</div>'
     );
   },100);
@@ -6076,13 +6252,17 @@ window.saveEventForm=function(editId){
   var date=document.getElementById('evDate').value;
   var end=document.getElementById('evEnd').value;
   var type=document.getElementById('evType').value;
+  var status=document.getElementById('evStatus').value;
+  var venue=document.getElementById('evVenue').value.trim();
+  var budget=document.getElementById('evBudget').value.trim();
+  var goals=document.getElementById('evGoals').value.trim();
   var desc=document.getElementById('evDesc').value.trim();
   if(!title||!date){showToast('Заполни название и дату','warning');return;}
   if(editId){
     var ev=F2F_EVENTS.find(function(e){return e.id===editId;});
-    if(ev){ev.title=title;ev.date=date;ev.end=end||'';ev.type=type;ev.desc=desc;}
+    if(ev){ev.title=title;ev.date=date;ev.end=end||'';ev.type=type;ev.status=status;ev.venue=venue;ev.budget=budget;ev.goals=goals;ev.desc=desc;}
   }else{
-    F2F_EVENTS.push({id:'ev_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),title:title,date:date,end:end||'',type:type,desc:desc});
+    F2F_EVENTS.push({id:'ev_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),title:title,date:date,end:end||'',type:type,status:status,venue:venue,budget:budget,goals:goals,desc:desc,tasks:[]});
   }
   saveEvents();
   closeModal();

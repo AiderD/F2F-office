@@ -343,17 +343,16 @@
     <h2>📅 Мероприятия</h2>
     <div style="display:flex;gap:8px;align-items:center">
       <div class="data-count" id="events-total-count">0</div>
-      <button class="ctrl-btn" onclick="openEventForm()" style="background:#a855f722;color:#a855f7">+ Добавить</button>
+      <button class="ctrl-btn" onclick="openEventForm()" style="background:#a855f733;color:#a855f7;font-size:13px;font-weight:700;padding:8px 18px;border:1px solid #a855f766;min-height:44px">+ Новое мероприятие</button>
     </div>
   </div>
   <div id="eventsFilterBar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:0 4px"></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 4px" id="eventsLayout">
-    <div>
-      <div id="eventsCalendarGrid" style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px"></div>
-    </div>
-    <div>
-      <div id="eventsUpcomingList" style="max-height:500px;overflow-y:auto"></div>
-    </div>
+  <!-- KPI strip -->
+  <div id="eventsKPI" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding:0 4px"></div>
+  <!-- Vertical layout: calendar compact on top, then event cards -->
+  <div style="padding:0 4px">
+    <div id="eventsCalendarGrid" style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px"></div>
+    <div id="eventsListSection"></div>
   </div>
 </div>
 

@@ -24,7 +24,8 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
 .logo h1{font-size:16px;font-weight:800;letter-spacing:2px;background:linear-gradient(90deg,#00ff88,#00e5ff);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .logo small{font-size:10px;color:var(--dim);letter-spacing:2px;display:block}
-.header-kpis{display:flex;gap:20px}
+.header-kpis{display:flex;gap:20px;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none;flex-shrink:1;min-width:0}
+.header-kpis::-webkit-scrollbar{display:none}
 .kpi{text-align:center;cursor:pointer;padding:4px 8px;border-radius:6px;transition:all .2s}
 .kpi:hover{background:#ffffff08}
 .kpi .v{font-size:16px;font-weight:700;font-family:monospace}
@@ -35,9 +36,10 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
   padding:3px 10px;border-radius:12px}
 
 /* ═══ TABS BAR ═══ */
-.tabs-bar{display:flex;align-items:center;background:var(--panel);border-bottom:1px solid var(--border);padding:0 16px;gap:4px}
+.tabs-bar{display:flex;align-items:center;background:var(--panel);border-bottom:1px solid var(--border);padding:0 16px;gap:4px;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none}
+.tabs-bar::-webkit-scrollbar{display:none}
 .tab{padding:8px 18px;font-size:12px;font-weight:600;color:var(--dim);cursor:pointer;border:none;background:none;
-  border-bottom:2px solid transparent;transition:all .2s;text-transform:uppercase;letter-spacing:1px}
+  border-bottom:2px solid transparent;transition:all .2s;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;flex-shrink:0}
 .tab:hover{color:var(--text)}
 .tab.active{color:var(--green);border-bottom-color:var(--green);border-bottom-width:3px;background:rgba(0,255,136,0.06);
   text-shadow:0 0 8px rgba(0,255,136,0.3)}
