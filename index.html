@@ -341,11 +341,9 @@
 <div class="panel data-panel" id="panel-events">
   <div class="data-header" style="flex-wrap:wrap;gap:8px">
     <h2>📅 Мероприятия</h2>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <div class="data-count" id="events-total-count">0</div>
-      <button class="ctrl-btn" onclick="openEventForm()" style="background:#a855f733;color:#a855f7;font-size:13px;font-weight:700;padding:8px 18px;border:1px solid #a855f766;min-height:44px;white-space:nowrap">+ Новое мероприятие</button>
-    </div>
+    <div class="data-count" id="events-total-count">0</div>
   </div>
+  <button onclick="openEventForm()" style="width:100%;padding:12px;background:#a855f722;color:#a855f7;border:1px solid #a855f744;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;margin-bottom:12px;min-height:48px;transition:all .2s" onmouseover="this.style.background='#a855f733'" onmouseout="this.style.background='#a855f722'">+ Новое мероприятие</button>
   <div id="eventsFilterBar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;padding:0 4px"></div>
   <!-- KPI strip -->
   <div id="eventsKPI" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding:0 4px"></div>
