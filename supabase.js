@@ -3,6 +3,52 @@ const SUPABASE_URL='https://cuvmjkavluixkbzblcie.supabase.co';
 const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1dm1qa2F2bHVpeGtiemJsY2llIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3NDg4ODgsImV4cCI6MjA4OTMyNDg4OH0.Ie1xGbB45nELK0PbwnKgDu56yxhZugVEdXYoUQT7TG4';
 let SUPABASE_LIVE=false;
 
+// ═══ ERROR TRACKER ═══
+window._sbErrors={count:0,last:null,tables:{}};
+var _sbErrorToastLast=0;
+function trackSbError(table,op,err){
+  window._sbErrors.count++;
+  window._sbErrors.last={table:table,op:op,error:String(err),time:new Date().toISOString()};
+  if(!window._sbErrors.tables[table])window._sbErrors.tables[table]=0;
+  window._sbErrors.tables[table]++;
+  var now=Date.now();
+  if(now-_sbErrorToastLast>10000&&typeof showToast==='function'){
+    showToast('⚠️ Ошибка сохранения ('+table+'). Данные могут быть не сохранены.','warning');
+    _sbErrorToastLast=now;
+  }
+}
+
+// ═══ EDGE FUNCTION HEALTH CHECK ═══
+window._edgeFuncStatus={ok:[],fail:[]};
+async function checkEdgeFunctions(){
+  var funcs=['agent-chat','quality-review','smm-generate','coordinator-briefing','agent-autonomous-cycle'];
+  for(var i=0;i<funcs.length;i++){
+    try{
+      var r=await fetch(SUPABASE_URL+'/functions/v1/'+funcs[i],{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+        body:JSON.stringify({health_check:true}),
+        signal:AbortSignal.timeout(8000)
+      });
+      if(r.ok||r.status===400)window._edgeFuncStatus.ok.push(funcs[i]);
+      else window._edgeFuncStatus.fail.push(funcs[i]);
+    }catch(e){window._edgeFuncStatus.fail.push(funcs[i]);}
+  }
+  if(window._edgeFuncStatus.fail.length>0){
+    addFeed('coordinator','⚠️ '+window._edgeFuncStatus.fail.length+' Edge Functions недоступны: '+window._edgeFuncStatus.fail.join(', '));
+  }
+  console.log('🏥 Edge Functions:',window._edgeFuncStatus);
+}
+
+// ═══ FEED MEMORY LIMIT ═══
+var _feedMemoryLimit=200;
+function trimFeedMemory(){
+  if(window._notifiedFeedIds&&window._notifiedFeedIds.size>_feedMemoryLimit){
+    var arr=Array.from(window._notifiedFeedIds);
+    window._notifiedFeedIds=new Set(arr.slice(arr.length-100));
+  }
+}
+
 // Map Supabase agent slugs → dashboard agent IDs
 const SB_SLUG_TO_DASH={
   'smm':'content','analyst':'market','bizdev':'leads',
@@ -14,11 +60,12 @@ Object.keys(SB_SLUG_TO_DASH).forEach(k=>{DASH_TO_SB_SLUG[SB_SLUG_TO_DASH[k]]=k;}
 // Store Supabase agents by slug for UUID lookup
 window._sbAgents={};
 
-// Generic Supabase REST fetch
+// Generic Supabase REST fetch (10s timeout)
 async function sbFetch(table,params=''){
   try{
     const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+(params?'?'+params:''),{
-      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json'}
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json'},
+      signal:AbortSignal.timeout(10000)
     });
     if(!r.ok)throw new Error(r.status);
     return await r.json();
@@ -29,22 +76,24 @@ async function sbPatch(table,filter,data){
     const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
       method:'PATCH',
       headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'},
-      body:JSON.stringify(data)
+      body:JSON.stringify(data),
+      signal:AbortSignal.timeout(10000)
     });
     if(!r.ok)throw new Error(r.status);
     return await r.json();
-  }catch(e){console.warn('Supabase patch error ('+table+'):',e);return null;}
+  }catch(e){console.warn('Supabase patch error ('+table+'):',e);trackSbError(table,'patch',e);return null;}
 }
 async function sbInsert(table,data){
   try{
     const r=await fetch(SUPABASE_URL+'/rest/v1/'+table,{
       method:'POST',
       headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'},
-      body:JSON.stringify(data)
+      body:JSON.stringify(data),
+      signal:AbortSignal.timeout(10000)
     });
     if(!r.ok)throw new Error(r.status);
     return await r.json();
-  }catch(e){console.warn('Supabase insert error ('+table+'):',e);return null;}
+  }catch(e){console.warn('Supabase insert error ('+table+'):',e);trackSbError(table,'insert',e);return null;}
 }
 // Upsert — insert or update on conflict
 async function sbUpsert(table,data,onConflict){
@@ -56,22 +105,24 @@ async function sbUpsert(table,data,onConflict){
         'Content-Type':'application/json',
         'Prefer':'return=representation,resolution=merge-duplicates'
       },
-      body:JSON.stringify(data)
+      body:JSON.stringify(data),
+      signal:AbortSignal.timeout(10000)
     });
     if(!r.ok)throw new Error(r.status);
     return await r.json();
-  }catch(e){console.warn('Supabase upsert error ('+table+'):',e);return null;}
+  }catch(e){console.warn('Supabase upsert error ('+table+'):',e);trackSbError(table,'upsert',e);return null;}
 }
 // Delete row
 async function sbDelete(table,filter){
   try{
     const r=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+filter,{
       method:'DELETE',
-      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'}
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'return=representation'},
+      signal:AbortSignal.timeout(10000)
     });
     if(!r.ok)throw new Error(r.status);
     return await r.json();
-  }catch(e){console.warn('Supabase delete error ('+table+'):',e);return null;}
+  }catch(e){console.warn('Supabase delete error ('+table+'):',e);trackSbError(table,'delete',e);return null;}
 }
 
 // Fetch and merge Supabase data
@@ -160,8 +211,8 @@ function refreshAfterSync(){
   if(window._sbPartners&&window._sbPartners.length>0){
     // Reset merge flag so renderLeads re-processes
     window._sbPartnersMerged=false;
-    // Remove ALL mock leads (keep only those with sbId from previous merge)
-    D.leads=D.leads.filter(function(l){return l.sbId;});
+    // Remove ALL mock leads (keep only those with sbId OR localCreated from previous merge)
+    D.leads=D.leads.filter(function(l){return l.sbId||l.localCreated;});
     // Re-merge from Supabase (renderLeads will add them)
   }
 
@@ -173,8 +224,8 @@ function refreshAfterSync(){
 
   // ═══ 3. REPORTS: Merge Supabase reports into D.reports ═══
   if(window._sbReports&&window._sbReports.length>0){
-    // Remove mock reports, keep only SB-sourced
-    D.reports=D.reports.filter(function(r){return r.sbId;});
+    // Remove mock reports, keep only SB-sourced or local
+    D.reports=D.reports.filter(function(r){return r.sbId||r.localCreated;});
     window._sbReports.forEach(function(r,i){
       if(D.reports.find(function(x){return x.sbId===r.id;}))return;
       var ag=window._sbAgentById&&r.agent_id?window._sbAgentById[r.agent_id]:null;
@@ -228,7 +279,7 @@ function refreshAfterSync(){
 
   // ═══ 4. TASKS: Merge Supabase actions into D.tasks ═══
   if(window._sbActions&&window._sbActions.length>0){
-    D.tasks=D.tasks.filter(function(t){return t.sbId;});
+    D.tasks=D.tasks.filter(function(t){return t.sbId||t.localCreated;});
     window._sbActions.forEach(function(a,i){
       if(D.tasks.find(function(x){return x.sbId===a.id;}))return;
       var ag=window._sbAgentById&&a.agent_id?window._sbAgentById[a.agent_id]:null;
@@ -551,8 +602,11 @@ window.addEventListener('load',()=>{
       refreshAfterSync();
       syncOfficeLiveStatus();
       console.log('🔄 Supabase auto-refresh OK — '+new Date().toLocaleTimeString('ru'));
+      trimFeedMemory();
     }catch(e){console.warn('Auto-refresh error:',e);}
   },30000);
+  // Health check edge functions on first load
+  checkEdgeFunctions();
 });
 
 // ═══ REALTIME NOTIFICATIONS ═══
