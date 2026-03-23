@@ -377,8 +377,8 @@ function refreshAfterSync(){
 
     // 2. Recent partner activity
     if(window._sbPartners&&window._sbPartners.length>0){
-      var newLeads=window._sbPartners.filter(p=>p.status==='lead'||p.status==='new').length;
-      var contacted=window._sbPartners.filter(p=>p.status==='contacted').length;
+      var newLeads=window._sbPartners.filter(p=>p.stage==='identified'||p.stage==='lead'||p.stage==='new').length;
+      var contacted=window._sbPartners.filter(p=>p.stage==='contacted').length;
       if(newLeads>0) addFeed('leads','🆕 '+newLeads+' новых лидов в пайплайне');
       if(contacted>0) addFeed('outreach','📧 '+contacted+' лидов на стадии контакта');
     }
@@ -601,9 +601,9 @@ function setupRealtimeNotifications(){
         });
       }
       // Check for new actions
-      var newActions=await sbFetch('actions','select=id,title,status,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=5');
+      var newActions=await sbFetch('actions','select=id,type,payload_json,created_at&created_at=gt.'+encodeURIComponent(lastCheck)+'&order=created_at.desc&limit=5');
       if(newActions&&newActions.length>0){
-        var actionCount=newActions.filter(function(a){return a.status!=='done';}).length;
+        var actionCount=newActions.filter(function(a){var p=a.payload_json||{};return p.status!=='done'&&p.status!=='executed';}).length;
         if(actionCount>0&&typeof showToast==='function')showToast('📋 '+actionCount+' новых задач','info');
       }
       window._lastRealtimeCheck=new Date().toISOString();

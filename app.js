@@ -2900,8 +2900,8 @@ window.openLeadModal=function(id){
         return '<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #1a2d3d08;font-size:10px">'+
           '<span style="color:var(--dim);white-space:nowrap">'+dateStr+'</span>'+
           '<span>'+(icons[h.interaction_type]||'📋')+'</span>'+
-          '<span style="color:#cbd5e1;flex:1">'+h.content+'</span>'+
-          '<span style="color:#384858">'+h.created_by+'</span>'+
+          '<span style="color:#cbd5e1;flex:1">'+esc(h.content)+'</span>'+
+          '<span style="color:#384858">'+esc(h.created_by)+'</span>'+
         '</div>';
       }).join('');
     });
@@ -5936,9 +5936,10 @@ function renderCommandPalette(){
   commandPaletteInput.oninput=function(){renderCommandPalette();};
 }
 
-// Close on overlay click
-commandPaletteOverlay.addEventListener('click',function(e){
-  if(e.target===commandPaletteOverlay)closeCommandPalette();
+// Close on overlay click (lazy-init to avoid null ref at load time)
+document.addEventListener('click',function(e){
+  if(!commandPaletteOverlay)commandPaletteOverlay=document.getElementById('commandPaletteOverlay');
+  if(commandPaletteOverlay&&e.target===commandPaletteOverlay)closeCommandPalette();
 });
 
 // ═══ FEATURE 3: ACTIVITY SUMMARY IN FEED ═══
