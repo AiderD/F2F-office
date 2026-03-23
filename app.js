@@ -1861,9 +1861,10 @@ function chatRespondAI(channel,userMsg){
     parseChatForTasks(text, responderId, channel);
     // Log to Supabase if live
     if(SUPABASE_LIVE){
-      sbInsert('chat_history',{agent_id:null,sender:'ceo',message:userMsg}).catch(function(){});
-      sbInsert('chat_history',{agent_id:null,sender:'agent',message:text}).catch(function(){});
-      sbInsert('events',{type:'chat',metadata_json:{agent:responderId,channel:channel}}).catch(function(){});
+      var senderName=_currentSession?_currentSession.login_name:'unknown';
+      sbInsert('chat_history',{agent_id:null,sender:senderName,message:userMsg}).catch(function(){});
+      sbInsert('chat_history',{agent_id:null,sender:'agent_'+responderId,message:text}).catch(function(){});
+      sbInsert('events',{type:'chat',metadata_json:{agent:responderId,channel:channel,sender:senderName}}).catch(function(){});
     }
   })
   .catch(function(err){
@@ -1928,16 +1929,21 @@ document.getElementById('chatSend').addEventListener('click',function(){
   var msg=cleanInput(input.value,2000);if(!msg)return;
   input.value='';
   if(!chatHistory[currentChannel])chatHistory[currentChannel]=[];
+  var roleEmoji={admin:'👑',pm:'📋',editor:'✏️',viewer:'👁️'};
+  var userName=_currentSession?_currentSession.login_name:'User';
+  var userRole=_currentSession?_currentSession.role:'viewer';
+  var userLabel=(roleEmoji[userRole]||'👤')+' '+userName;
   chatHistory[currentChannel].push({
-    role:'user', author:'👑 Aider (CEO)', text:esc(msg), color:'var(--cyan)',
+    role:'user', author:userLabel, text:esc(msg), color:'var(--cyan)',
     time:new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})
   });
   renderChat();
   chatRespond(currentChannel,msg);
   // Save as CEO directive to Supabase (Coordinator will pick it up)
   if(SUPABASE_LIVE&&currentChannel==='general'){
-    sbInsert('directives',{key:'ceo_chat_'+Date.now(),value_json:{text:msg,source:'ui_chat',channel:currentChannel},active:true})
-      .then(function(){console.log('✅ CEO directive saved to Supabase');})
+    var sName=_currentSession?_currentSession.login_name:'unknown';
+    sbInsert('directives',{key:'team_chat_'+Date.now(),value_json:{text:msg,source:'ui_chat',channel:currentChannel,sender:sName,role:_currentSession?_currentSession.role:'viewer'},active:true})
+      .then(function(){console.log('✅ Directive saved to Supabase by '+sName);})
       .catch(function(e){console.warn('Directive save error:',e);});
   }
 });
