@@ -189,7 +189,7 @@ async function syncSupabaseData(){
   }
 
   // ═══ PARALLEL FETCH: all remaining tables at once (was sequential — ~15x faster now) ═══
-  const [content,partners,events,metrics,dirs,reports,actions,finance,ledger,credits,expenses,esTeams,rosters,tournaments,team,projects,changes,marketIntel]=await Promise.all([
+  const [content,partners,events,metrics,dirs,reports,actions,finance,ledger,credits,expenses,esTeams,rosters,tournaments,team,projects,changes,marketIntel,vacBalances,vacRequests,vacLog]=await Promise.all([
     sbFetch('content_queue','select=*&order=created_at.desc&limit=1000'),
     sbFetch('partner_pipeline','select=*&order=created_at.desc&limit=500'),
     sbFetch('events','select=*&order=created_at.desc&limit=500'),
@@ -207,7 +207,10 @@ async function syncSupabaseData(){
     sbFetch('team','select=*&order=id.asc'),
     sbFetch('projects','select=*&order=created_at.desc&limit=200'),
     sbFetch('entity_changes','select=*&order=created_at.desc&limit=200'),
-    sbFetch('market_intelligence','select=*&order=created_at.desc&limit=30')
+    sbFetch('market_intelligence','select=*&order=created_at.desc&limit=30'),
+    sbFetch('vacation_balances','select=*&order=employee_name.asc'),
+    sbFetch('vacation_requests','select=*&order=created_at.desc&limit=500'),
+    sbFetch('vacation_log','select=*&order=created_at.desc&limit=500')
   ]);
 
   if(content){window._sbContent=content;window._sbContentMerged=false;}
@@ -228,6 +231,9 @@ async function syncSupabaseData(){
   if(projects)window._projects=projects;
   if(changes)window._entityChanges=changes;
   if(marketIntel){window._marketIntel=marketIntel;}
+  if(vacBalances)window._vacBalances=vacBalances;
+  if(vacRequests)window._vacRequests=vacRequests;
+  if(vacLog)window._vacLog=vacLog;
 
   return true;
 }
@@ -424,6 +430,7 @@ function refreshAfterSync(){
   if(typeof loadStrategy==='function'&&!window._stratLoaded){window._stratLoaded=true;_sr(loadStrategy,'strategy');}
   if(typeof renderStrategyProgress==='function'){_sr(renderStrategyProgress,'strategyProgress');}
   if(typeof renderMarketIntelligence==='function'){_sr(renderMarketIntelligence,'marketIntel');}
+  if(typeof renderVacation==='function'){_sr(renderVacation,'vacation');}
 
   // Add meaningful Supabase events to feed (NOT raw post spam)
   if(SUPABASE_LIVE&&!window._sbFeedEnriched){

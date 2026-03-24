@@ -3021,6 +3021,465 @@ window.submitEmployee=function(editId){
   renderTeam();
 };
 
+// ═══ VACATION SYSTEM ═══
+var _vacView='calendar'; // calendar | myRequests | approvals | manage
+function switchTeamView(view){
+  var tc=document.getElementById('teamContent');
+  var vc=document.getElementById('vacationContent');
+  var dt=document.getElementById('teamDeptTabs');
+  if(view==='vacation'){
+    if(tc)tc.style.display='none';
+    if(dt)dt.style.display='none';
+    if(vc){vc.style.display='';renderVacation();}
+  } else {
+    if(tc)tc.style.display='';
+    if(dt)dt.style.display='';
+    if(vc)vc.style.display='none';
+  }
+}
+
+function calcVacationBalance(emp){
+  // 2 дня/мес + 1 день каждые 3 мес с даты hire_date
+  if(!emp||!emp.hire_date)return {accrued:emp?Number(emp.accrued_days)||0:0, used:Number(emp.used_days)||0};
+  var hd=new Date(emp.hire_date);
+  var now=new Date();
+  var months=Math.max(0,(now.getFullYear()-hd.getFullYear())*12+(now.getMonth()-hd.getMonth()));
+  var quarters=Math.floor(months/3);
+  var autoAccrued=months*2+quarters*1;
+  var manualAdj=Number(emp.accrued_days)||0;
+  return {accrued:autoAccrued+manualAdj, used:Number(emp.used_days)||0, months:months, autoAccrued:autoAccrued, manualAdj:manualAdj};
+}
+
+function renderVacation(){
+  var el=document.getElementById('vacationContent');
+  if(!el)return;
+  var balances=window._vacBalances||[];
+  var requests=window._vacRequests||[];
+  var me=_currentSession?_currentSession.login_name:'';
+  var myBal=balances.find(function(b){return b.employee_name===me;});
+  var calc=calcVacationBalance(myBal);
+  var available=calc.accrued-calc.used;
+
+  // Count pending approvals for me (as manager)
+  var myApprovals=requests.filter(function(r){return r.approver_name===me&&r.status==='pending_manager';});
+  // Count PM pending
+  var pmPending=requests.filter(function(r){return r.status==='pending_pm';});
+
+  var html='<div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">';
+  html+='<button class="act-btn'+(_vacView==='calendar'?' success':'')+'" onclick="_vacView=\'calendar\';renderVacation()">📅 Календарь отпусков</button>';
+  html+='<button class="act-btn'+(_vacView==='myRequests'?' success':'')+'" onclick="_vacView=\'myRequests\';renderVacation()">📋 Мои заявки</button>';
+  html+='<button class="act-btn'+(_vacView==='approvals'?' success':'')+'" onclick="_vacView=\'approvals\';renderVacation()">✅ Согласование'+(myApprovals.length>0?' <span class="badge" style="background:var(--magenta)">'+myApprovals.length+'</span>':'')+'</button>';
+  if(isPM()||isAdmin()){
+    html+='<button class="act-btn'+(_vacView==='manage'?' success':'')+'" onclick="_vacView=\'manage\';renderVacation()">⚙️ Управление'+(pmPending.length>0?' <span class="badge" style="background:var(--magenta)">'+pmPending.length+'</span>':'')+'</button>';
+  }
+  html+='<button class="act-btn" onclick="switchTeamView(\'team\')" style="margin-left:auto">← Сотрудники</button>';
+  html+='</div>';
+
+  // My balance card
+  html+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">';
+  html+='<div style="flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px">';
+  html+='<div style="font-size:11px;color:var(--dim);margin-bottom:4px">МОЙ БАЛАНС</div>';
+  html+='<div style="font-size:28px;font-weight:700;color:'+(available<0?'var(--magenta)':available>0?'var(--green)':'var(--text)')+'">'+available.toFixed(1)+' <span style="font-size:13px;color:var(--dim)">дней</span></div>';
+  html+='<div style="font-size:11px;color:var(--dim);margin-top:4px">Начислено: '+calc.accrued.toFixed(1)+' · Использовано: '+calc.used.toFixed(1)+'</div>';
+  html+='</div>';
+  html+='<div style="flex:0 0 auto;display:flex;align-items:center"><button class="act-btn success" onclick="openVacationRequestForm()" style="padding:10px 20px;font-size:14px">🏖️ Подать заявку</button></div>';
+  html+='</div>';
+
+  if(_vacView==='calendar') html+=renderVacationCalendar(requests);
+  else if(_vacView==='myRequests') html+=renderMyVacationRequests(requests,me);
+  else if(_vacView==='approvals') html+=renderVacationApprovals(requests,me);
+  else if(_vacView==='manage') html+=renderVacationManage(balances,requests);
+
+  el.innerHTML=html;
+}
+
+function renderVacationCalendar(requests){
+  var approved=requests.filter(function(r){return r.status==='approved'||r.status==='pending_pm'||r.status==='pending_manager';});
+  var now=new Date();
+  var year=now.getFullYear();
+  var month=now.getMonth();
+  // Show 3 months: current, next, next+1
+  var html='<h3 style="margin:0 0 12px;font-size:15px;color:var(--cyan)">📅 Календарь отпусков</h3>';
+  for(var mi=0;mi<3;mi++){
+    var cm=month+mi;var cy=year;
+    if(cm>11){cm-=12;cy++;}
+    html+=renderVacMonth(cy,cm,approved);
+  }
+  return html;
+}
+
+function renderVacMonth(year,month,requests){
+  var mNames=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+  var dNames=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+  var first=new Date(year,month,1);
+  var lastDay=new Date(year,month+1,0).getDate();
+  var startDow=(first.getDay()+6)%7; // Mon=0
+  var today=new Date();
+
+  var html='<div style="margin-bottom:20px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px">';
+  html+='<div style="font-weight:700;margin-bottom:8px;color:var(--text)">'+mNames[month]+' '+year+'</div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center">';
+  for(var d=0;d<7;d++){
+    var isWe=d>=5;
+    html+='<div style="font-size:10px;color:'+(isWe?'var(--magenta)':'var(--dim)')+';padding:4px;font-weight:600">'+dNames[d]+'</div>';
+  }
+  for(var s=0;s<startDow;s++) html+='<div></div>';
+  for(var day=1;day<=lastDay;day++){
+    var dateStr=year+'-'+String(month+1).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+    var isToday=today.getFullYear()===year&&today.getMonth()===month&&today.getDate()===day;
+    var dow=(startDow+day-1)%7;
+    var isWeekend=dow>=5;
+    // Find vacations on this day
+    var vacs=requests.filter(function(r){return dateStr>=r.start_date&&dateStr<=r.end_date;});
+    var cellBg=isToday?'rgba(0,229,255,0.15)':isWeekend?'rgba(255,45,120,0.05)':'var(--panel)';
+    var border=isToday?'1px solid var(--cyan)':'1px solid transparent';
+    html+='<div style="min-height:36px;background:'+cellBg+';border:'+border+';border-radius:4px;padding:2px;position:relative;cursor:'+(vacs.length?'pointer':'default')+'"'+(vacs.length?' title="'+vacs.map(function(v){return v.employee_name+' ('+v.status+')'}).join(', ')+'"':'')+' onclick="'+(vacs.length===0?'openVacationRequestForm(\''+dateStr+'\')':'')+'">';
+    html+='<div style="font-size:11px;color:'+(isWeekend?'var(--magenta)':'var(--text)')+'">'+day+'</div>';
+    for(var vi=0;vi<Math.min(vacs.length,2);vi++){
+      var vc=vacs[vi];
+      var vColor=vc.status==='approved'?'var(--green)':vc.status==='pending_pm'?'var(--cyan)':'var(--dim)';
+      html+='<div style="font-size:8px;background:'+vColor+'22;color:'+vColor+';border-radius:2px;padding:0 2px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(vc.employee_name.split(' ')[0])+'</div>';
+    }
+    if(vacs.length>2) html+='<div style="font-size:8px;color:var(--dim)">+' + (vacs.length-2) + '</div>';
+    html+='</div>';
+  }
+  html+='</div></div>';
+  return html;
+}
+
+function renderMyVacationRequests(requests,me){
+  var mine=requests.filter(function(r){return r.employee_name===me;});
+  var html='<h3 style="margin:0 0 12px;font-size:15px;color:var(--cyan)">📋 Мои заявки</h3>';
+  if(mine.length===0){
+    html+='<div style="padding:40px;text-align:center;color:var(--dim)">У вас нет заявок на отпуск. Нажмите "Подать заявку" чтобы создать.</div>';
+    return html;
+  }
+  mine.forEach(function(r){
+    html+=buildVacationRequestCard(r,false);
+  });
+  return html;
+}
+
+function renderVacationApprovals(requests,me){
+  // Заявки где я — согласующий руководитель
+  var forMe=requests.filter(function(r){return r.approver_name===me&&r.status==='pending_manager';});
+  var approved=requests.filter(function(r){return r.approver_name===me&&r.approver_decision;});
+  var html='<h3 style="margin:0 0 12px;font-size:15px;color:var(--cyan)">✅ Согласование (как руководитель)</h3>';
+  if(forMe.length===0&&approved.length===0){
+    html+='<div style="padding:40px;text-align:center;color:var(--dim)">Нет заявок для согласования</div>';
+    return html;
+  }
+  if(forMe.length>0){
+    html+='<div style="margin-bottom:12px;color:var(--magenta);font-weight:600">⏳ Ожидают вашего решения ('+forMe.length+')</div>';
+    forMe.forEach(function(r){html+=buildVacationRequestCard(r,true);});
+  }
+  if(approved.length>0){
+    html+='<div style="margin:16px 0 8px;color:var(--dim);font-size:12px">Ранее рассмотренные</div>';
+    approved.forEach(function(r){html+=buildVacationRequestCard(r,false);});
+  }
+  return html;
+}
+
+function renderVacationManage(balances,requests){
+  // PM view: финальное согласование + управление балансами
+  var pmPending=requests.filter(function(r){return r.status==='pending_pm';});
+  var html='<h3 style="margin:0 0 12px;font-size:15px;color:var(--cyan)">⚙️ Управление отпусками (PM)</h3>';
+
+  // PM pending approvals
+  if(pmPending.length>0){
+    html+='<div style="margin-bottom:16px;padding:12px;background:rgba(255,45,120,0.08);border:1px solid rgba(255,45,120,0.2);border-radius:10px">';
+    html+='<div style="font-weight:600;margin-bottom:8px;color:var(--magenta)">⏳ Ожидают финального одобрения ('+pmPending.length+')</div>';
+    pmPending.forEach(function(r){html+=buildVacationRequestCard(r,true,true);});
+    html+='</div>';
+  }
+
+  // Employee balances table
+  html+='<div style="margin-top:16px"><div style="font-weight:600;margin-bottom:8px;color:var(--text)">📊 Балансы сотрудников</div>';
+  html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html+='<tr style="border-bottom:1px solid var(--border)">';
+  html+='<th style="text-align:left;padding:8px;color:var(--dim)">Сотрудник</th>';
+  html+='<th style="text-align:center;padding:8px;color:var(--dim)">Дата найма</th>';
+  html+='<th style="text-align:center;padding:8px;color:var(--dim)">Начислено</th>';
+  html+='<th style="text-align:center;padding:8px;color:var(--dim)">Использовано</th>';
+  html+='<th style="text-align:center;padding:8px;color:var(--dim)">Баланс</th>';
+  html+='<th style="text-align:center;padding:8px;color:var(--dim)">Действия</th>';
+  html+='</tr>';
+  balances.forEach(function(b){
+    var c=calcVacationBalance(b);
+    var avail=c.accrued-c.used;
+    html+='<tr style="border-bottom:1px solid var(--border)">';
+    html+='<td style="padding:8px;color:var(--text)">'+esc(b.employee_name)+'</td>';
+    html+='<td style="padding:8px;text-align:center;color:var(--dim)">'+(b.hire_date||'<span style="color:var(--magenta)">не указана</span>')+'</td>';
+    html+='<td style="padding:8px;text-align:center;color:var(--green)">'+c.accrued.toFixed(1)+'</td>';
+    html+='<td style="padding:8px;text-align:center;color:var(--magenta)">'+c.used.toFixed(1)+'</td>';
+    html+='<td style="padding:8px;text-align:center;font-weight:700;color:'+(avail<0?'var(--magenta)':'var(--green)')+'">'+avail.toFixed(1)+'</td>';
+    html+='<td style="padding:8px;text-align:center">';
+    html+='<button class="act-btn" onclick="openVacationAdjust(\''+esc(b.employee_name)+'\','+b.id+')" style="font-size:10px;padding:2px 8px">±</button> ';
+    html+='<button class="act-btn" onclick="openVacationHireDate(\''+esc(b.employee_name)+'\','+b.id+',\''+(b.hire_date||'')+'\')" style="font-size:10px;padding:2px 8px">📅</button>';
+    html+='</td></tr>';
+  });
+  html+='</table></div></div>';
+  return html;
+}
+
+function buildVacationRequestCard(r,showActions,isPmAction){
+  var statusLabels={pending_manager:'⏳ Ожидает руководителя',pending_pm:'⏳ Ожидает PM',approved:'✅ Одобрено',rejected:'❌ Отклонено',cancelled:'🚫 Отменено'};
+  var statusColors={pending_manager:'var(--dim)',pending_pm:'var(--cyan)',approved:'var(--green)',rejected:'var(--magenta)',cancelled:'var(--dim)'};
+  var html='<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid '+statusColors[r.status]+';border-radius:8px;padding:12px;margin-bottom:8px">';
+  html+='<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px">';
+  html+='<div>';
+  html+='<div style="font-weight:600;color:var(--text)">'+esc(r.employee_name)+'</div>';
+  html+='<div style="font-size:12px;color:var(--dim);margin-top:2px">'+r.start_date+' → '+r.end_date+' ('+r.days_count+' дн.)</div>';
+  if(r.reason) html+='<div style="font-size:11px;color:var(--dim);margin-top:4px">💬 '+esc(r.reason)+'</div>';
+  html+='<div style="font-size:11px;margin-top:4px;color:var(--dim)">Руководитель: <b style="color:var(--text)">'+esc(r.approver_name)+'</b></div>';
+  if(r.approver_decision){
+    var aColor=r.approver_decision==='approved'?'var(--green)':'var(--magenta)';
+    html+='<div style="font-size:11px;margin-top:2px;color:'+aColor+'">'+(r.approver_decision==='approved'?'✅':'❌')+' Руководитель: '+r.approver_decision+(r.approver_comment?' — '+esc(r.approver_comment):'')+'</div>';
+  }
+  if(r.pm_decision){
+    var pColor=r.pm_decision==='approved'?'var(--green)':'var(--magenta)';
+    html+='<div style="font-size:11px;margin-top:2px;color:'+pColor+'">'+(r.pm_decision==='approved'?'✅':'❌')+' PM: '+r.pm_decision+(r.pm_comment?' — '+esc(r.pm_comment):'')+'</div>';
+  }
+  html+='</div>';
+  html+='<div style="text-align:right">';
+  html+='<div style="font-size:11px;color:'+statusColors[r.status]+'">'+statusLabels[r.status]+'</div>';
+  if(showActions){
+    if(!isPmAction){
+      // Manager approval
+      html+='<div style="margin-top:8px;display:flex;gap:4px">';
+      html+='<button class="act-btn success" onclick="approveVacation('+r.id+',\'manager\',\'approved\')" style="font-size:11px;padding:4px 10px">✅ Согласовать</button>';
+      html+='<button class="act-btn danger" onclick="approveVacation('+r.id+',\'manager\',\'rejected\')" style="font-size:11px;padding:4px 10px">❌ Отклонить</button>';
+      html+='</div>';
+    } else {
+      // PM final approval
+      html+='<div style="margin-top:8px;display:flex;gap:4px">';
+      html+='<button class="act-btn success" onclick="approveVacation('+r.id+',\'pm\',\'approved\')" style="font-size:11px;padding:4px 10px">✅ Одобрить</button>';
+      html+='<button class="act-btn danger" onclick="approveVacation('+r.id+',\'pm\',\'rejected\')" style="font-size:11px;padding:4px 10px">❌ Отклонить</button>';
+      html+='</div>';
+    }
+  }
+  if(r.status==='pending_manager'&&r.employee_name===(_currentSession?_currentSession.login_name:'')){
+    html+='<button class="act-btn" onclick="cancelVacation('+r.id+')" style="font-size:10px;padding:2px 8px;margin-top:4px">Отменить</button>';
+  }
+  html+='</div></div></div>';
+  return html;
+}
+
+// ═══ VACATION ACTIONS ═══
+function openVacationRequestForm(prefillDate){
+  var employees=D.team.filter(function(t){return t.name!==(_currentSession?_currentSession.login_name:'')&&t.status==='active';});
+  var empOptions=employees.map(function(e){return '<option value="'+esc(e.name)+'">'+esc(e.name)+(e.role?' — '+esc(e.role):'')+'</option>';}).join('');
+  var today=new Date().toISOString().slice(0,10);
+  openModal(
+    '<h3 style="margin-bottom:12px">🏖️ Заявка на отпуск</h3>'+
+    '<div style="display:grid;gap:10px">'+
+      '<label style="font-size:12px;color:var(--dim)">Дата начала</label>'+
+      '<input id="vac-start" type="date" value="'+(prefillDate||today)+'" style="padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px" onchange="calcVacDays()">'+
+      '<label style="font-size:12px;color:var(--dim)">Дата окончания</label>'+
+      '<input id="vac-end" type="date" value="'+(prefillDate||today)+'" style="padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px" onchange="calcVacDays()">'+
+      '<div id="vac-days-info" style="font-size:12px;color:var(--cyan);padding:4px 0">Рабочих дней: 1</div>'+
+      '<label style="font-size:12px;color:var(--dim)">Согласующий руководитель *</label>'+
+      '<select id="vac-approver" style="padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px">'+
+        '<option value="">Выберите руководителя</option>'+empOptions+
+      '</select>'+
+      '<label style="font-size:12px;color:var(--dim)">Комментарий</label>'+
+      '<textarea id="vac-reason" placeholder="Причина отпуска (необязательно)" rows="2" style="padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;resize:vertical"></textarea>'+
+      '<button class="act-btn success" onclick="submitVacationRequest()" style="padding:10px;font-size:14px;margin-top:4px">📨 Отправить заявку</button>'+
+    '</div>'
+  );
+}
+
+window.calcVacDays=function(){
+  var s=document.getElementById('vac-start');
+  var e=document.getElementById('vac-end');
+  var info=document.getElementById('vac-days-info');
+  if(!s||!e||!info)return;
+  var start=new Date(s.value);
+  var end=new Date(e.value);
+  if(isNaN(start)||isNaN(end)||end<start){info.textContent='Рабочих дней: 0';return;}
+  var days=0;
+  var d=new Date(start);
+  while(d<=end){
+    var dow=d.getDay();
+    if(dow!==0&&dow!==6)days++;
+    d.setDate(d.getDate()+1);
+  }
+  info.textContent='Рабочих дней: '+days;
+};
+
+window.submitVacationRequest=function(){
+  var startEl=document.getElementById('vac-start');
+  var endEl=document.getElementById('vac-end');
+  var approverEl=document.getElementById('vac-approver');
+  var reasonEl=document.getElementById('vac-reason');
+  if(!startEl||!endEl||!approverEl)return;
+  var start=startEl.value;
+  var end=endEl.value;
+  var approver=approverEl.value;
+  var reason=reasonEl?reasonEl.value:'';
+  if(!start||!end){showToast('Укажите даты','error');return;}
+  if(!approver){showToast('Выберите согласующего руководителя','error');return;}
+  if(new Date(end)<new Date(start)){showToast('Дата окончания раньше начала','error');return;}
+  // Calc working days
+  var days=0;var d=new Date(start);var endD=new Date(end);
+  while(d<=endD){var dow=d.getDay();if(dow!==0&&dow!==6)days++;d.setDate(d.getDate()+1);}
+  if(days===0){showToast('0 рабочих дней','error');return;}
+
+  var me=_currentSession?_currentSession.login_name:'';
+  sbInsert('vacation_requests',{
+    employee_name:me,
+    start_date:start,
+    end_date:end,
+    days_count:days,
+    approver_name:approver,
+    reason:reason,
+    status:'pending_manager'
+  }).then(function(){
+    showToast('✅ Заявка отправлена на согласование','success');
+    closeModal();
+    // Reload
+    sbFetch('vacation_requests','select=*&order=created_at.desc&limit=500').then(function(data){
+      if(data)window._vacRequests=data;
+      _vacView='myRequests';renderVacation();
+    });
+  }).catch(function(err){showToast('Ошибка: '+err,'error');});
+};
+
+window.approveVacation=function(requestId,role,decision){
+  var comment=prompt((decision==='approved'?'Комментарий (необязательно):':'Причина отклонения:'))||'';
+  var me=_currentSession?_currentSession.login_name:'';
+  var updates={};
+  if(role==='manager'){
+    updates.approver_decision=decision;
+    updates.approver_comment=comment;
+    updates.approver_decided_at=new Date().toISOString();
+    if(decision==='approved'){
+      updates.status='pending_pm';
+    } else {
+      updates.status='rejected';
+    }
+  } else {
+    // PM
+    updates.pm_name=me;
+    updates.pm_decision=decision;
+    updates.pm_comment=comment;
+    updates.pm_decided_at=new Date().toISOString();
+    if(decision==='approved'){
+      updates.status='approved';
+      // Deduct vacation days from balance
+      var req=(window._vacRequests||[]).find(function(r){return r.id===requestId;});
+      if(req){
+        var bal=(window._vacBalances||[]).find(function(b){return b.employee_name===req.employee_name;});
+        if(bal){
+          var newUsed=Number(bal.used_days)+Number(req.days_count);
+          sbPatch('vacation_balances','id=eq.'+bal.id,{used_days:newUsed,updated_at:new Date().toISOString()});
+          // Log the deduction
+          var c=calcVacationBalance(bal);
+          sbInsert('vacation_log',{
+            employee_name:req.employee_name,
+            change_type:'used',
+            days_change:-Number(req.days_count),
+            balance_after:c.accrued-newUsed,
+            note:'Отпуск '+req.start_date+' — '+req.end_date,
+            created_by:me,
+            request_id:requestId
+          });
+        }
+      }
+    } else {
+      updates.status='rejected';
+    }
+  }
+  updates.updated_at=new Date().toISOString();
+  sbPatch('vacation_requests','id=eq.'+requestId,updates).then(function(){
+    showToast('✅ Решение сохранено','success');
+    sbFetch('vacation_requests','select=*&order=created_at.desc&limit=500').then(function(data){
+      if(data)window._vacRequests=data;
+      sbFetch('vacation_balances','select=*&order=employee_name.asc').then(function(bData){
+        if(bData)window._vacBalances=bData;
+        renderVacation();
+      });
+    });
+  }).catch(function(err){showToast('Ошибка: '+err,'error');});
+};
+
+window.cancelVacation=function(requestId){
+  if(!confirm('Отменить заявку?'))return;
+  sbPatch('vacation_requests','id=eq.'+requestId,{status:'cancelled',updated_at:new Date().toISOString()}).then(function(){
+    showToast('Заявка отменена','info');
+    sbFetch('vacation_requests','select=*&order=created_at.desc&limit=500').then(function(data){
+      if(data)window._vacRequests=data;
+      renderVacation();
+    });
+  });
+};
+
+window.openVacationAdjust=function(empName,balId){
+  openModal(
+    '<h3 style="margin-bottom:12px">± Корректировка дней: '+esc(empName)+'</h3>'+
+    '<div style="display:grid;gap:10px">'+
+      '<label style="font-size:12px;color:var(--dim)">Кол-во дней (+ начислить, − снять)</label>'+
+      '<input id="vac-adj-days" type="number" step="0.5" value="0" style="padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px">'+
+      '<label style="font-size:12px;color:var(--dim)">Причина</label>'+
+      '<input id="vac-adj-note" placeholder="Причина корректировки" style="padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px">'+
+      '<button class="act-btn success" onclick="submitVacationAdjust(\''+esc(empName)+'\','+balId+')" style="padding:10px">💾 Сохранить</button>'+
+    '</div>'
+  );
+};
+
+window.submitVacationAdjust=function(empName,balId){
+  var daysEl=document.getElementById('vac-adj-days');
+  var noteEl=document.getElementById('vac-adj-note');
+  if(!daysEl)return;
+  var days=parseFloat(daysEl.value);
+  if(!days||days===0){showToast('Укажите кол-во дней','error');return;}
+  var note=noteEl?noteEl.value:'';
+  var me=_currentSession?_currentSession.login_name:'';
+  var bal=(window._vacBalances||[]).find(function(b){return b.id===balId;});
+  if(!bal){showToast('Баланс не найден','error');return;}
+  var newAccrued=Number(bal.accrued_days)+days;
+  sbPatch('vacation_balances','id=eq.'+balId,{accrued_days:newAccrued,updated_at:new Date().toISOString()}).then(function(){
+    var c=calcVacationBalance(Object.assign({},bal,{accrued_days:newAccrued}));
+    sbInsert('vacation_log',{
+      employee_name:empName,
+      change_type:days>0?'manual_add':'manual_remove',
+      days_change:days,
+      balance_after:c.accrued-c.used,
+      note:note,
+      created_by:me
+    });
+    showToast('✅ Баланс обновлён: '+(days>0?'+':'')+days+' дн.','success');
+    closeModal();
+    sbFetch('vacation_balances','select=*&order=employee_name.asc').then(function(data){
+      if(data)window._vacBalances=data;
+      renderVacation();
+    });
+  }).catch(function(err){showToast('Ошибка: '+err,'error');});
+};
+
+window.openVacationHireDate=function(empName,balId,currentDate){
+  openModal(
+    '<h3 style="margin-bottom:12px">📅 Дата найма: '+esc(empName)+'</h3>'+
+    '<div style="display:grid;gap:10px">'+
+      '<input id="vac-hire-date" type="date" value="'+(currentDate||'')+'" style="padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px">'+
+      '<button class="act-btn success" onclick="submitVacationHireDate(\''+esc(empName)+'\','+balId+')" style="padding:10px">💾 Сохранить</button>'+
+    '</div>'
+  );
+};
+
+window.submitVacationHireDate=function(empName,balId){
+  var dateEl=document.getElementById('vac-hire-date');
+  if(!dateEl||!dateEl.value){showToast('Укажите дату','error');return;}
+  sbPatch('vacation_balances','id=eq.'+balId,{hire_date:dateEl.value,updated_at:new Date().toISOString()}).then(function(){
+    showToast('✅ Дата найма обновлена','success');
+    closeModal();
+    sbFetch('vacation_balances','select=*&order=employee_name.asc').then(function(data){
+      if(data)window._vacBalances=data;
+      renderVacation();
+    });
+  }).catch(function(err){showToast('Ошибка: '+err,'error');});
+};
+
 // ═══ LEADS ═══
 let leadFilter='all';
 function renderLeads(){
