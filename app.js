@@ -459,6 +459,7 @@ function switchTab(panelId){
   if(panelId==='office'){resizeCanvas();if(typeof updateOfficeStatuses==='function')updateOfficeStatuses();}
   if(panelId==='admin') renderAdmin();
   if(panelId==='expenses'&&typeof renderExpenses==='function') renderExpenses();
+  if(panelId==='projects'&&typeof renderProjects==='function') renderProjects();
   if(panelId==='teams'&&typeof renderTeams==='function') renderTeams();
 }
 document.querySelectorAll('.tab').forEach(tab=>{
@@ -3514,7 +3515,28 @@ window.openPostModal=function(id){
       <button class="act-btn danger" onclick="postAction(${p.id},'delete')">🗑 Удалить</button>
     </div>
   `);
+  // Load feedback history for this post
+  loadFeedbackList('post',p.sbId||p.id);
 };
+function loadFeedbackList(entityType,entityId){
+  var container=document.getElementById('feedbackList-'+entityType+'-'+entityId);
+  if(!container)return;
+  sbFetch('team_feedback','select=*&entity_type=eq.'+entityType+'&entity_id=eq.'+entityId+'&order=created_at.desc&limit=20').then(function(items){
+    if(!items||!items.length){container.innerHTML='<div style="font-size:11px;color:var(--dim);padding:4px 0">Пока нет отзывов</div>';return;}
+    var actionIcons={approve:'👍',reject:'👎',comment:'💬',tag:'🏷'};
+    var html='';
+    items.forEach(function(f){
+      var fb=typeof f.feedback_data==='string'?JSON.parse(f.feedback_data||'{}'):f.feedback_data||{};
+      html+='<div style="display:flex;gap:6px;padding:4px 0;border-bottom:1px solid var(--border)22;font-size:11px">';
+      html+='<span>'+(actionIcons[f.action]||'•')+'</span>';
+      html+='<span style="color:var(--cyan)">'+esc(f.author||'?')+'</span>';
+      html+='<span style="flex:1;color:var(--dim)">'+esc(fb.comment||f.action||'')+'</span>';
+      html+='<span style="color:var(--dim);white-space:nowrap">'+(f.created_at?timeSince(f.created_at):'')+'</span>';
+      html+='</div>';
+    });
+    container.innerHTML=html;
+  }).catch(function(){});
+}
 window.postAction=function(id,action){
   var p=D.posts.find(function(x){return x.id===id||x.sbId===id;});if(!p)return;
   if(action==='approve'){
@@ -3860,6 +3882,7 @@ window.openExpenseForm=function(){
     '<div><label style="font-size:12px;color:var(--dim)">Описание</label><input id="expDesc" placeholder="На что потрачено..." style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;box-sizing:border-box"></div>'+
     '<div><label style="font-size:12px;color:var(--dim)">Мероприятие (если связано)</label><select id="expEvent" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px">'+evtOpts+'</select></div>'+
     '<div><label style="font-size:12px;color:var(--dim)">Сотрудник (если связано)</label><select id="expEmployee" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px">'+empOpts+'</select></div>'+
+    '<div><label style="font-size:12px;color:var(--dim)">Проект (если связано)</label><select id="expProject" style="width:100%;padding:8px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px"><option value="">— не привязан —</option>'+(window._projects||[]).filter(function(p){return p.status==='active';}).map(function(p){return '<option value="'+p.id+'">📁 '+esc(p.name)+'</option>';}).join('')+'</select></div>'+
     '<button onclick="submitExpense()" class="act-btn success" style="padding:10px;font-size:14px;width:100%">💾 Сохранить расход</button></div>');
 };
 window.submitExpense=async function(){
@@ -3869,10 +3892,13 @@ window.submitExpense=async function(){
   var eventId=document.getElementById('expEvent').value;
   var employeeEl=document.getElementById('expEmployee');
   var employeeId=employeeEl?employeeEl.value:'';
+  var projectEl=document.getElementById('expProject');
+  var projectId=projectEl?projectEl.value:'';
   if(!amount||!desc){showToast('Заполни сумму и описание','error');return;}
   var entry={category:cat,amount:amount,currency:'RUB',description:desc,
     related_event_id:eventId?parseInt(eventId):null,
     related_employee_id:employeeId?parseInt(employeeId):null,
+    project_id:projectId?parseInt(projectId):null,
     author:_currentSession.login_name,author_role:_currentSession.role,status:'pending'};
   await sbInsert('expense_entries',entry);
   logAudit('expense_add','expense',null,{amount:amount,category:cat,description:desc,employee_id:employeeId||null});
@@ -3881,12 +3907,33 @@ window.submitExpense=async function(){
   await loadExpenses();
   if(typeof renderExpenses==='function')renderExpenses();
 };
+var _expFilter={cat:'all',status:'all'};
+window.filterExpenses=function(type,val,btn){
+  _expFilter[type]=val;
+  document.querySelectorAll('[data-exp-filter-'+type+']').forEach(function(b){b.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  renderExpenses();
+};
 function renderExpenses(){
   var c=document.getElementById('expensesContent');if(!c)return;
   var exps=window._expenses||[];
   var countEl=document.getElementById('expenses-count');if(countEl)countEl.textContent=exps.length+' записей';
+  // Filter bar
+  var fb=document.getElementById('expensesFilterBar');
+  if(fb){
+    var cats=[{v:'all',l:'Все'},{v:'event',l:'🎮 Мероприятие'},{v:'merch',l:'👕 Мерч'},{v:'service',l:'💻 Сервис'},{v:'judge_labor',l:'⚖️ Судьи'},{v:'other',l:'📦 Прочее'}];
+    var stats=[{v:'all',l:'Все'},{v:'pending',l:'⏳ Ожидает'},{v:'approved',l:'✅ Одобрено'},{v:'rejected',l:'❌ Отклонено'}];
+    var fhtml='<span style="font-size:11px;color:var(--dim);margin-right:4px">Категория:</span>';
+    cats.forEach(function(ct){fhtml+='<button class="sub-tab'+(_expFilter.cat===ct.v?' active':'')+'" data-exp-filter-cat="'+ct.v+'" onclick="filterExpenses(\'cat\',\''+ct.v+'\',this)" style="font-size:10px;padding:4px 8px">'+ct.l+'</button>';});
+    fhtml+='<span style="font-size:11px;color:var(--dim);margin:0 8px 0 12px">Статус:</span>';
+    stats.forEach(function(st){fhtml+='<button class="sub-tab'+(_expFilter.status===st.v?' active':'')+'" data-exp-filter-status="'+st.v+'" onclick="filterExpenses(\'status\',\''+st.v+'\',this)" style="font-size:10px;padding:4px 8px">'+st.l+'</button>';});
+    fb.innerHTML=fhtml;
+  }
   if(!exps.length){c.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim)">Нет расходов. Нажми ➕ чтобы добавить первый.</div>';return;}
   var myExps=canSeeExpenseTotal()?exps:exps.filter(function(e){return e.author===(_currentSession?_currentSession.login_name:'');});
+  // Apply filters
+  if(_expFilter.cat!=='all')myExps=myExps.filter(function(e){return e.category===_expFilter.cat;});
+  if(_expFilter.status!=='all')myExps=myExps.filter(function(e){return e.status===_expFilter.status;});
   var total=0;myExps.forEach(function(e){total+=parseFloat(e.amount)||0;});
   var catIcons={event:'🎮',merch:'👕',service:'💻',judge_labor:'⚖️',other:'📦'};
   var statusColors={pending:'var(--amber)',approved:'var(--green)',rejected:'var(--hot)'};
@@ -6851,6 +6898,8 @@ window.openEventDetail=function(id){
     (e.desc?'<div style="margin-top:8px;padding:10px;background:var(--bg);border-radius:8px;font-size:12px;color:#8892a4;line-height:1.5">'+esc(e.desc)+'</div>':'')+
     taskHtml+
     buildEventExpensesHtml(e)+
+    (e.project_id?(function(){var proj=(window._projects||[]).find(function(p){return String(p.id)===String(e.project_id);});return proj?'<div style="margin-top:10px;padding:8px 12px;background:var(--cyan)10;border:1px solid var(--cyan)22;border-radius:8px;font-size:12px"><span style="color:var(--dim)">📁 Проект:</span> <span style="color:var(--cyan);font-weight:600">'+esc(proj.name)+'</span></div>':'';})():'')+
+    buildEntityChangesHtml('event',String(e.id))+
     '<div style="margin-top:16px;display:flex;gap:8px">'+
       '<button onclick="openEventForm(null,\''+e.id+'\')" style="flex:1;padding:8px;background:#3b82f622;color:#3b82f6;border:1px solid #3b82f644;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;min-height:40px">✏️ Редактировать</button>'+
       (canAddExpense()?'<button onclick="openExpenseFormForEvent(\''+e.id+'\',\''+esc(e.title).replace(/'/g,"\\'")+'\');return false;" style="flex:1;padding:8px;background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;min-height:40px">💰 +Расход</button>':'')+
@@ -6944,6 +6993,9 @@ window.openEventForm=function(defaultDate,editId){
         '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Описание</label>'+
         '<textarea id="evDesc" rows="2" placeholder="Дополнительные детали..." style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box">'+esc(e?e.desc||'':'')+'</textarea></div>'+
 
+        '<div><label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Проект</label>'+
+        '<select id="evProject" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px"><option value="">— не привязано —</option>'+(window._projects||[]).filter(function(p){return p.status==='active';}).map(function(p){return '<option value="'+p.id+'"'+(e&&e.project_id&&String(e.project_id)===String(p.id)?' selected':'')+'>📁 '+esc(p.name)+'</option>';}).join('')+'</select></div>'+
+
         '<button onclick="saveEventForm('+(isEdit?"'"+editId+"'":"null")+')" style="width:100%;padding:12px;background:#a855f733;color:#a855f7;border:1px solid #a855f766;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700;min-height:48px">'+(isEdit?'💾 Сохранить':'📅 Создать мероприятие')+'</button>'+
       '</div>'
     );
@@ -6960,13 +7012,15 @@ window.saveEventForm=async function(editId){
   var budget=document.getElementById('evBudget').value.trim();
   var goals=document.getElementById('evGoals').value.trim();
   var desc=document.getElementById('evDesc').value.trim();
+  var projEl=document.getElementById('evProject');
+  var projectId=projEl?projEl.value:'';
   if(!title||!date){showToast('Заполни название и дату','warning');return;}
   if(editId){
     var ev=F2F_EVENTS.find(function(e){return e.id===editId;});
-    if(ev){ev.title=title;ev.date=date;ev.end=end||'';ev.type=type;ev.status=status;ev.venue=venue;ev.budget=budget;ev.goals=goals;ev.desc=desc;}
+    if(ev){ev.title=title;ev.date=date;ev.end=end||'';ev.type=type;ev.status=status;ev.venue=venue;ev.budget=budget;ev.goals=goals;ev.desc=desc;ev.project_id=projectId?parseInt(projectId):null;}
     await _saveEventToSupabase(ev,false);
   }else{
-    var newEv={id:'temp_'+Date.now(),title:title,date:date,end:end||'',type:type,status:status,venue:venue,budget:budget,goals:goals,desc:desc,tasks:[]};
+    var newEv={id:'temp_'+Date.now(),title:title,date:date,end:end||'',type:type,status:status,venue:venue,budget:budget,goals:goals,desc:desc,project_id:projectId?parseInt(projectId):null,tasks:[]};
     F2F_EVENTS.push(newEv);
     await _saveEventToSupabase(newEv,true);
   }
@@ -7000,6 +7054,246 @@ setTimeout(async function(){
   var c=document.getElementById('tab-events-count');
   if(c){var u=F2F_EVENTS.filter(function(e){return e.date>=new Date().toISOString().slice(0,10)&&e.status!=='cancelled';}).length;c.textContent=u;}
 },500);
+
+// ═══ PROJECTS MODULE ═══
+var _projectsFilter='all';
+function filterProjects(status,btn){
+  _projectsFilter=status;
+  document.querySelectorAll('[data-proj-filter]').forEach(function(b){b.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  renderProjects();
+}
+function renderProjects(){
+  var c=document.getElementById('projectsContent');if(!c)return;
+  var projects=(window._projects||[]).slice();
+  var cntEl=document.getElementById('projects-count');
+  var tabCnt=document.getElementById('tab-projects-count');
+  if(cntEl)cntEl.textContent=projects.length+' проектов';
+  if(tabCnt)tabCnt.textContent=projects.filter(function(p){return p.status==='active';}).length;
+  // KPI strip
+  var kpi=document.getElementById('projectsKPI');
+  if(kpi){
+    var active=projects.filter(function(p){return p.status==='active';}).length;
+    var paused=projects.filter(function(p){return p.status==='paused';}).length;
+    var completed=projects.filter(function(p){return p.status==='completed';}).length;
+    var critical=projects.filter(function(p){return p.priority==='critical';}).length;
+    kpi.innerHTML='<div style="padding:6px 14px;background:var(--green)15;border:1px solid var(--green)33;border-radius:8px;font-size:12px"><span style="font-size:18px;font-weight:700;color:var(--green)">'+active+'</span> <span style="color:var(--dim)">активных</span></div>'+
+      '<div style="padding:6px 14px;background:var(--amber)15;border:1px solid var(--amber)33;border-radius:8px;font-size:12px"><span style="font-size:18px;font-weight:700;color:var(--amber)">'+paused+'</span> <span style="color:var(--dim)">на паузе</span></div>'+
+      '<div style="padding:6px 14px;background:var(--cyan)15;border:1px solid var(--cyan)33;border-radius:8px;font-size:12px"><span style="font-size:18px;font-weight:700;color:var(--cyan)">'+completed+'</span> <span style="color:var(--dim)">завершено</span></div>'+
+      (critical?'<div style="padding:6px 14px;background:var(--hot)15;border:1px solid var(--hot)33;border-radius:8px;font-size:12px"><span style="font-size:18px;font-weight:700;color:var(--hot)">'+critical+'</span> <span style="color:var(--dim)">critical</span></div>':'');
+  }
+  // Filter bar
+  var fb=document.getElementById('projectsFilterBar');
+  if(fb){
+    fb.innerHTML='<button class="sub-tab'+(_projectsFilter==='all'?' active':'')+'" data-proj-filter="all" onclick="filterProjects(\'all\',this)">Все ('+projects.length+')</button>'+
+      '<button class="sub-tab'+(_projectsFilter==='active'?' active':'')+'" data-proj-filter="active" onclick="filterProjects(\'active\',this)">🟢 Активные ('+projects.filter(function(p){return p.status==='active';}).length+')</button>'+
+      '<button class="sub-tab'+(_projectsFilter==='paused'?' active':'')+'" data-proj-filter="paused" onclick="filterProjects(\'paused\',this)">⏸ На паузе ('+projects.filter(function(p){return p.status==='paused';}).length+')</button>'+
+      '<button class="sub-tab'+(_projectsFilter==='completed'?' active':'')+'" data-proj-filter="completed" onclick="filterProjects(\'completed\',this)">✅ Завершено ('+projects.filter(function(p){return p.status==='completed';}).length+')</button>'+
+      '<button class="sub-tab'+(_projectsFilter==='archived'?' active':'')+'" data-proj-filter="archived" onclick="filterProjects(\'archived\',this)">📦 Архив ('+projects.filter(function(p){return p.status==='archived';}).length+')</button>';
+  }
+  // Apply filter
+  var filtered=_projectsFilter==='all'?projects:projects.filter(function(p){return p.status===_projectsFilter;});
+  if(!filtered.length){c.innerHTML='<div style="text-align:center;padding:40px;color:var(--dim)">Нет проектов'+(projects.length?' в этом фильтре':'. Нажми ➕ чтобы создать первый.')+'</div>';return;}
+  var priorityColors={critical:'var(--hot)',high:'var(--amber)',medium:'var(--cyan)',low:'var(--dim)'};
+  var priorityIcons={critical:'🔴',high:'🟠',medium:'🔵',low:'⚪'};
+  var statusIcons={active:'🟢',paused:'⏸️',completed:'✅',archived:'📦'};
+  var html='<div style="display:flex;flex-direction:column;gap:10px">';
+  filtered.forEach(function(p){
+    var pColor=priorityColors[p.priority]||'var(--dim)';
+    var tasks=(window._sbActions||[]).filter(function(a){return a.project_id && String(a.project_id)===String(p.id);});
+    var expenses=(window._expenses||[]).filter(function(e){return e.project_id && String(e.project_id)===String(p.id);});
+    var expTotal=0;expenses.forEach(function(e){expTotal+=parseFloat(e.amount)||0;});
+    var events=(window._sbEvents||F2F_EVENTS||[]).filter(function(e){return e.project_id && String(e.project_id)===String(p.id);});
+    var daysLeft='';
+    if(p.target_date){
+      var diff=Math.ceil((new Date(p.target_date)-new Date())/(1000*60*60*24));
+      daysLeft=diff>0?diff+' дн. до дедлайна':diff===0?'Сегодня дедлайн':'Просрочен на '+Math.abs(diff)+' дн.';
+    }
+    html+='<div onclick="openProjectDetail('+p.id+')" style="padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:all .15s;border-left:3px solid '+pColor+'" onmouseover="this.style.borderColor=\'var(--cyan)\'" onmouseout="this.style.borderColor=\'var(--border)\';this.style.borderLeftColor=\''+pColor+'\'">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">';
+    html+='<div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:14px">'+(statusIcons[p.status]||'📁')+'</span><span style="font-weight:700;font-size:14px">'+esc(p.name)+'</span><span style="font-size:10px;padding:2px 6px;background:'+pColor+'22;color:'+pColor+';border-radius:4px">'+(priorityIcons[p.priority]||'')+' '+esc(p.priority||'medium')+'</span></div>';
+    if(p.description)html+='<div style="font-size:12px;color:var(--dim);margin-bottom:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+esc(p.description)+'</div>';
+    html+='<div style="display:flex;gap:12px;font-size:11px;color:var(--dim);flex-wrap:wrap">';
+    if(p.owner)html+='<span>👤 '+esc(p.owner)+'</span>';
+    if(tasks.length)html+='<span>📋 '+tasks.length+' задач</span>';
+    if(expenses.length)html+='<span>💸 ₽'+Math.round(expTotal).toLocaleString('ru')+'</span>';
+    if(events.length)html+='<span>📅 '+events.length+' мероп.</span>';
+    if(daysLeft)html+='<span style="color:'+(daysLeft.indexOf('Просрочен')>=0?'var(--hot)':'var(--amber)')+'">⏰ '+daysLeft+'</span>';
+    html+='</div></div>';
+    if(p.tags&&p.tags.length){html+='<div style="display:flex;gap:4px;flex-wrap:wrap">';(typeof p.tags==='string'?JSON.parse(p.tags):p.tags).forEach(function(t){html+='<span style="font-size:10px;padding:2px 6px;background:var(--cyan)15;color:var(--cyan);border-radius:4px">'+esc(t)+'</span>';});html+='</div>';}
+    html+='</div></div>';
+  });
+  html+='</div>';
+  c.innerHTML=html;
+}
+window.openProjectForm=function(editProject){
+  var p=editProject||{};
+  var isEdit=!!p.id;
+  var teamMembers=(D.team||[]);
+  var html='<div style="padding:20px"><h3 style="margin:0 0 16px;color:var(--cyan)">'+(isEdit?'✏️ Редактировать проект':'📁 Новый проект')+'</h3>';
+  html+='<div style="display:flex;flex-direction:column;gap:12px">';
+  html+='<div><label style="font-size:11px;color:var(--dim);margin-bottom:4px;display:block">Название *</label><input id="projName" value="'+esc(p.name||'')+'" style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#ccc;font-size:13px" placeholder="Название проекта"></div>';
+  html+='<div><label style="font-size:11px;color:var(--dim);margin-bottom:4px;display:block">Описание</label><textarea id="projDesc" rows="3" style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#ccc;font-size:12px;resize:vertical" placeholder="Кратко о проекте">'+esc(p.description||'')+'</textarea></div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+  html+='<div><label style="font-size:11px;color:var(--dim);margin-bottom:4px;display:block">Статус</label><select id="projStatus" style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#ccc;font-size:12px"><option value="active"'+(p.status==='active'?' selected':'')+'>🟢 Активный</option><option value="paused"'+(p.status==='paused'?' selected':'')+'>⏸️ На паузе</option><option value="completed"'+(p.status==='completed'?' selected':'')+'>✅ Завершён</option><option value="archived"'+(p.status==='archived'?' selected':'')+'>📦 Архив</option></select></div>';
+  html+='<div><label style="font-size:11px;color:var(--dim);margin-bottom:4px;display:block">Приоритет</label><select id="projPriority" style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#ccc;font-size:12px"><option value="low"'+(p.priority==='low'?' selected':'')+'>⚪ Low</option><option value="medium"'+(!p.priority||p.priority==='medium'?' selected':'')+'>🔵 Medium</option><option value="high"'+(p.priority==='high'?' selected':'')+'>🟠 High</option><option value="critical"'+(p.priority==='critical'?' selected':'')+'>🔴 Critical</option></select></div>';
+  html+='</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+  html+='<div><label style="font-size:11px;color:var(--dim);margin-bottom:4px;display:block">Владелец</label><select id="projOwner" style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#ccc;font-size:12px"><option value="">— не назначен —</option>';
+  teamMembers.forEach(function(m){html+='<option value="'+esc(m.login_name||m.name)+'"'+(p.owner===(m.login_name||m.name)?' selected':'')+'>'+esc(m.name)+'</option>';});
+  html+='</select></div>';
+  html+='<div><label style="font-size:11px;color:var(--dim);margin-bottom:4px;display:block">Теги (через запятую)</label><input id="projTags" value="'+esc((p.tags&&typeof p.tags!=='string'?p.tags.join(', '):(p.tags||'')))+'" style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#ccc;font-size:12px" placeholder="esports, sponsor, event"></div>';
+  html+='</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+  html+='<div><label style="font-size:11px;color:var(--dim);margin-bottom:4px;display:block">Дата начала</label><input id="projStart" type="date" value="'+(p.start_date||'')+'" style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#ccc;font-size:12px"></div>';
+  html+='<div><label style="font-size:11px;color:var(--dim);margin-bottom:4px;display:block">Целевая дата</label><input id="projTarget" type="date" value="'+(p.target_date||'')+'" style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:#ccc;font-size:12px"></div>';
+  html+='</div>';
+  html+='<div style="display:flex;gap:8px;margin-top:8px">';
+  html+='<button onclick="saveProject('+(isEdit?p.id:'null')+')" style="flex:1;padding:10px;background:var(--cyan)22;color:var(--cyan);border:1px solid var(--cyan)44;border-radius:8px;cursor:pointer;font-weight:700">'+(isEdit?'💾 Сохранить':'✅ Создать проект')+'</button>';
+  if(isEdit)html+='<button onclick="deleteProject('+p.id+')" style="padding:10px 16px;background:var(--hot)15;color:var(--hot);border:1px solid var(--hot)33;border-radius:8px;cursor:pointer;font-size:12px">🗑️ Удалить</button>';
+  html+='<button onclick="closeModal()" style="padding:10px 16px;background:var(--panel);color:var(--dim);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px">Отмена</button>';
+  html+='</div></div></div>';
+  openModal(html);
+};
+window.saveProject=async function(editId){
+  var name=document.getElementById('projName').value.trim();
+  if(!name){showToast('Введите название проекта','error');return;}
+  var tagsRaw=document.getElementById('projTags').value.trim();
+  var tags=tagsRaw?tagsRaw.split(',').map(function(t){return t.trim();}).filter(Boolean):[];
+  var obj={
+    name:name,
+    description:document.getElementById('projDesc').value.trim()||null,
+    status:document.getElementById('projStatus').value,
+    priority:document.getElementById('projPriority').value,
+    owner:document.getElementById('projOwner').value||null,
+    tags:JSON.stringify(tags),
+    start_date:document.getElementById('projStart').value||null,
+    target_date:document.getElementById('projTarget').value||null,
+    updated_at:new Date().toISOString()
+  };
+  if(editId){
+    await sbPatch('projects','id=eq.'+editId,obj);
+    logEntityChange('project',String(editId),'update',null,null,null);
+    showToast('✅ Проект обновлён','success');
+  }else{
+    obj.created_at=new Date().toISOString();
+    var res=await sbInsert('projects',obj);
+    if(res&&res[0])logEntityChange('project',String(res[0].id),'create',null,null,null);
+    showToast('✅ Проект создан','success');
+  }
+  closeModal();
+  window._projects=await sbFetch('projects','select=*&order=created_at.desc&limit=200')||[];
+  renderProjects();
+};
+window.deleteProject=async function(id){
+  if(!confirm('Удалить проект? Связанные задачи и расходы останутся.'))return;
+  await fetch(SUPABASE_URL+'/rest/v1/projects?id=eq.'+id,{method:'DELETE',headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+getAuthKey(),'Prefer':'return=minimal'}});
+  logEntityChange('project',String(id),'delete',null,null,null);
+  showToast('🗑️ Проект удалён','info');
+  closeModal();
+  window._projects=await sbFetch('projects','select=*&order=created_at.desc&limit=200')||[];
+  renderProjects();
+};
+window.openProjectDetail=function(id){
+  var p=(window._projects||[]).find(function(x){return x.id===id;});
+  if(!p)return;
+  var statusIcons={active:'🟢 Активный',paused:'⏸️ На паузе',completed:'✅ Завершён',archived:'📦 Архив'};
+  var priorityIcons={critical:'🔴 Critical',high:'🟠 High',medium:'🔵 Medium',low:'⚪ Low'};
+  // Linked entities
+  var tasks=(window._sbActions||[]).filter(function(a){return a.project_id&&String(a.project_id)===String(id);});
+  var expenses=(window._expenses||[]).filter(function(e){return e.project_id&&String(e.project_id)===String(id);});
+  var expTotal=0;expenses.forEach(function(e){expTotal+=parseFloat(e.amount)||0;});
+  var events=(window._sbEvents||F2F_EVENTS||[]).filter(function(e){return e.project_id&&String(e.project_id)===String(id);});
+  var tags=p.tags?(typeof p.tags==='string'?JSON.parse(p.tags):p.tags):[];
+  var html='<div style="padding:20px">';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h3 style="margin:0;color:var(--cyan)">📁 '+esc(p.name)+'</h3><button onclick="openProjectForm(window._projects.find(function(x){return x.id==='+id+';}))" style="padding:6px 12px;background:var(--cyan)15;color:var(--cyan);border:1px solid var(--cyan)33;border-radius:6px;cursor:pointer;font-size:12px">✏️ Редактировать</button></div>';
+  // Info grid
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">';
+  html+='<div style="padding:8px;background:var(--surface);border-radius:6px"><span style="font-size:11px;color:var(--dim)">Статус</span><div style="font-size:13px;font-weight:600">'+(statusIcons[p.status]||p.status)+'</div></div>';
+  html+='<div style="padding:8px;background:var(--surface);border-radius:6px"><span style="font-size:11px;color:var(--dim)">Приоритет</span><div style="font-size:13px;font-weight:600">'+(priorityIcons[p.priority]||p.priority)+'</div></div>';
+  if(p.owner)html+='<div style="padding:8px;background:var(--surface);border-radius:6px"><span style="font-size:11px;color:var(--dim)">Владелец</span><div style="font-size:13px">👤 '+esc(p.owner)+'</div></div>';
+  if(p.start_date)html+='<div style="padding:8px;background:var(--surface);border-radius:6px"><span style="font-size:11px;color:var(--dim)">Начало</span><div style="font-size:13px">'+p.start_date+'</div></div>';
+  if(p.target_date)html+='<div style="padding:8px;background:var(--surface);border-radius:6px"><span style="font-size:11px;color:var(--dim)">Дедлайн</span><div style="font-size:13px">'+p.target_date+'</div></div>';
+  html+='</div>';
+  if(p.description)html+='<div style="padding:10px;background:var(--surface);border-radius:8px;margin-bottom:16px;font-size:12px;color:var(--dim);line-height:1.5">'+esc(p.description)+'</div>';
+  if(tags.length){html+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px">';tags.forEach(function(t){html+='<span style="font-size:10px;padding:2px 8px;background:var(--cyan)15;color:var(--cyan);border-radius:4px">'+esc(t)+'</span>';});html+='</div>';}
+  // Linked entities sections
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">';
+  html+='<div style="padding:10px;background:var(--green)10;border:1px solid var(--green)22;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:700;color:var(--green)">'+tasks.length+'</div><div style="font-size:11px;color:var(--dim)">Задач</div></div>';
+  html+='<div style="padding:10px;background:var(--hot)10;border:1px solid var(--hot)22;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:700;color:var(--hot)">₽'+Math.round(expTotal).toLocaleString('ru')+'</div><div style="font-size:11px;color:var(--dim)">Расходов ('+expenses.length+')</div></div>';
+  html+='<div style="padding:10px;background:var(--magenta)10;border:1px solid var(--magenta)22;border-radius:8px;text-align:center"><div style="font-size:20px;font-weight:700;color:var(--magenta)">'+events.length+'</div><div style="font-size:11px;color:var(--dim)">Мероприятий</div></div>';
+  html+='</div>';
+  // Entity changes (history)
+  html+=buildEntityChangesHtml('project',String(id));
+  html+='</div>';
+  openModal(html);
+};
+
+// ═══ ENTITY CHANGES (HISTORY/AUDIT TRAIL) ═══
+function logEntityChange(entityType,entityId,changeType,fieldName,oldVal,newVal){
+  if(!SUPABASE_LIVE)return;
+  var author=_currentSession?_currentSession.login_name:'system';
+  var role=_currentSession?_currentSession.role:'unknown';
+  sbInsert('entity_changes',{entity_type:entityType,entity_id:entityId,change_type:changeType,field_name:fieldName,old_value:oldVal?String(oldVal):null,new_value:newVal?String(newVal):null,author:author,author_role:role}).catch(function(e){console.warn('entity_change log error:',e);});
+}
+function buildEntityChangesHtml(entityType,entityId){
+  var changes=(window._entityChanges||[]).filter(function(c){return c.entity_type===entityType&&String(c.entity_id)===String(entityId);});
+  if(!changes.length)return '';
+  var html='<div style="margin-top:16px"><h4 style="margin:0 0 8px;font-size:13px;color:var(--amber)">📜 История изменений</h4>';
+  html+='<div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px">';
+  var typeIcons={create:'🆕',update:'✏️',delete:'🗑️',status_change:'🔄'};
+  changes.slice(0,30).forEach(function(c){
+    html+='<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)22;font-size:11px">';
+    html+='<span style="flex-shrink:0">'+(typeIcons[c.change_type]||'•')+'</span>';
+    html+='<div style="flex:1;min-width:0"><span style="color:var(--cyan)">'+esc(c.author)+'</span> ';
+    if(c.change_type==='create')html+='создал';
+    else if(c.change_type==='delete')html+='удалил';
+    else if(c.field_name)html+='изменил <b>'+esc(c.field_name)+'</b>'+(c.old_value?' с "'+esc(c.old_value)+'"':'')+' → "'+esc(c.new_value||'')+'"';
+    else html+='обновил';
+    html+='</div><span style="color:var(--dim);flex-shrink:0;white-space:nowrap">'+(c.created_at?timeSince(c.created_at):'')+'</span></div>';
+  });
+  html+='</div></div>';
+  return html;
+}
+
+// ═══ NEEDS_HELP UI (Agent SOS Banner) ═══
+function renderNeedsHelpBanner(){
+  var container=document.getElementById('needsHelpBanner');
+  if(!container){
+    // Create banner at top of Tasks panel
+    var tasksPanel=document.getElementById('panel-tasks');
+    if(!tasksPanel)return;
+    var firstChild=tasksPanel.firstChild;
+    container=document.createElement('div');
+    container.id='needsHelpBanner';
+    tasksPanel.insertBefore(container,firstChild);
+  }
+  var helpAgents=(window._sbAgentMemory||[]).filter(function(m){return m.needs_help===true;});
+  if(!helpAgents.length){container.innerHTML='';return;}
+  var agentsMap={};(window._sbAgents||[]).forEach(function(a){agentsMap[a.id]=a;});
+  var html='<div style="background:var(--hot)10;border:1px solid var(--hot)33;border-radius:10px;padding:12px;margin-bottom:16px">';
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:18px">🆘</span><span style="font-weight:700;color:var(--hot);font-size:14px">Агенты просят помощь ('+helpAgents.length+')</span></div>';
+  helpAgents.forEach(function(m){
+    var agent=agentsMap[m.agent_id]||{};
+    html+='<div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--surface);border-radius:8px;margin-bottom:6px">';
+    html+='<span style="font-size:20px">'+(agent.emoji||'🤖')+'</span>';
+    html+='<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;color:'+(agent.color||'var(--cyan)')+'">'+(agent.name||m.agent_id)+'</div>';
+    html+='<div style="font-size:11px;color:var(--dim);margin-top:2px">'+esc(m.help_reason||'Нужна помощь')+'</div>';
+    if(m.help_requested_at)html+='<div style="font-size:10px;color:var(--dim);margin-top:2px">⏰ '+timeSince(m.help_requested_at)+'</div>';
+    html+='</div>';
+    html+='<button onclick="resolveAgentHelp(\''+esc(m.agent_id)+'\')" style="padding:6px 12px;background:var(--green)15;color:var(--green);border:1px solid var(--green)33;border-radius:6px;cursor:pointer;font-size:11px;white-space:nowrap">✅ Решено</button>';
+    html+='</div>';
+  });
+  html+='</div>';
+  container.innerHTML=html;
+}
+window.resolveAgentHelp=async function(agentId){
+  await sbPatch('agent_memory','agent_id=eq.'+encodeURIComponent(agentId),{needs_help:false,help_reason:null,help_requested_at:null});
+  showToast('✅ Помощь отмечена как решённая','success');
+  // Reload agent memory
+  window._sbAgentMemory=await sbFetch('agent_memory','select=*')||[];
+  renderNeedsHelpBanner();
+};
 
 // ═══ FEATURE 1: COMMAND PALETTE (⌘K / Ctrl+K) ═══
 let commandPaletteOverlay,commandPaletteInput,commandPaletteList;

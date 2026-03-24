@@ -188,69 +188,44 @@ async function syncSupabaseData(){
     });
   }
 
-  // Content queue
-  const content=await sbFetch('content_queue','select=*&order=created_at.desc&limit=1000');
-  if(content){
-    window._sbContent=content;
-    window._sbContentMerged=false;
-  }
+  // ═══ PARALLEL FETCH: all remaining tables at once (was sequential — ~15x faster now) ═══
+  const [content,partners,events,metrics,dirs,reports,actions,finance,ledger,credits,expenses,esTeams,rosters,tournaments,team,projects,changes]=await Promise.all([
+    sbFetch('content_queue','select=*&order=created_at.desc&limit=1000'),
+    sbFetch('partner_pipeline','select=*&order=created_at.desc&limit=500'),
+    sbFetch('events','select=*&order=created_at.desc&limit=500'),
+    sbFetch('metrics','select=name,value,unit&order=recorded_at.desc'),
+    sbFetch('directives','select=key,value_json,active&active=eq.true'),
+    sbFetch('reports','select=id,agent_id,type_ab,summary,results,theses,metrics_json,approved_by_ceo,created_at&order=created_at.desc&limit=500'),
+    sbFetch('actions','select=id,agent_id,type,payload_json,created_at&order=created_at.desc&limit=1000'),
+    sbFetch('finance','select=*&order=created_at.desc&limit=500'),
+    sbFetch('finance_ledger','select=*&order=created_at.desc&limit=500'),
+    sbFetch('ai_credits','select=agent_id,tokens_input,tokens_output,cost_usd,model,task_type,created_at&order=created_at.desc&limit=500'),
+    sbFetch('expense_entries','select=*&order=created_at.desc&limit=500'),
+    sbFetch('esports_teams','select=*&order=created_at.desc&limit=500'),
+    sbFetch('team_rosters','select=*&order=created_at.desc&limit=500'),
+    sbFetch('tournament_entries','select=*&order=date_start.desc&limit=500'),
+    sbFetch('team','select=*&order=id.asc'),
+    sbFetch('projects','select=*&order=created_at.desc&limit=200'),
+    sbFetch('entity_changes','select=*&order=created_at.desc&limit=200')
+  ]);
 
-  // Partner pipeline
-  const partners=await sbFetch('partner_pipeline','select=*&order=created_at.desc&limit=500');
+  if(content){window._sbContent=content;window._sbContentMerged=false;}
   if(partners)window._sbPartners=partners;
-
-  // Events
-  const events=await sbFetch('events','select=*&order=created_at.desc&limit=500');
   if(events)window._sbEvents=events;
-
-  // Metrics
-  const metrics=await sbFetch('metrics','select=name,value,unit&order=recorded_at.desc');
-  if(metrics){
-    window._sbMetrics={};
-    metrics.forEach(m=>{if(!window._sbMetrics[m.name])window._sbMetrics[m.name]=m;});
-  }
-
-  // Directives
-  const dirs=await sbFetch('directives','select=key,value_json,active&active=eq.true');
+  if(metrics){window._sbMetrics={};metrics.forEach(m=>{if(!window._sbMetrics[m.name])window._sbMetrics[m.name]=m;});}
   if(dirs)window._sbDirectives=dirs;
-
-  // Reports
-  const reports=await sbFetch('reports','select=id,agent_id,type_ab,summary,results,theses,metrics_json,approved_by_ceo,created_at&order=created_at.desc&limit=500');
   if(reports)window._sbReports=reports;
-
-  // Actions (tasks)
-  const actions=await sbFetch('actions','select=id,agent_id,type,payload_json,created_at&order=created_at.desc&limit=1000');
   if(actions)window._sbActions=actions;
-
-  // Finance (legacy)
-  const finance=await sbFetch('finance','select=*&order=created_at.desc&limit=500');
   if(finance)window._sbFinance=finance;
-
-  // Finance Ledger v2 (new immutable ledger)
-  const ledger=await sbFetch('finance_ledger','select=*&order=created_at.desc&limit=500');
   if(ledger)window._financeLedger=ledger;
-
-  // AI Credits
-  const credits=await sbFetch('ai_credits','select=agent_id,tokens_input,tokens_output,cost_usd,model,task_type,created_at&order=created_at.desc&limit=500');
   if(credits)window._sbCredits=credits;
-
-  // Expense Entries (all roles can see own; admin sees all via RLS)
-  const expenses=await sbFetch('expense_entries','select=*&order=created_at.desc&limit=500');
   if(expenses)window._expenses=expenses;
-
-  // Esports teams + rosters + tournament entries
-  const esTeams=await sbFetch('esports_teams','select=*&order=created_at.desc&limit=500');
   if(esTeams)window._esTeams=esTeams;
-  const rosters=await sbFetch('team_rosters','select=*&order=created_at.desc&limit=500');
   if(rosters)window._rosters=rosters;
-  const tournaments=await sbFetch('tournament_entries','select=*&order=date_start.desc&limit=500');
   if(tournaments)window._tournaments=tournaments;
-
-  // Team (only active — dismissed filtered on server side)
-  const team=await sbFetch('team','select=*&order=id.asc');
   if(team)window._sbTeam=team;
-  // Debug: log dismissed count
-  if(team){var dismissed=team.filter(function(t){return t.status==='dismissed';});if(dismissed.length)console.log('📋 Team: '+team.length+' total, '+dismissed.length+' dismissed (filtered in UI)');}
+  if(projects)window._projects=projects;
+  if(changes)window._entityChanges=changes;
 
   return true;
 }
@@ -441,6 +416,8 @@ function refreshAfterSync(){
   if(typeof renderIntegrations==='function'){_sr(renderIntegrations,'integrations');}
   if(typeof renderExpenses==='function'){_sr(renderExpenses,'expenses');}
   if(typeof renderTeams==='function'){_sr(renderTeams,'teams');}
+  if(typeof renderProjects==='function'){_sr(renderProjects,'projects');}
+  if(typeof renderNeedsHelpBanner==='function'){_sr(renderNeedsHelpBanner,'needsHelp');}
   if(typeof renderAnalytics==='function'){_sr(renderAnalytics,'analytics');}
   if(typeof loadStrategy==='function'&&!window._stratLoaded){window._stratLoaded=true;_sr(loadStrategy,'strategy');}
   if(typeof renderStrategyProgress==='function'){_sr(renderStrategyProgress,'strategyProgress');}

@@ -76,19 +76,27 @@
 
 <!-- TABS -->
 <div class="tabs-bar">
+  <!-- Core -->
   <button class="tab active" data-panel="office">🏢 Офис</button>
   <button class="tab" data-panel="leads">🎯 Лиды <span class="badge" id="tab-leads-count">0</span></button>
   <button class="tab" data-panel="posts">✍️ Посты <span class="badge" id="tab-posts-count">0</span></button>
-  <button class="tab" data-panel="reports">📊 Отчёты <span class="badge" id="tab-reports-count">0</span></button>
   <button class="tab" data-panel="tasks">📋 Задачи <span class="badge" id="tab-tasks-count">0</span></button>
+  <span class="tab-divider"></span>
+  <!-- Business -->
+  <button class="tab" data-panel="reports">📊 Отчёты <span class="badge" id="tab-reports-count">0</span></button>
   <button class="tab" data-panel="strategy">🎯 Стратегия</button>
   <button class="tab" data-panel="finance">💰 Финансы</button>
+  <button class="tab" data-panel="expenses">💸 Расходы</button>
+  <button class="tab" data-panel="projects">📁 Проекты <span class="badge" id="tab-projects-count">0</span></button>
+  <span class="tab-divider"></span>
+  <!-- Team & Events -->
   <button class="tab" data-panel="team">👥 Команда <span class="badge" id="tab-team-count">0</span></button>
+  <button class="tab" data-panel="events">📅 Мероприятия <span class="badge" id="tab-events-count">0</span></button>
+  <button class="tab" data-panel="teams">🏆 Команды <span class="badge" id="tab-teams-count">0</span></button>
+  <span class="tab-divider"></span>
+  <!-- System -->
   <button class="tab" data-panel="agents">🤖 AI Агенты <span class="badge" style="background:var(--cyan)" id="tab-agents-count">0</span></button>
   <button class="tab" data-panel="chat">💬 Чат</button>
-  <button class="tab" data-panel="events">📅 Мероприятия <span class="badge" id="tab-events-count">0</span></button>
-  <button class="tab" data-panel="expenses">💸 Расходы</button>
-  <button class="tab" data-panel="teams">🏆 Команды <span class="badge" id="tab-teams-count">0</span></button>
   <button class="tab" data-panel="integrations">🔗 Интеграции</button>
   <button class="tab" data-panel="admin" id="tabAdmin" style="display:none">🔐 Админ</button>
 </div>
@@ -342,7 +350,22 @@
       <button class="act-btn success" onclick="openExpenseForm()" style="font-size:12px;padding:4px 12px">➕ Добавить расход</button>
     </div>
   </div>
+  <div id="expensesFilterBar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
   <div id="expensesContent"></div>
+</div>
+
+<!-- PROJECTS PANEL -->
+<div class="panel data-panel" id="panel-projects">
+  <div class="data-header">
+    <h2>📁 Проекты</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div class="data-count" id="projects-count">-</div>
+      <button class="act-btn success" onclick="openProjectForm()" style="font-size:12px;padding:4px 12px">➕ Новый проект</button>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap" id="projectsFilterBar"></div>
+  <div id="projectsKPI" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
+  <div id="projectsContent"></div>
 </div>
 
 <!-- TEAMS PANEL (Referee Module) -->
