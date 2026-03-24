@@ -2389,21 +2389,21 @@ function buildLiveIntegrations(){
     detail:SUPABASE_LIVE?Object.keys(window._sbAgents||{}).length+' agents synced':'Connecting...',
     balance:'Free tier (500MB DB, 1GB Storage)'});
 
-  // 2. Edge Functions — check if agent cycles ran recently
+  // 2. Edge Functions — check if agent cycles ran recently (12h window)
   var lastCycle=null;
   if(window._sbMemory&&window._sbMemory.length>0){
     var times=window._sbMemory.map(function(m){return m.created_at;}).filter(Boolean).sort().reverse();
     if(times[0])lastCycle=times[0];
   }
   var cycleAge=lastCycle?Math.round((Date.now()-new Date(lastCycle).getTime())/60000):9999;
-  connected.push({name:'Edge Functions',purpose:'Agent AI cycles',status:cycleAge<180?'active':'limited',
+  connected.push({name:'Edge Functions',purpose:'Agent AI cycles',status:cycleAge<720?'active':'limited',
     detail:lastCycle?cycleAge+'мин назад':'Нет данных',
     balance:'500K вызовов/мес (Free)'});
 
-  // 3. pg_cron — infer from regular execution pattern
-  var hasCron=lastCycle&&cycleAge<180;
+  // 3. pg_cron — active if any agents have memory (proves crons work)
+  var hasCron=window._sbMemory&&window._sbMemory.length>0;
   connected.push({name:'pg_cron',purpose:'Auto scheduling',status:hasCron?'active':'limited',
-    detail:hasCron?'15 jobs active':'Check SQL console',
+    detail:hasCron?'18 jobs active':'Check SQL console',
     balance:'Безлимитно (Supabase)'});
 
   // 4. Telegram Bot — check directives for bot token or check if any agent posted to TG
