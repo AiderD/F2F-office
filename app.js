@@ -3081,13 +3081,14 @@ function renderVacation(){
   var pmPending=requests.filter(function(r){return r.status==='pending_pm';});
 
   var html='<div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">';
-  html+='<button class="act-btn'+(_vacView==='calendar'?' success':'')+'" onclick="_vacView=\'calendar\';renderVacation()">📅 Календарь отпусков</button>';
+  html+='<button class="act-btn" onclick="switchTeamView(\'team\')" style="background:var(--surface);border:1px solid var(--border);font-weight:700">← Сотрудники</button>';
+  html+='<span style="width:1px;height:24px;background:var(--border);flex-shrink:0"></span>';
+  html+='<button class="act-btn'+(_vacView==='calendar'?' success':'')+'" onclick="_vacView=\'calendar\';renderVacation()">📅 Календарь</button>';
   html+='<button class="act-btn'+(_vacView==='myRequests'?' success':'')+'" onclick="_vacView=\'myRequests\';renderVacation()">📋 Мои заявки</button>';
   html+='<button class="act-btn'+(_vacView==='approvals'?' success':'')+'" onclick="_vacView=\'approvals\';renderVacation()">✅ Согласование'+(myApprovals.length>0?' <span class="badge" style="background:var(--magenta)">'+myApprovals.length+'</span>':'')+'</button>';
   if(isPM()||isAdmin()){
     html+='<button class="act-btn'+(_vacView==='manage'?' success':'')+'" onclick="_vacView=\'manage\';renderVacation()">⚙️ Управление'+(pmPending.length>0?' <span class="badge" style="background:var(--magenta)">'+pmPending.length+'</span>':'')+'</button>';
   }
-  html+='<button class="act-btn" onclick="switchTeamView(\'team\')" style="margin-left:auto">← Сотрудники</button>';
   html+='</div>';
 
   // My balance card
