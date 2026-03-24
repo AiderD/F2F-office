@@ -3040,7 +3040,8 @@ function switchTeamView(view){
 
 function calcVacationBalance(emp){
   // 2 дня/мес + 1 день каждые 3 мес с даты hire_date
-  if(!emp||!emp.hire_date)return {accrued:emp?Number(emp.accrued_days)||0:0, used:Number(emp.used_days)||0};
+  if(!emp)return {accrued:0, used:0, months:0, autoAccrued:0, manualAdj:0};
+  if(!emp.hire_date)return {accrued:Number(emp.accrued_days)||0, used:Number(emp.used_days)||0, months:0, autoAccrued:0, manualAdj:Number(emp.accrued_days)||0};
   var hd=new Date(emp.hire_date);
   var now=new Date();
   var months=Math.max(0,(now.getFullYear()-hd.getFullYear())*12+(now.getMonth()-hd.getMonth()));
@@ -3056,7 +3057,21 @@ function renderVacation(){
   var balances=window._vacBalances||[];
   var requests=window._vacRequests||[];
   var me=_currentSession?_currentSession.login_name:'';
+  // Try multiple name matches: exact login_name, employee_name from token, team name by matched_team_id
   var myBal=balances.find(function(b){return b.employee_name===me;});
+  if(!myBal&&_currentSession){
+    var altName=_currentSession.employee_name||'';
+    if(altName&&altName!==me) myBal=balances.find(function(b){return b.employee_name===altName;});
+  }
+  if(!myBal&&_currentSession&&_currentSession.matched_team_id){
+    var tm=D.team.find(function(t){return t.id===_currentSession.matched_team_id;});
+    if(tm) myBal=balances.find(function(b){return b.employee_name===tm.name;});
+  }
+  // Last resort: fuzzy match by first word of login_name against first word of employee_name
+  if(!myBal&&me){
+    var meLow=me.toLowerCase().split(' ')[0];
+    if(meLow.length>=3) myBal=balances.find(function(b){return b.employee_name.toLowerCase().split(' ')[0]===meLow||(b.employee_name.toLowerCase().indexOf(meLow)>=0);});
+  }
   var calc=calcVacationBalance(myBal);
   var available=calc.accrued-calc.used;
 
@@ -3078,9 +3093,15 @@ function renderVacation(){
   // My balance card
   html+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">';
   html+='<div style="flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px">';
-  html+='<div style="font-size:11px;color:var(--dim);margin-bottom:4px">МОЙ БАЛАНС</div>';
-  html+='<div style="font-size:28px;font-weight:700;color:'+(available<0?'var(--magenta)':available>0?'var(--green)':'var(--text)')+'">'+available.toFixed(1)+' <span style="font-size:13px;color:var(--dim)">дней</span></div>';
-  html+='<div style="font-size:11px;color:var(--dim);margin-top:4px">Начислено: '+calc.accrued.toFixed(1)+' · Использовано: '+calc.used.toFixed(1)+'</div>';
+  if(myBal){
+    html+='<div style="font-size:11px;color:var(--dim);margin-bottom:4px">МОЙ БАЛАНС'+(myBal.employee_name!==me?' <span style="color:var(--cyan)">('+esc(myBal.employee_name)+')</span>':'')+'</div>';
+    html+='<div style="font-size:28px;font-weight:700;color:'+(available<0?'var(--magenta)':available>0?'var(--green)':'var(--text)')+'">'+available.toFixed(1)+' <span style="font-size:13px;color:var(--dim)">дней</span></div>';
+    html+='<div style="font-size:11px;color:var(--dim);margin-top:4px">Начислено: '+calc.accrued.toFixed(1)+' · Использовано: '+calc.used.toFixed(1)+(myBal.hire_date?' · Дата найма: '+myBal.hire_date:'')+'</div>';
+  } else {
+    html+='<div style="font-size:11px;color:var(--magenta);margin-bottom:4px">⚠️ АККАУНТ НЕ ПРИВЯЗАН</div>';
+    html+='<div style="font-size:13px;color:var(--dim)">Ваше имя в системе: <b style="color:var(--text)">'+esc(me)+'</b></div>';
+    html+='<div style="font-size:11px;color:var(--dim);margin-top:4px">Попросите PM привязать ваш аккаунт к записи в таблице отпусков (вкладка Управление)</div>';
+  }
   html+='</div>';
   html+='<div style="flex:0 0 auto;display:flex;align-items:center"><button class="act-btn success" onclick="openVacationRequestForm()" style="padding:10px 20px;font-size:14px">🏖️ Подать заявку</button></div>';
   html+='</div>';
