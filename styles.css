@@ -45,7 +45,8 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
   text-shadow:0 0 8px rgba(0,255,136,0.3)}
 .tab .badge{display:inline-block;background:var(--magenta);color:#fff;font-size:9px;padding:1px 6px;
   border-radius:8px;margin-left:6px;font-weight:700}
-.tab-divider{width:1px;height:20px;background:var(--border);flex-shrink:0;margin:0 4px;align-self:center;opacity:0.5}
+.tab-divider{width:1px;height:24px;background:var(--border);flex-shrink:0;margin:0 2px;align-self:center;opacity:0.6}
+.tab-group-label{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:1.5px;align-self:center;padding:0 4px 0 2px;white-space:nowrap;flex-shrink:0;opacity:0.7;font-weight:600}
 
 /* ═══ CONTENT PANELS ═══ */
 .panel{display:none;height:100%;overflow:hidden}
@@ -398,10 +399,10 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
 .intg-badge.pending{background:#ff444422;color:var(--hot);border:1px solid #ff444444}
 .intg-badge.needed{background:#ffffff08;color:var(--dim);border:1px solid var(--border)}
 /* ═══ CALENDAR ═══ */
-.cal-day{background:var(--bg);border:1px solid transparent;transition:background .15s,border-color .15s}
-.cal-day:hover{background:var(--panel);border-color:var(--border)}
-.cal-today{background:rgba(0,229,255,0.07)!important;border:1px solid var(--cyan)!important}
-.cal-today:hover{background:rgba(0,229,255,0.14)!important}
+.cal-day{background:var(--surface);border:1px solid var(--border);transition:background .15s,border-color .15s;border-radius:6px}
+.cal-day:hover{background:var(--panel);border-color:var(--cyan);box-shadow:0 0 6px rgba(0,229,255,0.15)}
+.cal-today{background:rgba(0,229,255,0.12)!important;border:1px solid var(--cyan)!important;box-shadow:0 0 8px rgba(0,229,255,0.2)}
+.cal-today:hover{background:rgba(0,229,255,0.2)!important}
 /* ═══ TEAM CHAT ═══ */
 .chat-panel{flex-direction:column;height:100%;padding:0!important;overflow:hidden}
 .chat-container{display:flex;flex:1;overflow:hidden}

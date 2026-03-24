@@ -2973,6 +2973,53 @@ document.addEventListener('keydown',function(e){
 })();
 
 function openModal(html){ modalContent.innerHTML=html; modal.classList.add('open'); }
+function showModal(title,html){ openModal('<h3 style="margin-bottom:12px">'+title+'</h3>'+html); }
+
+// ═══ ADD EMPLOYEE ═══
+window.openAddEmployeeForm=function(editId){
+  var t=editId?D.team.find(function(x){return x.id===editId;}):null;
+  var deptOptions=CDepts.map(function(x){return '<option value="'+x.id+'" '+(t&&t.dept===x.id?'selected':'')+'>'+x.icon+' '+x.name+'</option>';}).join('');
+  var catOptions=['full-time','part-time','freelance','intern','management'].map(function(c){return '<option value="'+c+'" '+(t&&t.category===c?'selected':'')+'>'+c+'</option>';}).join('');
+  openModal(
+    '<h3 style="margin-bottom:12px">👤 '+(editId?'Редактировать сотрудника':'Новый сотрудник')+'</h3>'+
+    '<div style="display:grid;gap:10px">'+
+      '<input id="emp-name" placeholder="Имя сотрудника *" value="'+esc(t?t.name:'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">'+
+      '<input id="emp-role" placeholder="Роль (Frontend Dev, Designer...)" value="'+esc(t?t.role:'')+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+        '<select id="emp-dept" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">'+deptOptions+'</select>'+
+        '<select id="emp-cat" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">'+catOptions+'</select>'+
+      '</div>'+
+      '<input id="emp-start" type="date" value="'+(t&&t.startDate?t.startDate:new Date().toISOString().slice(0,10))+'" style="padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text)">'+
+      '<button class="act-btn success" onclick="submitEmployee('+(editId||'null')+')">💾 '+(editId?'Обновить':'Добавить')+'</button>'+
+    '</div>'
+  );
+};
+
+window.submitEmployee=function(editId){
+  var name=document.getElementById('emp-name').value.trim();
+  if(!name){showToast('Введите имя сотрудника','error');return;}
+  var obj={
+    name:name,
+    role:document.getElementById('emp-role').value.trim()||'Team',
+    dept:document.getElementById('emp-dept').value,
+    category:document.getElementById('emp-cat').value,
+    startDate:document.getElementById('emp-start').value||null,
+    isHead:false,
+    status:'active'
+  };
+  if(editId){
+    var idx=D.team.findIndex(function(x){return x.id===editId;});
+    if(idx>=0){D.team[idx]=Object.assign(D.team[idx],obj);}
+    showToast('✅ Сотрудник обновлён','success');
+  }else{
+    var maxId=D.team.reduce(function(m,t){return Math.max(m,t.id);},0);
+    obj.id=maxId+1;
+    D.team.push(obj);
+    showToast('✅ Сотрудник добавлен','success');
+  }
+  closeModal();
+  renderTeam();
+};
 
 // ═══ LEADS ═══
 let leadFilter='all';
@@ -6835,33 +6882,37 @@ function renderEventsCalendar(events){
     }
   });
 
-  var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
-    '<button onclick="eventsCurrentMonth--;if(eventsCurrentMonth<0){eventsCurrentMonth=11;eventsCurrentYear--;}renderEventsPanel()" style="background:none;border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:14px;min-height:34px">◀</button>'+
-    '<span style="font-size:15px;font-weight:700;color:var(--text)">'+monthNames[m]+' '+y+'</span>'+
-    '<button onclick="eventsCurrentMonth++;if(eventsCurrentMonth>11){eventsCurrentMonth=0;eventsCurrentYear++;}renderEventsPanel()" style="background:none;border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:14px;min-height:34px">▶</button>'+
+  var totalEvents=events.length;
+  var html='<div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px">';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'+
+    '<button onclick="eventsCurrentMonth--;if(eventsCurrentMonth<0){eventsCurrentMonth=11;eventsCurrentYear--;}renderEventsPanel()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:16px;min-height:38px;transition:all .15s">◀</button>'+
+    '<div style="text-align:center"><span style="font-size:18px;font-weight:700;color:var(--text)">'+monthNames[m]+' '+y+'</span>'+(totalEvents?'<div style="font-size:11px;color:var(--cyan);margin-top:2px">'+totalEvents+' мероприятий</div>':'')+'</div>'+
+    '<button onclick="eventsCurrentMonth++;if(eventsCurrentMonth>11){eventsCurrentMonth=0;eventsCurrentYear++;}renderEventsPanel()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:16px;min-height:38px;transition:all .15s">▶</button>'+
   '</div>';
-  html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;margin-bottom:4px">';
-  ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(function(d){
-    html+='<div style="font-size:10px;color:var(--dim);padding:4px 0;font-weight:600">'+d+'</div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center;margin-bottom:6px">';
+  ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(function(d,i){
+    var isWeekend=i>=5;
+    html+='<div style="font-size:11px;color:'+(isWeekend?'var(--magenta)':'var(--dim)')+';padding:6px 0;font-weight:700;text-transform:uppercase;letter-spacing:1px">'+d+'</div>';
   });
-  html+='</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">';
-  for(var i=1;i<firstDay;i++)html+='<div style="padding:4px;min-height:40px"></div>';
+  html+='</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">';
+  for(var i=1;i<firstDay;i++)html+='<div style="padding:4px;min-height:48px"></div>';
   for(var d=1;d<=daysInMonth;d++){
     var dateStr=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     var isToday=dateStr===todayStr;
     var evs=dayEvents[d]||[];
-    html+='<div class="cal-day'+(isToday?' cal-today':'')+'" onclick="showDayEvents(\''+dateStr+'\')" style="padding:3px;min-height:40px;border-radius:6px;cursor:pointer">'+
-      '<div style="font-size:11px;color:'+(isToday?'var(--cyan)':'var(--text)')+';font-weight:'+(isToday?'700':'400')+';text-align:right;padding:0 2px">'+d+'</div>';
-    if(evs.length>0){
+    var hasEvents=evs.length>0;
+    html+='<div class="cal-day'+(isToday?' cal-today':'')+'" onclick="showDayEvents(\''+dateStr+'\')" style="padding:4px;min-height:48px;cursor:pointer'+(hasEvents?';border-color:rgba(0,255,136,0.3)':'')+'">';
+    html+='<div style="font-size:12px;color:'+(isToday?'var(--cyan)':hasEvents?'var(--green)':'var(--text)')+';font-weight:'+(isToday||hasEvents?'700':'400')+';text-align:right;padding:0 3px">'+d+'</div>';
+    if(hasEvents){
       evs.slice(0,2).forEach(function(e){
         var inf=EVENT_TYPES[e.type]||{color:'#666'};
-        html+='<div style="font-size:7px;padding:1px 3px;margin-top:1px;border-radius:3px;background:'+inf.color+'22;color:'+inf.color+';overflow:hidden;white-space:nowrap;text-overflow:ellipsis">'+esc(e.title.slice(0,12))+'</div>';
+        html+='<div style="font-size:8px;padding:1px 4px;margin-top:2px;border-radius:3px;background:'+inf.color+'33;color:'+inf.color+';overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:500">'+esc(e.title.slice(0,14))+'</div>';
       });
-      if(evs.length>2)html+='<div style="font-size:7px;color:var(--dim);text-align:center">+'+String(evs.length-2)+'</div>';
+      if(evs.length>2)html+='<div style="font-size:8px;color:var(--cyan);text-align:center;font-weight:600">+'+String(evs.length-2)+'</div>';
     }
     html+='</div>';
   }
-  html+='</div>';
+  html+='</div></div>';
   el.innerHTML=html;
 }
 
