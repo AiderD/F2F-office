@@ -586,6 +586,147 @@ document.getElementById('stratSaveBtn').addEventListener('click',async function(
   }
 });
 
+// ═══ MARKET INTELLIGENCE ═══
+window._marketIntel=[];
+async function loadMarketIntelligence(){
+  if(!SUPABASE_LIVE)return;
+  try{
+    var data=await sbFetch('market_intelligence','select=*&order=created_at.desc&limit=30');
+    if(data&&Array.isArray(data)){window._marketIntel=data;renderMarketIntelligence();}
+  }catch(e){console.warn('MI load error:',e);}
+}
+function renderMarketIntelligence(){
+  var grid=document.getElementById('marketIntelGrid');
+  var countEl=document.getElementById('miCount');
+  if(!grid)return;
+  var items=window._marketIntel||[];
+  if(countEl)countEl.textContent='('+items.length+' отчётов)';
+  if(!items.length){
+    grid.innerHTML='<div style="text-align:center;padding:20px;color:var(--dim);font-size:13px">Нет данных. Аналитик запускается 3 раза в день (05:00, 12:00, 19:00 UTC).</div>';
+    return;
+  }
+  grid.innerHTML=items.slice(0,10).map(function(mi){
+    var trends=(mi.market_trends||[]);
+    var comps=(mi.competitor_updates||[]);
+    var opps=(mi.opportunities||[]);
+    var threats=(mi.threats||[]);
+    var recs=(mi.recommendations||[]);
+    var date=mi.created_at?new Date(mi.created_at).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+    var typeLabel=mi.report_type==='competitor_deep_dive'?'🏢 Конкуренты':mi.report_type==='opportunity_report'?'💡 Возможности':'📊 Обзор рынка';
+    var summary=esc(mi.summary||'').slice(0,200);
+    return '<div class="mi-card" onclick="openMIDetail(\''+mi.id+'\')" style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;cursor:pointer;transition:border-color .2s" onmouseenter="this.style.borderColor=\'var(--cyan)\'" onmouseleave="this.style.borderColor=\'var(--border)\'">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+        '<span style="font-size:12px;font-weight:600;color:var(--cyan)">'+typeLabel+'</span>'+
+        '<span style="font-size:10px;color:var(--dim)">'+date+'</span>'+
+      '</div>'+
+      (summary?'<div style="font-size:12px;color:var(--text);margin-bottom:10px;line-height:1.5">'+summary+'</div>':'')+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+        (trends.length?'<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:#00e5ff22;color:#00e5ff">🔥 '+trends.length+' трендов</span>':'')+
+        (comps.length?'<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:#ff2d7822;color:#ff2d78">🏢 '+comps.length+' конкурентов</span>':'')+
+        (opps.length?'<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:#00ff8822;color:#00ff88">💡 '+opps.length+' возможностей</span>':'')+
+        (threats.length?'<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:#ffb80022;color:#ffb800">⚠️ '+threats.length+' угроз</span>':'')+
+        (recs.length?'<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:#a78bfa22;color:#a78bfa">🎯 '+recs.length+' рекомендаций</span>':'')+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+window.openMIDetail=function(id){
+  var mi=(window._marketIntel||[]).find(function(x){return x.id===id;});
+  if(!mi)return;
+  var date=mi.created_at?new Date(mi.created_at).toLocaleString('ru',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+  var html='<h2 style="margin-bottom:4px">📊 Market Intelligence</h2>';
+  html+='<div style="font-size:11px;color:var(--dim);margin-bottom:16px">'+date+' • '+(mi.report_type||'market_scan')+'</div>';
+  if(mi.summary)html+='<div style="font-size:13px;line-height:1.6;padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);margin-bottom:16px">'+esc(mi.summary)+'</div>';
+  // Trends
+  var trends=mi.market_trends||[];
+  if(trends.length){
+    html+='<h3 style="color:#00e5ff;font-size:13px;margin-bottom:8px">🔥 Тренды рынка ('+trends.length+')</h3>';
+    html+='<div style="margin-bottom:16px">'+trends.map(function(t){
+      var impact=t.impact==='high'?'🔴':t.impact==='medium'?'🟡':'🟢';
+      return '<div style="padding:8px 12px;margin-bottom:6px;background:var(--panel);border-radius:6px;border-left:3px solid #00e5ff">'+
+        '<div style="font-size:12px;font-weight:600;color:var(--text)">'+esc(t.title||t.trend||String(t))+'</div>'+
+        (t.description?'<div style="font-size:11px;color:var(--dim);margin-top:4px">'+esc(t.description)+'</div>':'')+
+        '<div style="font-size:10px;color:var(--dim);margin-top:4px">'+impact+' '+(t.impact||'')+(t.source?' • 🔗 '+esc(t.source):'')+'</div>'+
+      '</div>';
+    }).join('')+'</div>';
+  }
+  // Competitor updates
+  var comps=mi.competitor_updates||[];
+  if(comps.length){
+    html+='<h3 style="color:#ff2d78;font-size:13px;margin-bottom:8px">🏢 Конкуренты ('+comps.length+')</h3>';
+    html+='<div style="margin-bottom:16px">'+comps.map(function(c){
+      return '<div style="padding:8px 12px;margin-bottom:6px;background:var(--panel);border-radius:6px;border-left:3px solid #ff2d78">'+
+        '<div style="font-size:12px;font-weight:600;color:var(--text)">'+esc(c.competitor||c.name||'?')+'</div>'+
+        '<div style="font-size:11px;color:var(--dim);margin-top:4px">'+esc(c.update||c.summary||String(c))+'</div>'+
+        (c.source?'<div style="font-size:10px;color:var(--dim);margin-top:4px">🔗 '+esc(c.source)+'</div>':'')+
+      '</div>';
+    }).join('')+'</div>';
+  }
+  // Opportunities
+  var opps=mi.opportunities||[];
+  if(opps.length){
+    html+='<h3 style="color:#00ff88;font-size:13px;margin-bottom:8px">💡 Возможности ('+opps.length+')</h3>';
+    html+='<div style="margin-bottom:16px">'+opps.map(function(o){
+      return '<div style="padding:8px 12px;margin-bottom:6px;background:var(--panel);border-radius:6px;border-left:3px solid #00ff88">'+
+        '<div style="font-size:12px;font-weight:600;color:var(--text)">'+esc(o.title||o.opportunity||String(o))+'</div>'+
+        (o.description?'<div style="font-size:11px;color:var(--dim);margin-top:4px">'+esc(o.description)+'</div>':'')+
+        (o.effort?'<div style="font-size:10px;color:var(--dim);margin-top:4px">Усилия: '+esc(o.effort)+(o.potential_revenue?' • Потенциал: '+esc(o.potential_revenue):'')+'</div>':'')+
+      '</div>';
+    }).join('')+'</div>';
+  }
+  // Threats
+  var threats=mi.threats||[];
+  if(threats.length){
+    html+='<h3 style="color:#ffb800;font-size:13px;margin-bottom:8px">⚠️ Угрозы ('+threats.length+')</h3>';
+    html+='<div style="margin-bottom:16px">'+threats.map(function(t){
+      return '<div style="padding:8px 12px;margin-bottom:6px;background:var(--panel);border-radius:6px;border-left:3px solid #ffb800">'+
+        '<div style="font-size:12px;font-weight:600;color:var(--text)">'+esc(t.title||t.threat||String(t))+'</div>'+
+        (t.description?'<div style="font-size:11px;color:var(--dim);margin-top:4px">'+esc(t.description)+'</div>':'')+
+        (t.mitigation?'<div style="font-size:10px;color:#00ff88;margin-top:4px">→ '+esc(t.mitigation)+'</div>':'')+
+      '</div>';
+    }).join('')+'</div>';
+  }
+  // Recommendations
+  var recs=mi.recommendations||[];
+  if(recs.length){
+    html+='<h3 style="color:#a78bfa;font-size:13px;margin-bottom:8px">🎯 Рекомендации ('+recs.length+')</h3>';
+    html+='<div style="margin-bottom:16px">'+recs.map(function(r){
+      var prioColor=r.priority==='P0'?'#ff2d78':r.priority==='P1'?'#ffb800':'#00e5ff';
+      return '<div style="padding:8px 12px;margin-bottom:6px;background:var(--panel);border-radius:6px;border-left:3px solid #a78bfa">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center">'+
+          '<div style="font-size:12px;font-weight:600;color:var(--text)">'+esc(r.action||r.recommendation||String(r))+'</div>'+
+          (r.priority?'<span style="font-size:9px;padding:1px 6px;border-radius:3px;background:'+prioColor+'22;color:'+prioColor+';font-weight:700">'+esc(r.priority)+'</span>':'')+
+        '</div>'+
+        (r.timeline?'<div style="font-size:10px;color:var(--dim);margin-top:4px">⏱ '+esc(r.timeline)+(r.expected_impact?' • 📈 '+esc(r.expected_impact):'')+'</div>':'')+
+      '</div>';
+    }).join('')+'</div>';
+  }
+  html+='<div class="action-bar"><button class="act-btn" onclick="miCreateTasks(\''+id+'\')">📋 Рекомендации → Задачи</button><button class="act-btn" onclick="miCopy(\''+id+'\')">📋 Копировать</button></div>';
+  openModal(html);
+};
+window.miCreateTasks=async function(id){
+  var mi=(window._marketIntel||[]).find(function(x){return x.id===id;});
+  if(!mi||!mi.recommendations||!mi.recommendations.length){showToast('Нет рекомендаций','warning');return;}
+  var count=0;
+  for(var r of mi.recommendations){
+    await createTaskSynced(r.action||r.recommendation||String(r),'analyst',r.priority==='P0'?'critical':r.priority==='P1'?'high':'normal');
+    count++;
+  }
+  showToast('Создано '+count+' задач из рекомендаций','success');
+  addFeed('analyst','📋 Создано '+count+' задач из Market Intelligence');
+};
+window.miCopy=function(id){
+  var mi=(window._marketIntel||[]).find(function(x){return x.id===id;});
+  if(!mi)return;
+  var text='MARKET INTELLIGENCE — '+new Date(mi.created_at).toLocaleDateString('ru')+'\n\n';
+  if(mi.summary)text+=mi.summary+'\n\n';
+  (mi.market_trends||[]).forEach(function(t){text+='[ТРЕНД] '+((t.title||t.trend||'')+': '+(t.description||''))+'\n';});
+  (mi.competitor_updates||[]).forEach(function(c){text+='[КОНКУРЕНТ] '+((c.competitor||'')+': '+(c.update||''))+'\n';});
+  (mi.opportunities||[]).forEach(function(o){text+='[ВОЗМОЖНОСТЬ] '+((o.title||'')+': '+(o.description||''))+'\n';});
+  (mi.recommendations||[]).forEach(function(r){text+='[РЕКОМЕНДАЦИЯ] '+((r.action||'')+' ('+( r.priority||'')+')')+'\n';});
+  navigator.clipboard.writeText(text).then(function(){showToast('Скопировано!','success');});
+};
+
 // ═══ KPI ═══
 function fmtK(n){return n>=1000?(n/1000).toFixed(n>=10000?0:1)+'K':n.toString();}
 function fmtUSD(n){return '$'+n.toLocaleString('ru');}

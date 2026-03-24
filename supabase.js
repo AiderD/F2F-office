@@ -189,7 +189,7 @@ async function syncSupabaseData(){
   }
 
   // ═══ PARALLEL FETCH: all remaining tables at once (was sequential — ~15x faster now) ═══
-  const [content,partners,events,metrics,dirs,reports,actions,finance,ledger,credits,expenses,esTeams,rosters,tournaments,team,projects,changes]=await Promise.all([
+  const [content,partners,events,metrics,dirs,reports,actions,finance,ledger,credits,expenses,esTeams,rosters,tournaments,team,projects,changes,marketIntel]=await Promise.all([
     sbFetch('content_queue','select=*&order=created_at.desc&limit=1000'),
     sbFetch('partner_pipeline','select=*&order=created_at.desc&limit=500'),
     sbFetch('events','select=*&order=created_at.desc&limit=500'),
@@ -206,7 +206,8 @@ async function syncSupabaseData(){
     sbFetch('tournament_entries','select=*&order=date_start.desc&limit=500'),
     sbFetch('team','select=*&order=id.asc'),
     sbFetch('projects','select=*&order=created_at.desc&limit=200'),
-    sbFetch('entity_changes','select=*&order=created_at.desc&limit=200')
+    sbFetch('entity_changes','select=*&order=created_at.desc&limit=200'),
+    sbFetch('market_intelligence','select=*&order=created_at.desc&limit=30')
   ]);
 
   if(content){window._sbContent=content;window._sbContentMerged=false;}
@@ -226,6 +227,7 @@ async function syncSupabaseData(){
   if(team)window._sbTeam=team;
   if(projects)window._projects=projects;
   if(changes)window._entityChanges=changes;
+  if(marketIntel){window._marketIntel=marketIntel;}
 
   return true;
 }
@@ -421,6 +423,7 @@ function refreshAfterSync(){
   if(typeof renderAnalytics==='function'){_sr(renderAnalytics,'analytics');}
   if(typeof loadStrategy==='function'&&!window._stratLoaded){window._stratLoaded=true;_sr(loadStrategy,'strategy');}
   if(typeof renderStrategyProgress==='function'){_sr(renderStrategyProgress,'strategyProgress');}
+  if(typeof renderMarketIntelligence==='function'){_sr(renderMarketIntelligence,'marketIntel');}
 
   // Add meaningful Supabase events to feed (NOT raw post spam)
   if(SUPABASE_LIVE&&!window._sbFeedEnriched){

@@ -434,6 +434,14 @@
     <h3 style="margin:0 0 12px;color:var(--magenta);font-size:14px">📊 Прогресс KPI (факт vs цель)</h3>
     <div id="stratProgress" style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px"></div>
   </div>
+  <!-- MARKET INTELLIGENCE SECTION -->
+  <div style="padding:0 20px 20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="margin:0;color:#00e5ff;font-size:14px">📊 Market Intelligence <span id="miCount" style="font-size:11px;color:var(--dim);font-weight:400"></span></h3>
+      <button class="ctrl-btn" onclick="loadMarketIntelligence()" style="font-size:11px;padding:3px 10px">🔄 Обновить</button>
+    </div>
+    <div id="marketIntelGrid" style="display:grid;gap:12px"></div>
+  </div>
 </div>
 
 <!-- TASKS PANEL -->
