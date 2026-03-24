@@ -4702,15 +4702,25 @@ function taskSmartTitle(t){
 
   // === LEAD SUGGESTED ===
   if(aType.includes('lead_suggested')){
-    var comp=esc(p.company||p.organization||'');
+    var comp=esc(p.company||p.company_name||p.organization||p.org||'');
     var segment=segmentLabel(p.segment||'');
-    var reason=esc(p.reason||p.description||p.why||'');
+    var reason=esc(p.reason||p.description||p.why||p.summary||'');
     if(comp){
-      var reasonShort=reason?(' — '+reason):'';
+      var reasonShort=reason?(' — '+reason.slice(0,80)):'';
       return '🆕 '+comp+(segment?' ('+segment+')':'')+reasonShort;
     }
-    var name=esc(p.name||p.contact||p.contact_name||'');
+    var name=esc(p.name||p.contact||p.contact_name||p.lead_name||p.lead||'');
     if(name)return '🆕 Лид: '+name;
+    // Last resort: scan all string values in payload for something readable
+    var anyVal='';
+    var keys=Object.keys(p);
+    for(var ki=0;ki<keys.length;ki++){
+      var v=p[keys[ki]];
+      if(typeof v==='string'&&v.length>3&&v.length<120&&keys[ki]!=='status'&&keys[ki]!=='kanban_status'){
+        anyVal=v;break;
+      }
+    }
+    if(anyVal)return '🆕 '+esc(anyVal.slice(0,80));
     return '🆕 Рекомендация лида';
   }
 
@@ -4736,9 +4746,23 @@ function taskSmartTitle(t){
   if(aType.includes('task_from_chat')||t.fromChat)return esc(t.title);
 
   // === FALLBACK ===
-  var fallback=stripVars(p.recommendation||p.description||p.summary||'');
-  if(fallback&&fallback.length>5)return fallback;
-  return esc(t.title)||'Задача #'+t.id;
+  var fallback=stripVars(p.recommendation||p.description||p.summary||p.reason||p.title||'');
+  if(fallback&&fallback.length>5)return esc(fallback.slice(0,100));
+  // If title is just raw action type, try to humanize it
+  var rawTitle=t.title||'';
+  if(rawTitle===aType||rawTitle.match(/^[a-z_]+$/)){
+    // Scan payload for any readable string value
+    var pKeys=Object.keys(p);
+    for(var fi=0;fi<pKeys.length;fi++){
+      var fv=p[pKeys[fi]];
+      if(typeof fv==='string'&&fv.length>3&&fv.length<120&&pKeys[fi]!=='status'&&pKeys[fi]!=='kanban_status'){
+        return esc(fv.slice(0,100));
+      }
+    }
+    // Humanize the type: "lead_suggested" → "Lead Suggested"
+    return esc(rawTitle.replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();}));
+  }
+  return esc(rawTitle)||'Задача #'+t.id;
 }
 
 // Helper: get short description from task payload (for card subtitle)
