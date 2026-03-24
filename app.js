@@ -6964,11 +6964,11 @@ window.saveEventForm=async function(editId){
   if(editId){
     var ev=F2F_EVENTS.find(function(e){return e.id===editId;});
     if(ev){ev.title=title;ev.date=date;ev.end=end||'';ev.type=type;ev.status=status;ev.venue=venue;ev.budget=budget;ev.goals=goals;ev.desc=desc;}
-    _saveEventToSupabase(ev,false);
+    await _saveEventToSupabase(ev,false);
   }else{
     var newEv={id:'temp_'+Date.now(),title:title,date:date,end:end||'',type:type,status:status,venue:venue,budget:budget,goals:goals,desc:desc,tasks:[]};
     F2F_EVENTS.push(newEv);
-    _saveEventToSupabase(newEv,true);
+    await _saveEventToSupabase(newEv,true);
   }
   saveEvents();
   closeModal();
