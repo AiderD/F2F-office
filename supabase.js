@@ -482,6 +482,7 @@ function refreshAfterSync(){
     if(window._sbEvents&&window._sbEvents.length>0){
       var now24=Date.now()-24*3600000;
       var seenTexts=new Set();
+      var agentCount={};// per-agent limit
       // Collect existing feed texts for dedup
       feedItems.forEach(function(f){seenTexts.add(f.text.slice(0,50));});
       var addedCount=0;
@@ -490,7 +491,11 @@ function refreshAfterSync(){
         if(ev.created_at&&new Date(ev.created_at).getTime()<now24)return; // 24h only
         var m=typeof ev.metadata_json==='string'?JSON.parse(ev.metadata_json||'{}'):ev.metadata_json||{};
         if(m.source==='dashboard')return; // skip our own feed events
-        var text=m.text||m.summary||ev.type||'Событие';
+        // Skip cycle_run/cycle_start raw events — they have no useful text
+        if(ev.type==='cycle_run'||ev.type==='cycle_start'||ev.type==='cycle_end')return;
+        var text=m.text||m.summary||'';
+        // Skip events with no meaningful text (just type name)
+        if(!text||text===ev.type||text==='Событие')return;
         if(text.length>120)text=text.slice(0,120)+'...';
         var textKey=text.slice(0,50);
         if(seenTexts.has(textKey))return; // dedup
@@ -498,6 +503,9 @@ function refreshAfterSync(){
         var agSlug=null;
         if(ev.agent_id&&window._sbAgentById&&window._sbAgentById[ev.agent_id])agSlug=window._sbAgentById[ev.agent_id].slug;
         var dashId=(agSlug&&SB_SLUG_TO_DASH[agSlug])?SB_SLUG_TO_DASH[agSlug]:'coordinator';
+        // Per-agent limit: max 5 events per agent to prevent flooding
+        agentCount[dashId]=(agentCount[dashId]||0)+1;
+        if(agentCount[dashId]>5)return;
         var ago=ev.created_at?timeSince(ev.created_at):'';
         feedItems.push({
           id:++feedIdCounter,agentId:dashId,text:text,
