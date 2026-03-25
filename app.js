@@ -489,22 +489,40 @@ async function loadStrategy(){
     if(data&&data[0]&&data[0].value_json){
       var s=typeof data[0].value_json==='string'?JSON.parse(data[0].value_json):data[0].value_json;
       if(s.mission_vision)document.getElementById('strategyText').value=s.mission_vision;
+      // Operational
       if(s.kpi_leads_monthly)document.getElementById('strat-kpi-leads').value=s.kpi_leads_monthly;
       if(s.kpi_emails_monthly)document.getElementById('strat-kpi-emails').value=s.kpi_emails_monthly;
       if(s.kpi_content_monthly)document.getElementById('strat-kpi-content').value=s.kpi_content_monthly;
+      // Product
+      if(s.kpi_mau)document.getElementById('strat-kpi-mau').value=s.kpi_mau;
+      if(s.kpi_dau)document.getElementById('strat-kpi-dau').value=s.kpi_dau;
+      if(s.kpi_retention_d7)document.getElementById('strat-kpi-retention-d7').value=s.kpi_retention_d7;
+      if(s.kpi_retention_d30)document.getElementById('strat-kpi-retention-d30').value=s.kpi_retention_d30;
+      if(s.kpi_matches_daily)document.getElementById('strat-kpi-matches').value=s.kpi_matches_daily;
+      if(s.kpi_avg_queue_time)document.getElementById('strat-kpi-queue').value=s.kpi_avg_queue_time;
+      if(s.kpi_nps)document.getElementById('strat-kpi-nps').value=s.kpi_nps;
+      // Financial
+      if(s.kpi_mrr)document.getElementById('strat-kpi-mrr').value=s.kpi_mrr;
       if(s.kpi_revenue_target)document.getElementById('strat-kpi-revenue').value=s.kpi_revenue_target;
+      if(s.kpi_cac)document.getElementById('strat-kpi-cac').value=s.kpi_cac;
+      if(s.kpi_ltv)document.getElementById('strat-kpi-ltv').value=s.kpi_ltv;
+      if(s.kpi_churn_monthly)document.getElementById('strat-kpi-churn').value=s.kpi_churn_monthly;
+      // Marketing
+      if(s.kpi_telegram_subs)document.getElementById('strat-kpi-tg-subs').value=s.kpi_telegram_subs;
+      if(s.kpi_social_engagement)document.getElementById('strat-kpi-engagement').value=s.kpi_social_engagement;
+      if(s.kpi_partnerships)document.getElementById('strat-kpi-partnerships').value=s.kpi_partnerships;
+      // Strategic fields
+      if(s.target_audience)document.getElementById('strat-target-audience').value=s.target_audience;
+      if(s.competitive_advantage)document.getElementById('strat-competitive-advantage').value=s.competitive_advantage;
+      if(s.strategic_priorities)document.getElementById('strat-priorities').value=s.strategic_priorities;
     }
   }catch(e){console.warn('Strategy load error:',e);}
   renderStrategyProgress();
 }
 function renderStrategyProgress(){
   var el=document.getElementById('stratProgress');if(!el)return;
-  var targets={
-    leads:parseInt(document.getElementById('strat-kpi-leads').value)||45,
-    emails:parseInt(document.getElementById('strat-kpi-emails').value)||200,
-    content:parseInt(document.getElementById('strat-kpi-content').value)||20,
-    revenue:parseInt(document.getElementById('strat-kpi-revenue').value)||15000
-  };
+  var gn=function(id,fb){var e=document.getElementById(id);return e?parseFloat(e.value)||fb||0:fb||0;};
+
   // Real data from Supabase
   var leadsActual=window._sbPartners?window._sbPartners.length:0;
   var publishedActual=window._sbContent?window._sbContent.filter(function(c){return c.status==='published';}).length:0;
@@ -515,49 +533,106 @@ function renderStrategyProgress(){
       return a.type==='email_sent'||p.status==='sent';
     }).length;
   }
-  var actual={leads:leadsActual,emails:emailsSent,content:publishedActual,revenue:0};
-  function kpiCard(icon,label,val,target,color){
-    var pct=target>0?Math.min(100,Math.round(val/target*100)):0;
+  var partnershipsActual=window._sbPartners?window._sbPartners.filter(function(p){return p.stage==='partner'||p.stage==='won';}).length:0;
+
+  function kpiCard(icon,label,val,target,color,suffix){
+    suffix=suffix||'';
+    if(!target||target<=0)return '';
+    var pct=Math.min(100,Math.round(val/target*100));
     var status=pct>=100?'✅':pct>=60?'🟡':pct>0?'🔴':'⬜';
     return '<div class="strat-kpi-card">'+
       '<div class="strat-kpi-label"><span>'+icon+' '+label+'</span><span class="strat-kpi-pct" style="color:'+color+'">'+pct+'%</span></div>'+
-      '<div class="strat-kpi-value" style="color:'+color+'">'+val+' <span style="font-size:12px;color:var(--dim);font-weight:400">/ '+target+'</span></div>'+
+      '<div class="strat-kpi-value" style="color:'+color+'">'+val+suffix+' <span style="font-size:12px;color:var(--dim);font-weight:400">/ '+target+suffix+'</span></div>'+
       '<div class="strat-kpi-bar"><div class="strat-kpi-fill" style="width:'+pct+'%;background:'+color+'"></div></div>'+
-      '<div style="font-size:9px;color:var(--dim);text-align:right">'+status+' '+(pct>=100?'Цель достигнута':pct>=60?'На пути':'Нужен прогресс')+'</div>'+
+      '<div style="font-size:9px;color:var(--dim);text-align:right">'+status+' '+(pct>=100?'Достигнуто':pct>=60?'На пути':'Нужен прогресс')+'</div>'+
     '</div>';
   }
-  el.innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
-    kpiCard('📞','Лиды',actual.leads,targets.leads,'#00e5ff')+
-    kpiCard('📝','Контент',actual.content,targets.content,'#00ff88')+
-    kpiCard('📧','Emails',actual.emails,targets.emails,'#ff2d78')+
-    kpiCard('💰','Выручка ($)',actual.revenue,targets.revenue,'#ffb800')+
-  '</div>';
-  // Update decomposition with real numbers
+  function kpiStatic(icon,label,target,color,suffix){
+    suffix=suffix||'';
+    if(!target||target<=0)return '';
+    return '<div class="strat-kpi-card" style="opacity:0.7">'+
+      '<div class="strat-kpi-label"><span>'+icon+' '+label+'</span><span style="font-size:10px;color:var(--dim)">цель</span></div>'+
+      '<div class="strat-kpi-value" style="color:'+color+'">'+target+suffix+'</div>'+
+      '<div class="strat-kpi-bar"><div class="strat-kpi-fill" style="width:0%;background:'+color+'"></div></div>'+
+      '<div style="font-size:9px;color:var(--dim);text-align:right">⬜ Ожидает данных</div>'+
+    '</div>';
+  }
+
+  var cards=[];
+  // Operational (with real data)
+  cards.push(kpiCard('📞','Лиды',leadsActual,gn('strat-kpi-leads',45),'#00e5ff'));
+  cards.push(kpiCard('📝','Контент',publishedActual,gn('strat-kpi-content',20),'#00ff88'));
+  cards.push(kpiCard('📧','Emails',emailsSent,gn('strat-kpi-emails',200),'#ff2d78'));
+  cards.push(kpiCard('🤝','Партнёрства',partnershipsActual,gn('strat-kpi-partnerships'),'#a78bfa'));
+  // Product (targets only)
+  cards.push(kpiStatic('👥','MAU',gn('strat-kpi-mau'),'#00e5ff'));
+  cards.push(kpiStatic('📈','DAU',gn('strat-kpi-dau'),'#4aff00'));
+  cards.push(kpiStatic('🔄','Retention D7',gn('strat-kpi-retention-d7'),'#ff9800','%'));
+  cards.push(kpiStatic('🔄','Retention D30',gn('strat-kpi-retention-d30'),'#ff5722','%'));
+  cards.push(kpiStatic('⚔️','Матчей/день',gn('strat-kpi-matches'),'#e040fb'));
+  cards.push(kpiStatic('⏱️','Ср. очередь',gn('strat-kpi-queue'),'#29b6f6','с'));
+  cards.push(kpiStatic('⭐','NPS',gn('strat-kpi-nps'),'#ffeb3b'));
+  // Financial
+  cards.push(kpiStatic('💵','MRR',gn('strat-kpi-mrr'),'#66bb6a','$'));
+  cards.push(kpiCard('💰','Revenue',0,gn('strat-kpi-revenue',15000),'#ffb800','$'));
+  cards.push(kpiStatic('🎯','CAC',gn('strat-kpi-cac'),'#ef5350','$'));
+  cards.push(kpiStatic('💎','LTV',gn('strat-kpi-ltv'),'#ab47bc','$'));
+  cards.push(kpiStatic('📉','Churn',gn('strat-kpi-churn'),'#f44336','%'));
+  // Marketing
+  cards.push(kpiStatic('✈️','TG подписчики',gn('strat-kpi-tg-subs'),'#26c6da'));
+  cards.push(kpiStatic('💬','Engagement',gn('strat-kpi-engagement'),'#7c4dff','%'));
+
+  var filtered=cards.filter(function(c){return c!=='';});
+  el.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">'+filtered.join('')+'</div>';
+
+  // Decomposition
   var decomEl=document.getElementById('stratDecomposition');
   if(decomEl){
+    var tLeads=gn('strat-kpi-leads',45);
+    var tContent=gn('strat-kpi-content',20);
+    var tEmails=gn('strat-kpi-emails',200);
     var publishRate=publishedActual>0?Math.round(publishedActual/7*10)/10:0;
     var leadRate=leadsActual>0?Math.round(leadsActual/7*10)/10:0;
     decomEl.innerHTML=
-      '<div style="margin-bottom:8px"><b style="color:#00ff88">→ Coordinator</b> <span style="color:var(--text)">разбивает стратегию на недельные цели</span></div>'+
-      '<div style="margin-bottom:8px"><b style="color:#ffb800">→ Lead Scout</b> <span style="color:var(--text)">ищет ~'+Math.ceil(targets.leads/30)+' лидов/день</span> <span style="color:var(--dim)">(сейчас: '+leadRate+'/день)</span></div>'+
-      '<div style="margin-bottom:8px"><b style="color:#ff2d78">→ SMM Agent</b> <span style="color:var(--text)">публикует ~'+Math.ceil(targets.content/4)+' постов/неделю</span> <span style="color:var(--dim)">(сейчас: '+publishRate+'/день)</span></div>'+
-      '<div style="margin-bottom:8px"><b style="color:#00e5ff">→ Outreach</b> <span style="color:var(--text)">отправляет ~'+Math.ceil(targets.emails/30)+' email/день</span> <span style="color:var(--dim)">(отправлено: '+emailsSent+')</span></div>'+
-      '<div><b style="color:#a78bfa">→ Analytics</b> <span style="color:var(--text)">отслеживает прогресс + ROI</span></div>';
+      '<div style="margin-bottom:6px"><b style="color:#00ff88">→ Coordinator</b> <span style="color:var(--text)">разбивает стратегию на недельные цели</span></div>'+
+      '<div style="margin-bottom:6px"><b style="color:#ffb800">→ Lead Scout</b> <span style="color:var(--text)">ищет ~'+Math.ceil(tLeads/30)+' лидов/день</span> <span style="color:var(--dim)">('+leadRate+'/день)</span></div>'+
+      '<div style="margin-bottom:6px"><b style="color:#ff2d78">→ SMM</b> <span style="color:var(--text)">~'+Math.ceil(tContent/4)+' постов/неделю</span> <span style="color:var(--dim)">('+publishRate+'/день)</span></div>'+
+      '<div style="margin-bottom:6px"><b style="color:#00e5ff">→ Outreach</b> <span style="color:var(--text)">~'+Math.ceil(tEmails/30)+' email/день</span> <span style="color:var(--dim)">(отправлено: '+emailsSent+')</span></div>'+
+      '<div><b style="color:#a78bfa">→ Analyst (Opus)</b> <span style="color:var(--text)">3x/день: конкуренты → возможности → угрозы</span></div>';
   }
 }
 document.getElementById('stratSaveBtn').addEventListener('click',async function(){
-  const strategyText=document.getElementById('strategyText').value;
-  const kpiLeads=parseInt(document.getElementById('strat-kpi-leads').value)||45;
-  const kpiEmails=parseInt(document.getElementById('strat-kpi-emails').value)||200;
-  const kpiContent=parseInt(document.getElementById('strat-kpi-content').value)||20;
-  const kpiRevenue=parseInt(document.getElementById('strat-kpi-revenue').value)||15000;
+  const gv=function(id,fallback){var el=document.getElementById(id);return el?el.value:fallback||'';};
+  const gn=function(id,fallback){return parseFloat(gv(id,'0'))||fallback||0;};
 
   const strategyData={
-    mission_vision:strategyText,
-    kpi_leads_monthly:kpiLeads,
-    kpi_emails_monthly:kpiEmails,
-    kpi_content_monthly:kpiContent,
-    kpi_revenue_target:kpiRevenue,
+    mission_vision:gv('strategyText',''),
+    // Operational
+    kpi_leads_monthly:gn('strat-kpi-leads',45),
+    kpi_emails_monthly:gn('strat-kpi-emails',200),
+    kpi_content_monthly:gn('strat-kpi-content',20),
+    // Product
+    kpi_mau:gn('strat-kpi-mau'),
+    kpi_dau:gn('strat-kpi-dau'),
+    kpi_retention_d7:gn('strat-kpi-retention-d7'),
+    kpi_retention_d30:gn('strat-kpi-retention-d30'),
+    kpi_matches_daily:gn('strat-kpi-matches'),
+    kpi_avg_queue_time:gn('strat-kpi-queue'),
+    kpi_nps:gn('strat-kpi-nps'),
+    // Financial
+    kpi_mrr:gn('strat-kpi-mrr'),
+    kpi_revenue_target:gn('strat-kpi-revenue',15000),
+    kpi_cac:gn('strat-kpi-cac'),
+    kpi_ltv:gn('strat-kpi-ltv'),
+    kpi_churn_monthly:gn('strat-kpi-churn'),
+    // Marketing
+    kpi_telegram_subs:gn('strat-kpi-tg-subs'),
+    kpi_social_engagement:gn('strat-kpi-engagement'),
+    kpi_partnerships:gn('strat-kpi-partnerships'),
+    // Strategic
+    target_audience:gv('strat-target-audience',''),
+    competitive_advantage:gv('strat-competitive-advantage',''),
+    strategic_priorities:gv('strat-priorities',''),
     updated_at:new Date().toISOString()
   };
 
