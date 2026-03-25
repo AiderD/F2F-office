@@ -461,6 +461,7 @@ function switchTab(panelId){
   if(panelId==='expenses'&&typeof renderExpenses==='function') renderExpenses();
   if(panelId==='projects'&&typeof renderProjects==='function') renderProjects();
   if(panelId==='teams'&&typeof renderTeams==='function') renderTeams();
+  if(panelId==='digest'&&typeof loadDigest==='function') loadDigest();
 }
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>switchTab(tab.dataset.panel));
@@ -8193,3 +8194,263 @@ document.addEventListener('click',function(e){
 
 // ═══ FEATURE 3: ACTIVITY SUMMARY IN FEED (removed — CEO: бесполезные кнопки) ═══
 // Activity mini-cards removed per CEO request (session 23)
+
+// ═══ NEWS DIGEST MODULE ═══
+var _digestItems = [];
+var _digestFilter = { status: 'all', tag: 'all' };
+
+async function loadDigest() {
+  var statusF = _digestFilter.status;
+  var tagF = _digestFilter.tag;
+  var params = 'order=created_at.desc&limit=200';
+  if (statusF !== 'all') params += '&status=eq.' + statusF;
+
+  var data = await sbFetch('news_items', params);
+  if (!data) { renderDigestEmpty(); return; }
+
+  _digestItems = data;
+
+  // Apply tag filter client-side (topic_tags is array)
+  var filtered = data;
+  if (tagF !== 'all') {
+    filtered = data.filter(function(n) {
+      return n.topic_tags && n.topic_tags.indexOf(tagF) !== -1;
+    });
+  }
+
+  renderDigestKpi(data);
+  renderDigestList(filtered);
+
+  // Update badge
+  var badge = document.getElementById('tab-digest-count');
+  if (badge) badge.textContent = data.filter(function(n) { return n.status === 'draft'; }).length || '0';
+}
+
+function renderDigestKpi(items) {
+  var el = document.getElementById('digestKpi');
+  if (!el) return;
+
+  var total = items.length;
+  var drafts = items.filter(function(n) { return n.status === 'draft'; }).length;
+  var approved = items.filter(function(n) { return n.status === 'approved'; }).length;
+  var published = items.filter(function(n) { return n.status === 'published'; }).length;
+  var scored = items.filter(function(n) { return n.ceo_score; });
+  var avgScore = scored.length ? (scored.reduce(function(s, n) { return s + n.ceo_score; }, 0) / scored.length).toFixed(1) : '—';
+  var today = items.filter(function(n) {
+    return n.created_at && n.created_at.slice(0, 10) === new Date().toISOString().slice(0, 10);
+  }).length;
+
+  el.innerHTML =
+    '<div style="background:var(--bg2);padding:10px;border-radius:8px;text-align:center"><div style="font-size:20px;color:var(--green)">' + total + '</div><div style="font-size:10px;color:var(--dim)">Всего</div></div>' +
+    '<div style="background:var(--bg2);padding:10px;border-radius:8px;text-align:center"><div style="font-size:20px;color:#f5c542">' + drafts + '</div><div style="font-size:10px;color:var(--dim)">Черновики</div></div>' +
+    '<div style="background:var(--bg2);padding:10px;border-radius:8px;text-align:center"><div style="font-size:20px;color:var(--cyan)">' + approved + '</div><div style="font-size:10px;color:var(--dim)">Одобрено</div></div>' +
+    '<div style="background:var(--bg2);padding:10px;border-radius:8px;text-align:center"><div style="font-size:20px;color:var(--green)">' + published + '</div><div style="font-size:10px;color:var(--dim)">Опубликовано</div></div>' +
+    '<div style="background:var(--bg2);padding:10px;border-radius:8px;text-align:center"><div style="font-size:20px;color:#ff6b35">' + avgScore + '</div><div style="font-size:10px;color:var(--dim)">Avg CEO Score</div></div>' +
+    '<div style="background:var(--bg2);padding:10px;border-radius:8px;text-align:center"><div style="font-size:20px;color:var(--text)">' + today + '</div><div style="font-size:10px;color:var(--dim)">Сегодня</div></div>';
+}
+
+function renderDigestList(items) {
+  var el = document.getElementById('digestList');
+  if (!el) return;
+
+  if (!items.length) {
+    el.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--dim)">📰 Новостей пока нет. News Curator начнёт работу по расписанию.</div>';
+    return;
+  }
+
+  var html = '';
+  items.forEach(function(n) {
+    var statusColors = { draft: '#f5c542', approved: 'var(--cyan)', published: 'var(--green)', rejected: '#ff4444', archived: 'var(--dim)' };
+    var statusLabels = { draft: 'Черновик', approved: 'Одобрено', published: 'Опубликовано', rejected: 'Отклонено', archived: 'Архив' };
+    var color = statusColors[n.status] || 'var(--dim)';
+    var label = statusLabels[n.status] || n.status;
+
+    var tags = (n.topic_tags || []).map(function(t) {
+      return '<span style="background:var(--green)11;color:var(--green);padding:2px 6px;border-radius:4px;font-size:9px">' + esc(t) + '</span>';
+    }).join(' ');
+
+    var scoreHtml = '';
+    if (n.ceo_score) {
+      var scoreColor = n.ceo_score >= 8 ? 'var(--green)' : n.ceo_score >= 5 ? '#f5c542' : '#ff4444';
+      scoreHtml = '<span style="color:' + scoreColor + ';font-weight:bold">⭐ ' + n.ceo_score + '/10</span>';
+    }
+
+    var imgHtml = '';
+    if (n.image_url) {
+      imgHtml = '<div style="margin-bottom:8px"><img src="' + esc(n.image_url) + '" style="width:100%;height:160px;object-fit:cover;border-radius:6px" loading="lazy"></div>';
+    }
+
+    var timeAgo = n.created_at ? getTimeAgo(n.created_at) : '';
+    var sessionEmoji = { morning: '🌅', midday: '☀️', evening: '🌆', night: '🌙' };
+    var sessIcon = n.session_id ? (sessionEmoji[n.session_id] || '') + ' ' : '';
+
+    html += '<div style="background:var(--bg2);border-radius:10px;padding:14px;border-left:3px solid ' + color + ';cursor:pointer" onclick="openDigestDetail(' + n.id + ')">' +
+      imgHtml +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+        '<span style="color:' + color + ';font-size:10px;padding:2px 8px;border:1px solid ' + color + '44;border-radius:4px">' + label + '</span>' +
+        '<span style="font-size:10px;color:var(--dim)">' + sessIcon + timeAgo + '</span>' +
+      '</div>' +
+      '<div style="font-size:14px;font-weight:bold;color:var(--text);margin-bottom:6px;line-height:1.3">' + esc(n.headline || '—') + '</div>' +
+      '<div style="font-size:12px;color:var(--dim);margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4">' + esc((n.commentary_text || '').slice(0, 200)) + '</div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center">' +
+        '<div style="display:flex;gap:4px;flex-wrap:wrap">' + tags + '</div>' +
+        scoreHtml +
+      '</div>' +
+      (n.source_domain ? '<div style="font-size:10px;color:var(--dim);margin-top:6px">📎 ' + esc(n.source_domain) + '</div>' : '') +
+    '</div>';
+  });
+
+  el.innerHTML = html;
+}
+
+function renderDigestEmpty() {
+  var el = document.getElementById('digestList');
+  if (el) el.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--dim)">⚠️ Не удалось загрузить дайджест</div>';
+  var kpi = document.getElementById('digestKpi');
+  if (kpi) kpi.innerHTML = '';
+}
+
+// Digest detail modal
+function openDigestDetail(id) {
+  var n = _digestItems.find(function(x) { return x.id === id; });
+  if (!n) return;
+
+  var statusColors = { draft: '#f5c542', approved: 'var(--cyan)', published: 'var(--green)', rejected: '#ff4444' };
+  var color = statusColors[n.status] || 'var(--dim)';
+
+  var tags = (n.topic_tags || []).map(function(t) {
+    return '<span style="background:var(--green)11;color:var(--green);padding:2px 8px;border-radius:4px;font-size:10px">' + esc(t) + '</span>';
+  }).join(' ');
+
+  var imgHtml = n.image_url
+    ? '<img src="' + esc(n.image_url) + '" style="width:100%;max-height:300px;object-fit:cover;border-radius:8px;margin-bottom:12px">'
+    : '';
+
+  var scoreSection = '<div style="margin-top:16px;padding:12px;background:var(--bg1);border-radius:8px">' +
+    '<div style="font-size:12px;color:var(--dim);margin-bottom:8px">⭐ CEO Оценка</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">';
+  for (var i = 1; i <= 10; i++) {
+    var active = n.ceo_score === i;
+    scoreSection += '<button onclick="scoreDigestItem(' + n.id + ',' + i + ')" style="width:32px;height:32px;border-radius:6px;border:1px solid ' +
+      (active ? 'var(--green)' : 'var(--green)33') + ';background:' +
+      (active ? 'var(--green)33' : 'transparent') + ';color:' +
+      (active ? 'var(--green)' : 'var(--dim)') + ';cursor:pointer;font-weight:bold">' + i + '</button>';
+  }
+  scoreSection += '</div>' +
+    '<textarea id="digestCeoComment" placeholder="Комментарий CEO (необязательно)" style="width:100%;height:60px;background:var(--bg2);color:var(--text);border:1px solid var(--green)33;border-radius:6px;padding:8px;font-size:12px;resize:none">' + esc(n.ceo_comment || '') + '</textarea>' +
+  '</div>';
+
+  var actions = '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">';
+  if (n.status === 'draft') {
+    actions += '<button onclick="updateDigestStatus(' + n.id + ',\'approved\')" style="flex:1;padding:8px 16px;background:var(--cyan)22;color:var(--cyan);border:1px solid var(--cyan)44;border-radius:6px;cursor:pointer">✅ Одобрить</button>';
+    actions += '<button onclick="updateDigestStatus(' + n.id + ',\'rejected\')" style="flex:1;padding:8px 16px;background:#ff444422;color:#ff4444;border:1px solid #ff444444;border-radius:6px;cursor:pointer">❌ Отклонить</button>';
+  }
+  if (n.status === 'approved') {
+    actions += '<button onclick="publishDigestItem(' + n.id + ')" style="flex:1;padding:8px 16px;background:var(--green)22;color:var(--green);border:1px solid var(--green)44;border-radius:6px;cursor:pointer">📤 Опубликовать в Telegram</button>';
+  }
+  if (n.source_url) {
+    actions += '<a href="' + esc(n.source_url) + '" target="_blank" style="flex:1;padding:8px 16px;background:var(--bg2);color:var(--text);border:1px solid var(--green)33;border-radius:6px;text-align:center;text-decoration:none;font-size:12px">🔗 Источник</a>';
+  }
+  actions += '</div>';
+
+  var content = imgHtml +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
+      '<span style="color:' + color + ';font-size:11px;padding:3px 10px;border:1px solid ' + color + '44;border-radius:4px">' + (n.status || 'draft') + '</span>' +
+      '<span style="font-size:11px;color:var(--dim)">' + (n.created_at ? new Date(n.created_at).toLocaleString('ru') : '') + '</span>' +
+    '</div>' +
+    '<div style="font-size:16px;font-weight:bold;color:var(--text);margin-bottom:12px;line-height:1.3">' + esc(n.headline || '—') + '</div>' +
+    '<div style="font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;margin-bottom:12px">' + esc(n.commentary_text || '') + '</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">' + tags + '</div>' +
+    (n.source_title ? '<div style="font-size:11px;color:var(--dim);margin-bottom:4px">📰 ' + esc(n.source_title) + '</div>' : '') +
+    (n.source_domain ? '<div style="font-size:11px;color:var(--dim)">📎 ' + esc(n.source_domain) + '</div>' : '') +
+    scoreSection +
+    actions;
+
+  openModal('📰 ' + esc((n.headline || '').slice(0, 50)), content);
+}
+
+async function scoreDigestItem(id, score) {
+  var comment = '';
+  var el = document.getElementById('digestCeoComment');
+  if (el) comment = el.value;
+
+  var result = await sbPatch('news_items', 'id=eq.' + id, {
+    ceo_score: score,
+    ceo_comment: comment || null,
+    updated_at: new Date().toISOString()
+  });
+
+  if (result) {
+    showToast('⭐ Оценка ' + score + '/10 сохранена', 'success');
+    // Update local data
+    var item = _digestItems.find(function(x) { return x.id === id; });
+    if (item) { item.ceo_score = score; item.ceo_comment = comment; }
+    loadDigest();
+    closeModal();
+  } else {
+    showToast('Ошибка сохранения оценки', 'error');
+  }
+}
+
+async function updateDigestStatus(id, status) {
+  var result = await sbPatch('news_items', 'id=eq.' + id, {
+    status: status,
+    updated_at: new Date().toISOString()
+  });
+
+  if (result) {
+    showToast(status === 'approved' ? '✅ Одобрено' : '❌ Отклонено', 'success');
+    loadDigest();
+    closeModal();
+  }
+}
+
+async function publishDigestItem(id) {
+  var n = _digestItems.find(function(x) { return x.id === id; });
+  if (!n) return;
+
+  // Call content-publish or send directly via edge function
+  showToast('📤 Публикация в Telegram...', 'info');
+
+  try {
+    var key = getAuthKey();
+    var res = await fetch(SUPABASE_URL + '/functions/v1/content-publish', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'news_item', news_id: id })
+    });
+
+    if (res.ok) {
+      await sbPatch('news_items', 'id=eq.' + id, {
+        status: 'published',
+        published_at: new Date().toISOString()
+      });
+      showToast('📤 Опубликовано в Telegram!', 'success');
+      loadDigest();
+      closeModal();
+    } else {
+      showToast('Ошибка публикации', 'error');
+    }
+  } catch (e) {
+    showToast('Ошибка: ' + e.message, 'error');
+  }
+}
+
+// Digest filter handlers
+(function() {
+  var fs = document.getElementById('digestFilterStatus');
+  var ft = document.getElementById('digestFilterTag');
+  if (fs) fs.onchange = function() { _digestFilter.status = this.value; loadDigest(); };
+  if (ft) ft.onchange = function() { _digestFilter.tag = this.value; loadDigest(); };
+})();
+
+function getTimeAgo(dateStr) {
+  if (!dateStr) return '';
+  var now = Date.now();
+  var then = new Date(dateStr).getTime();
+  var diff = Math.floor((now - then) / 1000);
+  if (diff < 60) return diff + 'с назад';
+  if (diff < 3600) return Math.floor(diff / 60) + 'м назад';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'ч назад';
+  return Math.floor(diff / 86400) + 'д назад';
+}
