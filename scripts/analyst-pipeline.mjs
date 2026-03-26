@@ -114,7 +114,8 @@ async function callOpus(system, user, maxTokens) {
 // ═══ JSON parser with repair ═══
 function parseJSON(raw) {
   let s = raw.trim();
-  s = s.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+  // Strip markdown fences anywhere in the string
+  s = s.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
   try { return JSON.parse(s); } catch (_) {}
 
   const start = s.indexOf("{");
@@ -126,7 +127,13 @@ function parseJSON(raw) {
   // Repair truncated JSON
   if (start !== -1) {
     let fragment = s.slice(start);
+    // Remove trailing incomplete key-value pairs
     fragment = fragment.replace(/,\s*"[^"]*"\s*:\s*"[^"]*$/, "");
+    fragment = fragment.replace(/,\s*"[^"]*"\s*:\s*\[?\s*$/, "");
+    fragment = fragment.replace(/,\s*"[^"]*"\s*$/, "");
+    fragment = fragment.replace(/,\s*$/, "");
+
+    // Close open strings
     let inStr = false, escaped = false;
     for (const c of fragment) {
       if (escaped) { escaped = false; continue; }
@@ -134,6 +141,8 @@ function parseJSON(raw) {
       if (c === '"') inStr = !inStr;
     }
     if (inStr) fragment += '"';
+
+    // Close open braces/brackets
     let braces = 0, brackets = 0;
     inStr = false; escaped = false;
     for (const c of fragment) {
@@ -145,9 +154,16 @@ function parseJSON(raw) {
       else if (c === "[") brackets++; else if (c === "]") brackets--;
     }
     fragment += "]".repeat(Math.max(0, brackets)) + "}".repeat(Math.max(0, braces));
-    try { return JSON.parse(fragment); } catch (_) {}
+    // Clean trailing commas before closing
+    fragment = fragment.replace(/,(\s*[\]}])/g, "$1");
+    try {
+      console.log(`  [parseJSON] Repaired: ${fragment.length} chars, braces=${braces}, brackets=${brackets}`);
+      return JSON.parse(fragment);
+    } catch (e) {
+      console.log(`  [parseJSON] Repair failed: ${e.message}`);
+    }
   }
-  throw new Error(`No JSON found. Raw (first 500): ${raw.slice(0, 500)}`);
+  throw new Error(`No JSON found. Raw (first 500):\n${raw.slice(0, 500)}`);
 }
 
 // ═══ Competitors ═══
@@ -360,7 +376,8 @@ async function opusExecute(focus, plan, context) {
 3. Рекомендации конкретные: "сделать X потому что Y"
 4. НЕ ВЫДУМЫВАЙ метрики F2F (MAU, DAU, revenue)
 5. Пиши на русском
-6. Верни ТОЛЬКО валидный JSON — начни с { и закончи }`;
+6. Верни ТОЛЬКО валидный JSON — начни с { и закончи }. БЕЗ markdown, БЕЗ \`\`\`json блоков.
+7. Будь лаконичным — каждый пункт max 2-3 предложения`;
 
   const user = `ПЛАН:
 ${JSON.stringify(plan, null, 2)}
@@ -380,7 +397,7 @@ ${context.slice(0, 50000)}
   "data_quality": "оценка качества данных"
 }`;
 
-  const raw = await callOpus(system, user, 6000);
+  const raw = await callOpus(system, user, 8000);
   return parseJSON(raw);
 }
 
