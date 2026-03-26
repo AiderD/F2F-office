@@ -93,6 +93,7 @@
   <button class="tab" data-panel="teams">🏆 Команды <span class="badge" id="tab-teams-count">0</span></button>
   <span class="tab-gap"></span>
   <button class="tab" data-panel="agents">🤖 AI Агенты <span class="badge" style="background:var(--cyan)" id="tab-agents-count">0</span></button>
+  <button class="tab" data-panel="kb">📚 База знаний <span class="badge" id="tab-kb-count">0</span></button>
   <button class="tab" data-panel="chat">💬 Чат</button>
   <button class="tab" data-panel="integrations">🔗 Интеграции</button>
   <button class="tab" data-panel="admin" id="tabAdmin" style="display:none">🔐 Админ</button>
@@ -602,6 +603,31 @@
   </div>
   <!-- List view -->
   <div id="tasksList" style="display:flex;flex-direction:column;gap:8px"></div>
+</div>
+
+<!-- KNOWLEDGE BASE PANEL -->
+<div class="panel data-panel" id="panel-kb">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <h2 style="margin:0;font-size:18px;color:var(--cyan)">📚 База знаний F2F</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select id="kbFilterCategory" onchange="renderKbList()" style="background:var(--bg2);color:var(--text);border:1px solid var(--cyan)33;padding:4px 10px;border-radius:6px;font-size:12px">
+        <option value="all">Все категории</option>
+        <option value="product">Продукт</option>
+        <option value="competitors">Конкуренты</option>
+        <option value="goals">Цели & KPI</option>
+        <option value="brand">Бренд & Tone</option>
+        <option value="process">Процессы</option>
+        <option value="team">Команда</option>
+        <option value="tech">Технологии</option>
+        <option value="general">Общее</option>
+      </select>
+      <input id="kbSearch" type="text" placeholder="Поиск..." oninput="renderKbList()" style="background:var(--bg2);color:var(--text);border:1px solid var(--cyan)33;padding:4px 10px;border-radius:6px;font-size:12px;width:160px">
+      <button class="ctrl-btn" onclick="openKbForm()" style="background:var(--green)22;color:var(--green);font-size:12px;padding:4px 12px">+ Новая статья</button>
+      <button class="ctrl-btn" onclick="loadKb()" style="font-size:11px;padding:3px 10px">🔄</button>
+    </div>
+  </div>
+  <div id="kbKpiStrip" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
+  <div id="kbGrid" style="display:grid;gap:12px"></div>
 </div>
 
 <!-- ADMIN PANEL -->

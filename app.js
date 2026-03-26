@@ -462,6 +462,7 @@ function switchTab(panelId){
   if(panelId==='projects'&&typeof renderProjects==='function') renderProjects();
   if(panelId==='teams'&&typeof renderTeams==='function') renderTeams();
   if(panelId==='digest'&&typeof loadDigest==='function') loadDigest();
+  if(panelId==='kb'&&typeof loadKb==='function') loadKb();
 }
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click',()=>switchTab(tab.dataset.panel));
@@ -4058,7 +4059,7 @@ function renderPosts(){
         <button onclick="quickPostAction('${p.sbId||p.id}','reject')" style="flex:1;padding:5px;background:#ff2d7812;color:#ff2d78;border:1px solid #ff2d7833;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">❌ Отклонить</button>
       </div>`:''}
       ${p.sbStatus==='approved'&&p.sbId?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;border-top:1px solid var(--border);padding-top:8px" onclick="event.stopPropagation()">
-        <button onclick="generatePostImage('${p.sbId}'${p.imagePrompt?",'"+p.imagePrompt.replace(/'/g,"\\'").slice(0,200)+"'":""})" style="flex:1;min-width:45%;padding:5px;background:#9c27b018;color:#9c27b0;border:1px solid #9c27b044;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">${p.imageUrl?'🔄 Перегенерировать':'🖼 Генерировать картинку'}</button>
+        <button onclick="generatePostImage('${p.sbId}')" style="flex:1;min-width:45%;padding:5px;background:#9c27b018;color:#9c27b0;border:1px solid #9c27b044;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">${p.imageUrl?'🔄 Перегенерировать':'🖼 Генерировать картинку'}</button>
         <button onclick="publishPostToTelegram('${p.sbId}')" style="flex:1;min-width:45%;padding:5px;background:#0088cc18;color:#0088cc;border:1px solid #0088cc44;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600">📢 Опубликовать в Telegram</button>
       </div>`:''}
     </div>`).join('');
@@ -8453,4 +8454,251 @@ function getTimeAgo(dateStr) {
   if (diff < 3600) return Math.floor(diff / 60) + 'м назад';
   if (diff < 86400) return Math.floor(diff / 3600) + 'ч назад';
   return Math.floor(diff / 86400) + 'д назад';
+}
+
+// ═══════════════════════════════════════════════════
+// KNOWLEDGE BASE MODULE
+// ═══════════════════════════════════════════════════
+var KB_CATEGORIES = {
+  product: {icon:'🎮', label:'Продукт', color:'var(--cyan)'},
+  competitors: {icon:'⚔️', label:'Конкуренты', color:'var(--magenta)'},
+  goals: {icon:'🎯', label:'Цели & KPI', color:'var(--green)'},
+  brand: {icon:'✨', label:'Бренд & Tone', color:'var(--amber)'},
+  process: {icon:'⚙️', label:'Процессы', color:'#a78bfa'},
+  team: {icon:'👥', label:'Команда', color:'#f472b6'},
+  tech: {icon:'💻', label:'Технологии', color:'#22d3ee'},
+  general: {icon:'📄', label:'Общее', color:'var(--dim)'}
+};
+
+async function loadKb() {
+  var items = window._kbArticles;
+  if (!items) {
+    var fresh = await sbFetch('knowledge_base','select=*&order=updated_at.desc&limit=500');
+    if (fresh) { window._kbArticles = fresh; items = fresh; }
+  }
+  if (!items) items = [];
+  renderKbKpi(items);
+  renderKbList();
+}
+
+function renderKbKpi(items) {
+  var el = document.getElementById('kbKpiStrip'); if (!el) return;
+  var active = items.filter(function(a){return a.status==='active';}).length;
+  var pinned = items.filter(function(a){return a.is_pinned;}).length;
+  var cats = {};
+  items.forEach(function(a){ if(a.status==='active') cats[a.category] = (cats[a.category]||0)+1; });
+  var catCount = Object.keys(cats).length;
+  var html = '<div style="display:flex;gap:10px;flex-wrap:wrap">';
+  html += '<div style="background:var(--panel);border:1px solid var(--cyan)33;border-radius:8px;padding:8px 14px;min-width:100px"><div style="font-size:10px;color:var(--dim)">Всего статей</div><div style="font-size:20px;font-weight:700;color:var(--cyan)">'+active+'</div></div>';
+  html += '<div style="background:var(--panel);border:1px solid var(--amber)33;border-radius:8px;padding:8px 14px;min-width:100px"><div style="font-size:10px;color:var(--dim)">Закреплено</div><div style="font-size:20px;font-weight:700;color:var(--amber)">'+pinned+'</div></div>';
+  html += '<div style="background:var(--panel);border:1px solid var(--green)33;border-radius:8px;padding:8px 14px;min-width:100px"><div style="font-size:10px;color:var(--dim)">Категорий</div><div style="font-size:20px;font-weight:700;color:var(--green)">'+catCount+'</div></div>';
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function renderKbList() {
+  var grid = document.getElementById('kbGrid'); if (!grid) return;
+  var items = (window._kbArticles || []).filter(function(a){return a.status==='active';});
+  var catFilter = (document.getElementById('kbFilterCategory')||{}).value || 'all';
+  var search = ((document.getElementById('kbSearch')||{}).value || '').toLowerCase();
+
+  if (catFilter !== 'all') items = items.filter(function(a){return a.category === catFilter;});
+  if (search) items = items.filter(function(a){
+    return (a.title||'').toLowerCase().indexOf(search)!==-1
+      || (a.content||'').toLowerCase().indexOf(search)!==-1
+      || (a.tags||[]).join(' ').toLowerCase().indexOf(search)!==-1;
+  });
+
+  // Sort: pinned first, then by updated_at
+  items.sort(function(a,b){
+    if(a.is_pinned && !b.is_pinned) return -1;
+    if(!a.is_pinned && b.is_pinned) return 1;
+    return new Date(b.updated_at||b.created_at) - new Date(a.updated_at||a.created_at);
+  });
+
+  if (!items.length) {
+    grid.innerHTML = '<div style="text-align:center;padding:40px;color:var(--dim)">Нет статей' + (catFilter!=='all'?' в этой категории':'') + '</div>';
+    return;
+  }
+
+  var html = '';
+  items.forEach(function(a) {
+    var cat = KB_CATEGORIES[a.category] || KB_CATEGORIES.general;
+    var preview = esc((a.content||'').substring(0, 200));
+    var tagsHtml = (a.tags||[]).map(function(t){ return '<span style="background:'+cat.color+'22;color:'+cat.color+';padding:1px 6px;border-radius:4px;font-size:9px">'+esc(t)+'</span>'; }).join(' ');
+    html += '<div onclick="openKbDetail(\''+a.id+'\')" style="cursor:pointer;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;border-left:3px solid '+cat.color+';transition:border-color .2s" onmouseover="this.style.borderColor=\''+cat.color+'\'" onmouseout="this.style.borderColor=\'var(--border)\';this.style.borderLeftColor=\''+cat.color+'\'">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
+    html += '<div style="display:flex;align-items:center;gap:6px">';
+    if(a.is_pinned) html += '<span style="font-size:12px" title="Закреплено">📌</span>';
+    html += '<span style="font-size:12px">'+cat.icon+'</span>';
+    html += '<span style="font-size:10px;color:'+cat.color+';text-transform:uppercase;font-weight:600">'+cat.label+'</span>';
+    html += '</div>';
+    html += '<span style="font-size:10px;color:var(--dim)">v'+a.version+' | '+getTimeAgo(a.updated_at||a.created_at)+'</span>';
+    html += '</div>';
+    html += '<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px">'+esc(a.title)+'</div>';
+    html += '<div style="font-size:12px;color:var(--dim);line-height:1.5;margin-bottom:8px;white-space:pre-wrap;max-height:80px;overflow:hidden">'+preview+(a.content.length>200?'...':'')+'</div>';
+    if(tagsHtml) html += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">'+tagsHtml+'</div>';
+    html += '<div style="font-size:10px;color:var(--dim)">'+esc(a.author||'system')+' | '+new Date(a.created_at).toLocaleDateString('ru')+'</div>';
+    html += '</div>';
+  });
+  grid.innerHTML = html;
+}
+
+function openKbDetail(id) {
+  var items = window._kbArticles || [];
+  var a = items.find(function(x){return x.id === id;});
+  if (!a) return;
+  var cat = KB_CATEGORIES[a.category] || KB_CATEGORIES.general;
+  var canEdit = typeof isAdmin==='function' && (isAdmin() || !(['viewer'].indexOf((_currentSession||{}).role)!==-1));
+  var tagsHtml = (a.tags||[]).map(function(t){ return '<span style="background:'+cat.color+'22;color:'+cat.color+';padding:2px 8px;border-radius:4px;font-size:10px">'+esc(t)+'</span>'; }).join(' ');
+
+  var html = '<div style="max-width:700px">';
+  // Header
+  html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">';
+  html += '<span style="font-size:20px">'+cat.icon+'</span>';
+  html += '<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:'+cat.color+'22;color:'+cat.color+';font-weight:600">'+cat.label+'</span>';
+  if(a.is_pinned) html += '<span title="Закреплено">📌</span>';
+  html += '<span style="font-size:11px;color:var(--dim);margin-left:auto">v'+a.version+' | '+new Date(a.updated_at||a.created_at).toLocaleString('ru')+'</span>';
+  html += '</div>';
+  // Title
+  html += '<h3 style="margin:0 0 12px;font-size:18px;color:var(--text)">'+esc(a.title)+'</h3>';
+  // Tags
+  if(tagsHtml) html += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">'+tagsHtml+'</div>';
+  // Content
+  html += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;font-size:13px;color:var(--text);white-space:pre-wrap;line-height:1.6;max-height:400px;overflow-y:auto">'+esc(a.content)+'</div>';
+  // Author info
+  html += '<div style="margin-top:10px;font-size:11px;color:var(--dim)">Автор: '+esc(a.author||'system')+' ('+esc(a.author_role||'—')+') | Создано: '+new Date(a.created_at).toLocaleString('ru')+'</div>';
+
+  // Actions
+  html += '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">';
+  if(canEdit) {
+    html += '<button class="act-btn" onclick="openKbForm(\''+a.id+'\')" style="background:var(--cyan)22;color:var(--cyan)">✏️ Редактировать</button>';
+    html += '<button class="act-btn" onclick="toggleKbPin(\''+a.id+'\','+(!a.is_pinned)+')" style="background:var(--amber)22;color:var(--amber)">'+(a.is_pinned?'📌 Открепить':'📌 Закрепить')+'</button>';
+  }
+  if(typeof isAdmin==='function'&&isAdmin()) {
+    html += '<button class="act-btn" onclick="archiveKbArticle(\''+a.id+'\')" style="background:#f4433622;color:#f44336">🗃️ Архивировать</button>';
+  }
+  html += '<button class="act-btn" onclick="showKbHistory(\''+a.id+'\')" style="background:#a78bfa22;color:#a78bfa">📜 История</button>';
+  html += '</div>';
+
+  // History placeholder
+  html += '<div id="kbHistorySection"></div>';
+  html += '</div>';
+
+  openModal(esc(a.title), html);
+}
+
+function openKbForm(editId) {
+  var a = null;
+  if (editId) {
+    a = (window._kbArticles||[]).find(function(x){return x.id===editId;});
+  }
+  var catOptions = Object.keys(KB_CATEGORIES).map(function(k){
+    var c = KB_CATEGORIES[k];
+    return '<option value="'+k+'"'+(a&&a.category===k?' selected':'')+'>'+c.icon+' '+c.label+'</option>';
+  }).join('');
+
+  var html = '<div style="max-width:600px">';
+  html += '<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--dim)">Категория</label><select id="kbFormCat" style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;margin-top:4px">'+catOptions+'</select></div>';
+  html += '<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--dim)">Заголовок</label><input id="kbFormTitle" type="text" value="'+esc(a?a.title:'')+'" placeholder="Название статьи..." style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;margin-top:4px"></div>';
+  html += '<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--dim)">Содержание</label><textarea id="kbFormContent" rows="12" placeholder="Содержание статьи..." style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;font-family:monospace;line-height:1.5;resize:vertical;margin-top:4px">'+(a?esc(a.content):'')+'</textarea></div>';
+  html += '<div style="margin-bottom:16px"><label style="font-size:11px;color:var(--dim)">Теги (через запятую)</label><input id="kbFormTags" type="text" value="'+(a?(a.tags||[]).join(', '):'')+'" placeholder="product, cs2, matchmaking..." style="width:100%;padding:8px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;margin-top:4px"></div>';
+  html += '<div style="display:flex;gap:8px">';
+  html += '<button class="act-btn success" onclick="submitKbArticle('+(editId?"'"+editId+"'":"null")+')" style="flex:1;padding:10px;font-size:14px">'+(editId?'💾 Сохранить':'✅ Создать')+'</button>';
+  html += '<button class="act-btn" onclick="closeModal()" style="padding:10px">Отмена</button>';
+  html += '</div></div>';
+
+  openModal(editId ? 'Редактировать статью' : 'Новая статья', html);
+}
+
+async function submitKbArticle(editId) {
+  var title = (document.getElementById('kbFormTitle')||{}).value||'';
+  var content = (document.getElementById('kbFormContent')||{}).value||'';
+  var category = (document.getElementById('kbFormCat')||{}).value||'general';
+  var tagsRaw = (document.getElementById('kbFormTags')||{}).value||'';
+  var tags = tagsRaw.split(',').map(function(t){return t.trim();}).filter(Boolean);
+
+  if (!title || !content) { showToast('Заполните заголовок и содержание','warning'); return; }
+
+  var sess = window._currentSession||{};
+  var author = sess.login_name || sess.employee_name || 'unknown';
+  var authorRole = sess.role || 'viewer';
+
+  if (editId) {
+    // Get old article for audit
+    var old = (window._kbArticles||[]).find(function(x){return x.id===editId;});
+    var oldVersion = old ? (old.version||1) : 1;
+
+    var res = await sbPatch('knowledge_base', editId, {
+      title: title, content: content, category: category, tags: tags,
+      author: author, author_role: authorRole,
+      version: oldVersion + 1, updated_at: new Date().toISOString()
+    });
+    if (res) {
+      // Audit log
+      logEntityChange('knowledge_base', editId, 'update', 'content',
+        old ? old.title : null, title);
+      showToast('Статья обновлена (v'+(oldVersion+1)+')','success');
+    }
+  } else {
+    var res = await sbInsert('knowledge_base', {
+      title: title, content: content, category: category, tags: tags,
+      author: author, author_role: authorRole, is_pinned: false
+    });
+    if (res && res[0]) {
+      logEntityChange('knowledge_base', res[0].id, 'create', null, null, title);
+      showToast('Статья создана','success');
+    }
+  }
+
+  // Reload
+  var fresh = await sbFetch('knowledge_base','select=*&order=updated_at.desc&limit=500');
+  if (fresh) window._kbArticles = fresh;
+  closeModal();
+  loadKb();
+}
+
+async function toggleKbPin(id, pinned) {
+  await sbPatch('knowledge_base', id, { is_pinned: pinned });
+  logEntityChange('knowledge_base', id, 'update', 'is_pinned', String(!pinned), String(pinned));
+  var fresh = await sbFetch('knowledge_base','select=*&order=updated_at.desc&limit=500');
+  if (fresh) window._kbArticles = fresh;
+  showToast(pinned ? 'Статья закреплена' : 'Статья откреплена', 'success');
+  closeModal();
+  loadKb();
+}
+
+async function archiveKbArticle(id) {
+  if (!confirm('Архивировать статью?')) return;
+  await sbPatch('knowledge_base', id, { status: 'archived' });
+  logEntityChange('knowledge_base', id, 'update', 'status', 'active', 'archived');
+  var fresh = await sbFetch('knowledge_base','select=*&order=updated_at.desc&limit=500');
+  if (fresh) window._kbArticles = fresh;
+  showToast('Статья архивирована','info');
+  closeModal();
+  loadKb();
+}
+
+async function showKbHistory(id) {
+  var el = document.getElementById('kbHistorySection'); if (!el) return;
+  el.innerHTML = '<div style="margin-top:16px;padding:12px;background:var(--bg2);border-radius:8px"><span class="spinner"></span> Загрузка истории...</div>';
+  var changes = await sbFetch('entity_changes','select=*&entity_type=eq.knowledge_base&entity_id=eq.'+id+'&order=created_at.desc&limit=50');
+  if (!changes || !changes.length) {
+    el.innerHTML = '<div style="margin-top:16px;padding:12px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--dim)">Нет записей в истории изменений</div>';
+    return;
+  }
+  var html = '<div style="margin-top:16px"><h4 style="margin:0 0 8px;font-size:13px;color:#a78bfa">📜 История изменений</h4>';
+  html += '<div style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto">';
+  changes.forEach(function(c) {
+    var icon = c.change_type==='create'?'🟢':c.change_type==='update'?'🟡':'🔴';
+    html += '<div style="background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:11px">';
+    html += '<span>'+icon+' <b>'+esc(c.change_type)+'</b></span>';
+    if(c.field_name) html += ' <span style="color:var(--cyan)">'+esc(c.field_name)+'</span>';
+    html += ' <span style="color:var(--dim)">by '+esc(c.author||'?')+'</span>';
+    html += ' <span style="color:var(--dim);float:right">'+new Date(c.created_at).toLocaleString('ru')+'</span>';
+    if(c.old_value && c.new_value) html += '<div style="margin-top:4px;color:var(--dim)"><s>'+esc((c.old_value||'').substring(0,60))+'</s> → '+esc((c.new_value||'').substring(0,60))+'</div>';
+    html += '</div>';
+  });
+  html += '</div></div>';
+  el.innerHTML = html;
 }

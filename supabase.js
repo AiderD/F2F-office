@@ -189,7 +189,7 @@ async function syncSupabaseData(){
   }
 
   // ═══ PARALLEL FETCH: all remaining tables at once (was sequential — ~15x faster now) ═══
-  const [content,partners,events,metrics,dirs,reports,actions,finance,ledger,credits,expenses,esTeams,rosters,tournaments,team,projects,changes,marketIntel,vacBalances,vacRequests,vacLog,newsItems]=await Promise.all([
+  const [content,partners,events,metrics,dirs,reports,actions,finance,ledger,credits,expenses,esTeams,rosters,tournaments,team,projects,changes,marketIntel,vacBalances,vacRequests,vacLog,newsItems,kbArticles]=await Promise.all([
     sbFetch('content_queue','select=*&order=created_at.desc&limit=1000'),
     sbFetch('partner_pipeline','select=*&order=created_at.desc&limit=500'),
     sbFetch('events','select=*&order=created_at.desc&limit=500'),
@@ -211,7 +211,8 @@ async function syncSupabaseData(){
     sbFetch('vacation_balances','select=*&order=employee_name.asc'),
     sbFetch('vacation_requests','select=*&order=created_at.desc&limit=500'),
     sbFetch('vacation_log','select=*&order=created_at.desc&limit=500'),
-    sbFetch('news_items','select=*&order=created_at.desc&limit=200')
+    sbFetch('news_items','select=*&order=created_at.desc&limit=200'),
+    sbFetch('knowledge_base','select=*&order=updated_at.desc&limit=500')
   ]);
 
   if(content){window._sbContent=content;window._sbContentMerged=false;}
@@ -236,6 +237,7 @@ async function syncSupabaseData(){
   if(vacRequests)window._vacRequests=vacRequests;
   if(vacLog)window._vacLog=vacLog;
   if(newsItems)window._newsItems=newsItems;
+  if(kbArticles)window._kbArticles=kbArticles;
 
   return true;
 }
@@ -430,6 +432,8 @@ function refreshAfterSync(){
   if(typeof renderNeedsHelpBanner==='function'){_sr(renderNeedsHelpBanner,'needsHelp');}
   // Digest badge update (drafts count)
   if(window._newsItems){var _dc=window._newsItems.filter(function(n){return n.status==='draft';}).length;var _dBadge=document.getElementById('tab-digest-count');if(_dBadge)_dBadge.textContent=_dc||'0';}
+  // KB badge
+  if(window._kbArticles){var _kbc=window._kbArticles.filter(function(a){return a.status==='active';}).length;var _kbBadge=document.getElementById('tab-kb-count');if(_kbBadge)_kbBadge.textContent=_kbc||'0';}
   if(typeof renderAnalytics==='function'){_sr(renderAnalytics,'analytics');}
   if(typeof loadStrategy==='function'&&!window._stratLoaded){window._stratLoaded=true;_sr(loadStrategy,'strategy');}
   if(typeof renderStrategyProgress==='function'){_sr(renderStrategyProgress,'strategyProgress');}
