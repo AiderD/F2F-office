@@ -499,6 +499,75 @@ async function saveAndNotify(focus, plan, execOutput, verifyOutput, searchChars,
     }),
   ]);
 
+  // ═══ Convert recommendations → actions for agents ═══
+  try {
+    const agentMapping = {
+      "партнёр": "bizdev", "outreach": "bizdev", "pitch": "bizdev", "B2B": "bizdev", "sponsor": "bizdev",
+      "контент": "smm", "пост": "smm", "публикац": "smm", "блог": "smm", "twitter": "smm",
+      "community": "community", "кибербар": "community", "турнир": "community", "event": "community",
+      "лид": "lead_finder", "компан": "lead_finder", "организац": "lead_finder",
+    };
+
+    function assignAgent(text) {
+      const lower = (text || "").toLowerCase();
+      for (const [kw, agent] of Object.entries(agentMapping)) {
+        if (lower.includes(kw)) return agent;
+      }
+      return "bizdev"; // default
+    }
+
+    const recs = finalOutput.recommendations || [];
+    const opps = finalOutput.opportunities || [];
+    const actionItems = [];
+
+    // Top 3 recommendations → actions
+    for (const r of recs.slice(0, 3)) {
+      const actionText = r.action || (typeof r === "string" ? r : "");
+      if (!actionText) continue;
+      actionItems.push({
+        type: "analyst_recommendation",
+        agent_name: assignAgent(actionText),
+        status: "planned",
+        payload_json: {
+          title: actionText.slice(0, 200),
+          reasoning: r.reasoning || "",
+          priority: r.priority || 2,
+          timeline: r.timeline || "this_week",
+          source: "analyst_pipeline",
+          focus,
+          session_id: sessionId,
+        },
+        created_at: new Date().toISOString(),
+      });
+    }
+
+    // Top 2 opportunities → actions
+    for (const o of opps.slice(0, 2)) {
+      const oppText = o.title || o.recommended_action || (typeof o === "string" ? o : "");
+      if (!oppText) continue;
+      actionItems.push({
+        type: "analyst_opportunity",
+        agent_name: assignAgent(o.recommended_action || oppText),
+        status: "planned",
+        payload_json: {
+          title: oppText.slice(0, 200),
+          description: (o.description || "").slice(0, 500),
+          recommended_action: (o.recommended_action || "").slice(0, 300),
+          evidence: (o.evidence || "").slice(0, 300),
+          source: "analyst_pipeline",
+          focus,
+          session_id: sessionId,
+        },
+        created_at: new Date().toISOString(),
+      });
+    }
+
+    if (actionItems.length > 0) {
+      await Promise.allSettled(actionItems.map(a => sbInsert("actions", a)));
+      console.log(`  Actions created: ${actionItems.length} (from ${recs.length} recs + ${opps.length} opps)`);
+    }
+  } catch (e) { console.log(`  Actions error: ${String(e).slice(0, 100)}`); }
+
   // Update agent_memory
   try {
     const agents = await fetch(`${SUPABASE_URL}/rest/v1/agents?slug=eq.analyst&select=id`, {
