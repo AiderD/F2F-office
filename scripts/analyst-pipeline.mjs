@@ -547,28 +547,46 @@ async function saveAndNotify(focus, plan, execOutput, verifyOutput, searchChars,
     if (verifyOutput.feedback) p.push(`\n_🔍 QA (${qualityScore}/10): ${verifyOutput.feedback}_`);
 
     try {
-      const tgText = p.join("\n").slice(0, 4000);
-      // Try Markdown first
-      let tgRes = await fetch(`https://api.telegram.org/bot${TG_BOT}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: TG_CHAT, text: tgText, parse_mode: "Markdown", disable_web_page_preview: true }),
-      });
-      let tgBody = await tgRes.json();
-      if (tgBody.ok) {
-        console.log("  Telegram: sent ✅ (Markdown)");
-      } else {
-        console.log(`  Telegram Markdown failed: ${tgBody.description || "unknown"}`);
-        // Fallback: plain text (strip markdown chars)
-        const plainText = tgText.replace(/[*_`]/g, "");
-        tgRes = await fetch(`https://api.telegram.org/bot${TG_BOT}/sendMessage`, {
+      const fullText = p.join("\n");
+      // Split into chunks of ~4000 chars at newline boundaries
+      const chunks = [];
+      let remaining = fullText;
+      while (remaining.length > 0) {
+        if (remaining.length <= 4000) {
+          chunks.push(remaining);
+          break;
+        }
+        // Find last newline before 4000
+        let splitAt = remaining.lastIndexOf("\n", 4000);
+        if (splitAt < 1000) splitAt = 4000; // fallback if no good split point
+        chunks.push(remaining.slice(0, splitAt));
+        remaining = remaining.slice(splitAt).trim();
+      }
+
+      let sentCount = 0;
+      for (const chunk of chunks) {
+        // Try Markdown
+        let tgRes = await fetch(`https://api.telegram.org/bot${TG_BOT}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: TG_CHAT, text: plainText, disable_web_page_preview: true }),
+          body: JSON.stringify({ chat_id: TG_CHAT, text: chunk, parse_mode: "Markdown", disable_web_page_preview: true }),
         });
-        tgBody = await tgRes.json();
-        console.log(`  Telegram fallback: ${tgBody.ok ? "sent ✅" : tgBody.description}`);
+        let tgBody = await tgRes.json();
+        if (!tgBody.ok) {
+          // Fallback: plain text
+          const plain = chunk.replace(/[*_`]/g, "");
+          tgRes = await fetch(`https://api.telegram.org/bot${TG_BOT}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_id: TG_CHAT, text: plain, disable_web_page_preview: true }),
+          });
+          tgBody = await tgRes.json();
+        }
+        if (tgBody.ok) sentCount++;
+        // Small delay between messages
+        if (chunks.length > 1) await new Promise(r => setTimeout(r, 500));
       }
+      console.log(`  Telegram: sent ${sentCount}/${chunks.length} messages ✅`);
     } catch (e) { console.log(`  Telegram error: ${String(e).slice(0, 100)}`); }
   }
 
