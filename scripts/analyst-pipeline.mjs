@@ -114,7 +114,7 @@ async function callOpus(system, user, maxTokens) {
 // ═══ JSON parser with repair ═══
 function parseJSON(raw) {
   let s = raw.trim();
-  // Strip markdown fences anywhere in the string
+  // Strip markdown fences anywhere
   s = s.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
   try { return JSON.parse(s); } catch (_) {}
 
@@ -124,16 +124,11 @@ function parseJSON(raw) {
     try { return JSON.parse(s.slice(start, end + 1)); } catch (_) {}
   }
 
-  // Repair truncated JSON
+  // Repair truncated JSON — progressive trimming approach
   if (start !== -1) {
     let fragment = s.slice(start);
-    // Remove trailing incomplete key-value pairs
-    fragment = fragment.replace(/,\s*"[^"]*"\s*:\s*"[^"]*$/, "");
-    fragment = fragment.replace(/,\s*"[^"]*"\s*:\s*\[?\s*$/, "");
-    fragment = fragment.replace(/,\s*"[^"]*"\s*$/, "");
-    fragment = fragment.replace(/,\s*$/, "");
 
-    // Close open strings
+    // Close open string if needed
     let inStr = false, escaped = false;
     for (const c of fragment) {
       if (escaped) { escaped = false; continue; }
@@ -142,26 +137,54 @@ function parseJSON(raw) {
     }
     if (inStr) fragment += '"';
 
-    // Close open braces/brackets
-    let braces = 0, brackets = 0;
-    inStr = false; escaped = false;
-    for (const c of fragment) {
-      if (escaped) { escaped = false; continue; }
-      if (c === "\\") { escaped = true; continue; }
-      if (c === '"') { inStr = !inStr; continue; }
-      if (inStr) continue;
-      if (c === "{") braces++; else if (c === "}") braces--;
-      else if (c === "[") brackets++; else if (c === "]") brackets--;
+    // Try progressively trimming from the end to find valid JSON
+    // Find last valid boundary: after ", }, ], number, true, false, null
+    for (let attempts = 0; attempts < 20; attempts++) {
+      // Count open braces/brackets
+      let braces = 0, brackets = 0;
+      inStr = false; escaped = false;
+      for (const c of fragment) {
+        if (escaped) { escaped = false; continue; }
+        if (c === "\\") { escaped = true; continue; }
+        if (c === '"') { inStr = !inStr; continue; }
+        if (inStr) continue;
+        if (c === "{") braces++; else if (c === "}") braces--;
+        else if (c === "[") brackets++; else if (c === "]") brackets--;
+      }
+
+      let closed = fragment;
+      // Clean trailing partial content
+      closed = closed.replace(/,\s*$/, "");
+      // Close brackets/braces
+      closed += "]".repeat(Math.max(0, brackets)) + "}".repeat(Math.max(0, braces));
+      // Fix trailing commas before closers
+      closed = closed.replace(/,(\s*[\]}])/g, "$1");
+
+      try {
+        const result = JSON.parse(closed);
+        console.log(`  [parseJSON] Repaired (attempt ${attempts + 1}): ${closed.length} chars`);
+        return result;
+      } catch (_) {}
+
+      // Trim: remove last line or last key-value pair
+      // Find last comma outside strings and trim there
+      let lastComma = -1;
+      inStr = false; escaped = false;
+      for (let i = 0; i < fragment.length; i++) {
+        const c = fragment[i];
+        if (escaped) { escaped = false; continue; }
+        if (c === "\\") { escaped = true; continue; }
+        if (c === '"') { inStr = !inStr; continue; }
+        if (!inStr && c === ",") lastComma = i;
+      }
+      if (lastComma > 0) {
+        fragment = fragment.slice(0, lastComma);
+      } else {
+        break; // No more commas to trim
+      }
     }
-    fragment += "]".repeat(Math.max(0, brackets)) + "}".repeat(Math.max(0, braces));
-    // Clean trailing commas before closing
-    fragment = fragment.replace(/,(\s*[\]}])/g, "$1");
-    try {
-      console.log(`  [parseJSON] Repaired: ${fragment.length} chars, braces=${braces}, brackets=${brackets}`);
-      return JSON.parse(fragment);
-    } catch (e) {
-      console.log(`  [parseJSON] Repair failed: ${e.message}`);
-    }
+
+    console.log(`  [parseJSON] All repair attempts failed`);
   }
   throw new Error(`No JSON found. Raw (first 500):\n${raw.slice(0, 500)}`);
 }
