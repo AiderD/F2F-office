@@ -547,13 +547,29 @@ async function saveAndNotify(focus, plan, execOutput, verifyOutput, searchChars,
     if (verifyOutput.feedback) p.push(`\n_🔍 QA (${qualityScore}/10): ${verifyOutput.feedback}_`);
 
     try {
-      await fetch(`https://api.telegram.org/bot${TG_BOT}/sendMessage`, {
+      const tgText = p.join("\n").slice(0, 4000);
+      // Try Markdown first
+      let tgRes = await fetch(`https://api.telegram.org/bot${TG_BOT}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: TG_CHAT, text: p.join("\n").slice(0, 4000), parse_mode: "Markdown", disable_web_page_preview: true }),
+        body: JSON.stringify({ chat_id: TG_CHAT, text: tgText, parse_mode: "Markdown", disable_web_page_preview: true }),
       });
-      console.log("  Telegram: sent ✅");
-    } catch (e) { console.log(`  Telegram: ${String(e).slice(0, 60)}`); }
+      let tgBody = await tgRes.json();
+      if (tgBody.ok) {
+        console.log("  Telegram: sent ✅ (Markdown)");
+      } else {
+        console.log(`  Telegram Markdown failed: ${tgBody.description || "unknown"}`);
+        // Fallback: plain text (strip markdown chars)
+        const plainText = tgText.replace(/[*_`]/g, "");
+        tgRes = await fetch(`https://api.telegram.org/bot${TG_BOT}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: TG_CHAT, text: plainText, disable_web_page_preview: true }),
+        });
+        tgBody = await tgRes.json();
+        console.log(`  Telegram fallback: ${tgBody.ok ? "sent ✅" : tgBody.description}`);
+      }
+    } catch (e) { console.log(`  Telegram error: ${String(e).slice(0, 100)}`); }
   }
 
   return { qualityScore, trendCount, compCount, oppCount, threatCount, summary };
