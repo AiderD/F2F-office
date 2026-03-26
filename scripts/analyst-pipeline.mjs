@@ -207,8 +207,11 @@ async function searchMarketData(focus) {
   let webData = "", competitorData = "", ahrefsData = "";
   const promises = [];
 
+  console.log(`  BRAVE_KEY: ${BRAVE_KEY ? BRAVE_KEY.slice(0, 8) + "..." : "MISSING!"}`);
+  console.log(`  AHREFS_TOKEN: ${AHREFS_TOKEN ? "set" : "not set"}`);
   if (BRAVE_KEY) {
     // Market queries
+    let braveOk = 0, braveFail = 0;
     for (const q of FOCUS_QUERIES[focus]) {
       promises.push((async () => {
         try {
@@ -216,12 +219,17 @@ async function searchMarketData(focus) {
             headers: { Accept: "application/json", "X-Subscription-Token": BRAVE_KEY },
           });
           if (res.ok) {
+            braveOk++;
             const data = await res.json();
             for (const r of (data.web?.results || []).slice(0, 5)) {
               webData += `\n[${q}] ${r.title || "?"} — ${r.url || "?"}\n  ${(r.description || "").slice(0, 250)}\n`;
             }
+          } else {
+            braveFail++;
+            const errText = await res.text().catch(() => "");
+            console.log(`  Brave ${res.status} for "${q.slice(0,40)}": ${errText.slice(0, 150)}`);
           }
-        } catch (e) { console.log(`  Brave err: ${String(e).slice(0, 60)}`); }
+        } catch (e) { console.log(`  Brave err: ${String(e).slice(0, 100)}`); }
       })());
     }
 
@@ -239,11 +247,16 @@ async function searchMarketData(focus) {
               for (const r of (data.web?.results || []).slice(0, 4)) {
                 competitorData += `\n[${comp.name}] ${r.title || "?"} — ${r.url || "?"}\n  ${(r.description || "").slice(0, 250)}\n`;
               }
+            } else {
+              const errText = await res.text().catch(() => "");
+              console.log(`  Brave comp ${res.status} for ${comp.name}: ${errText.slice(0, 150)}`);
             }
-          } catch (e) { console.log(`  Brave comp err: ${String(e).slice(0, 60)}`); }
+          } catch (e) { console.log(`  Brave comp err: ${String(e).slice(0, 100)}`); }
         })());
       }
     }
+  } else {
+    console.log("  ⚠️ BRAVE_KEY is empty — no search will happen!");
   }
 
   // Ahrefs
